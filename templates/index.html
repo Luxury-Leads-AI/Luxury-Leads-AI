@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Luxury Leads AI Assistant</title>
+    <style>
+        body {
+            font-family: Arial;
+            background-color: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .chat-box {
+            width: 400px;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .messages {
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
+
+        .input-area {
+            display: flex;
+        }
+
+        input {
+            flex: 1;
+            padding: 10px;
+        }
+
+        button {
+            padding: 10px;
+            background: black;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        .user {
+            text-align: right;
+            margin: 5px;
+        }
+
+        .bot {
+            text-align: left;
+            margin: 5px;
+            color: blue;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-box">
+    <h3>Luxury Leads AI Assistant</h3>
+    <div class="messages" id="messages"></div>
+
+    <div class="input-area">
+        <input type="text" id="messageInput" placeholder="Ask about properties...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<script>
+async function sendMessage() {
+    const input = document.getElementById("messageInput");
+    const message = input.value;
+
+    if (!message) return;
+
+    const messagesDiv = document.getElementById("messages");
+
+    messagesDiv.innerHTML += `<div class="user">${message}</div>`;
+
+    input.value = "";
+
+    const response = await fetch("/chat", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ message: message })
+    });
+
+    const data = await response.json();
+
+    messagesDiv.innerHTML += `<div class="bot">${data.reply}</div>`;
+
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+</script>
+
+</body>
+</html>
