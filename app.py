@@ -8,7 +8,7 @@ import os
 import re
 
 # -------------------------
-# LOAD ENV VARIABLES (ABSOLUTE PATH)
+# LOAD ENV VARIABLES
 # -------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -32,9 +32,8 @@ db = SQLAlchemy(app)
 # -------------------------
 
 api_key = os.getenv("OPENAI_API_KEY")
-
 if not api_key:
-    raise ValueError("OPENAI_API_KEY is not set. Check your .env file.")
+    raise ValueError("OPENAI_API_KEY is not set.")
 
 client = OpenAI(api_key=api_key)
 
@@ -50,11 +49,8 @@ class Agency(db.Model):
 class Lead(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agency_id = db.Column(db.Integer)
-    name = db.Column(db.String(100))
     email = db.Column(db.String(100))
     phone = db.Column(db.String(50))
-    budget = db.Column(db.String(50))
-    location = db.Column(db.String(100))
     message = db.Column(db.Text)
 
 # -------------------------
@@ -68,36 +64,33 @@ def home():
 # ---------- CREATE AGENCY ----------
 @app.route("/create-agency", methods=["POST", "OPTIONS"])
 def create_agency():
-    data = request.json
+    if request.method == "OPTIONS":
+        return "", 200
 
+    data = request.json
     name = data.get("name")
     prompt = data.get("prompt")
 
     if not name or not prompt:
         return jsonify({"error": "Missing name or prompt"}), 400
 
-    new_agency = Agency(name=name, prompt=prompt)
-    db.session.add(new_agency)
+    agency = Agency(name=name, prompt=prompt)
+    db.session.add(agency)
     db.session.commit()
 
-    return jsonify({
-        "message": "Agency created successfully",
-        "agency_id": new_agency.id
-    })
+    return jsonify({"agency_id": agency.id})
 
 # ---------- CHAT ----------
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
-    data = request.json
+    if request.method == "OPTIONS":
+        return "", 200   # ✅ THIS IS THE KEY FIX
 
+    data = request.json
     user_message = data.get("message")
     agency_id = data.get("agency_id")
 
-    if not user_message or not agency_id:
-        return jsonify({"error": "Missing message or agency_id"}), 400
-
     agency = Agency.query.get(agency_id)
-
     if not agency:
         return jsonify({"error": "Invalid agency ID"}), 400
 
@@ -111,18 +104,18 @@ def chat():
 
     ai_reply = response.choices[0].message.content
 
-    # ---------- LEAD DETECTION ----------
-    email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", user_message)
-    phone_match = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
+    # ---------- LEAD CAPTURE ----------
+    email = re.search(r"\S+@\S+\.\S+", user_message)
+    phone = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
 
-    if email_match or phone_match:
-        new_lead = Lead(
+    if email or phone:
+        lead = Lead(
             agency_id=agency_id,
-            email=email_match.group(0) if email_match else None,
-            phone=phone_match.group(0) if phone_match else None,
+            email=email.group(0) if email else None,
+            phone=phone.group(0) if phone else None,
             message=user_message
         )
-        db.session.add(new_lead)
+        db.session.add(lead)
         db.session.commit()
 
     return jsonify({"reply": ai_reply})
@@ -131,35 +124,28 @@ def chat():
 @app.route("/leads/<int:agency_id>", methods=["GET"])
 def view_leads(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
-
-    result = []
-    for lead in leads:
-        result.append({
-            "id": lead.id,
-            "name": lead.name,
-            "email": lead.email,
-            "phone": lead.phone,
-            "budget": lead.budget,
-            "location": lead.location,
-            "message": lead.message
-        })
-
-    return jsonify(result)
+    return jsonify([
+        {
+            "email": l.email,
+            "phone": l.phone,
+            "message": l.message
+        } for l in leads
+    ])
 
 # ---------- AGENCY INFO ----------
 @app.route("/agency/<int:agency_id>", methods=["GET", "OPTIONS"])
 def agency_info(agency_id):
-    agency = Agency.query.get(agency_id)
+    if request.method == "OPTIONS":
+        return "", 200
 
+    agency = Agency.query.get(agency_id)
     if not agency:
         return jsonify({"error": "Invalid agency ID"}), 404
 
-    return jsonify({
-        "name": agency.name
-    })
+    return jsonify({"name": agency.name})
 
 # -------------------------
-# INIT DATABASE
+# INIT
 # -------------------------
 
 if __name__ == "__main__":
