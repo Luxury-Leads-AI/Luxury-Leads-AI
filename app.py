@@ -1,3 +1,4 @@
+from flask import render_template
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from openai import OpenAI
@@ -168,6 +169,10 @@ def agency_info(agency_id):
         return jsonify({"error": "Invalid agency ID"}), 404
 
     return jsonify({"name": agency.name})
+@app.route("/admin/<int:agency_id>")
+def admin_dashboard(agency_id):
+    leads = Lead.query.filter_by(agency_id=agency_id).all()
+    return render_template("admin.html", leads=leads)
 
 # -------------------------
 # INIT
