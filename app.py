@@ -1,3 +1,5 @@
+import csv
+from flask import Response
 from flask import render_template
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
@@ -173,6 +175,19 @@ def agency_info(agency_id):
 def admin_dashboard(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
     return render_template("admin.html", leads=leads)
+@app.route("/export/<int:agency_id>")
+def export_leads(agency_id):
+    leads = Lead.query.filter_by(agency_id=agency_id).all()
+
+    def generate():
+        data = csv.writer()
+        yield "Email,Phone,Message\n"
+        for lead in leads:
+            yield f"{lead.email},{lead.phone},{lead.message}\n"
+
+    return Response(generate(), mimetype="text/csv",
+                    headers={"Content-Disposition":
+                             "attachment;filename=leads.csv"})
 
 # -------------------------
 # INIT
