@@ -3,8 +3,13 @@ from flask_sqlalchemy import SQLAlchemy
 from openai import OpenAI
 from dotenv import load_dotenv
 from pathlib import Path
+from flask_cors import CORS
 import os
 import re
+
+app = Flask(__name__, static_folder="static")
+CORS(app)
+
 
 # -------------------------
 # LOAD ENV VARIABLES (ABSOLUTE PATH)
