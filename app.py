@@ -84,25 +84,50 @@ def create_agency():
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
     if request.method == "OPTIONS":
-        return "", 200   # ✅ THIS IS THE KEY FIX
+        return "", 200
 
-    data = request.json
-    user_message = data.get("message")
-    agency_id = data.get("agency_id")
+    try:
+        data = request.get_json(force=True)
 
-    agency = Agency.query.get(agency_id)
-    if not agency:
-        return jsonify({"error": "Invalid agency ID"}), 400
+        user_message = data.get("message")
+        agency_id = int(data.get("agency_id"))
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": agency.prompt},
-            {"role": "user", "content": user_message}
-        ]
-    )
+        if not user_message or not agency_id:
+            return jsonify({"error": "Missing message or agency_id"}), 400
 
-    ai_reply = response.choices[0].message.content
+        agency = Agency.query.get(agency_id)
+        if not agency:
+            return jsonify({"error": "Invalid agency ID"}), 400
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": agency.prompt},
+                {"role": "user", "content": user_message}
+            ]
+        )
+
+        ai_reply = response.choices[0].message.content
+
+        # Lead detection
+        email = re.search(r"\S+@\S+\.\S+", user_message)
+        phone = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
+
+        if email or phone:
+            lead = Lead(
+                agency_id=agency_id,
+                email=email.group(0) if email else None,
+                phone=phone.group(0) if phone else None,
+                message=user_message
+            )
+            db.session.add(lead)
+            db.session.commit()
+
+        return jsonify({"reply": ai_reply})
+
+    except Exception as e:
+        print("CHAT ERROR:", e)
+        return jsonify({"error": "Server error"}), 500
 
     # ---------- LEAD CAPTURE ----------
     email = re.search(r"\S+@\S+\.\S+", user_message)
