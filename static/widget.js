@@ -93,8 +93,14 @@
           })
         });
 
-        const data = await response.json();
-        messages.innerHTML += `<div><b>AI:</b> ${data.reply}</div>`;
+        let data;
+try {
+  data = await response.json();
+} catch {
+  data = { reply: "Server error" };
+}
+
+        messages.innerHTML += `<div><b>AI:</b> ${data.reply || data.error || "No response"}</div>`;
         messages.scrollTop = messages.scrollHeight;
       }
     });
