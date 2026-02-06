@@ -1,12 +1,11 @@
-import csv
-from flask import Response
-from flask import render_template
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, Response
 from flask_sqlalchemy import SQLAlchemy
 from openai import OpenAI
 from dotenv import load_dotenv
 from pathlib import Path
 from flask_cors import CORS
+from io import StringIO
+import csv
 import os
 import re
 
@@ -132,22 +131,6 @@ def chat():
         print("CHAT ERROR:", e)
         return jsonify({"error": "Server error"}), 500
 
-    # ---------- LEAD CAPTURE ----------
-    email = re.search(r"\S+@\S+\.\S+", user_message)
-    phone = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
-
-    if email or phone:
-        lead = Lead(
-            agency_id=agency_id,
-            email=email.group(0) if email else None,
-            phone=phone.group(0) if phone else None,
-            message=user_message
-        )
-        db.session.add(lead)
-        db.session.commit()
-
-    return jsonify({"reply": ai_reply})
-
 # ---------- VIEW LEADS ----------
 @app.route("/leads/<int:agency_id>", methods=["GET"])
 def view_leads(agency_id):
@@ -171,23 +154,37 @@ def agency_info(agency_id):
         return jsonify({"error": "Invalid agency ID"}), 404
 
     return jsonify({"name": agency.name})
+
+# ---------- ADMIN DASHBOARD ----------
 @app.route("/admin/<int:agency_id>")
 def admin_dashboard(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
     return render_template("admin.html", leads=leads)
+
+# ---------- EXPORT CSV ----------
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
 
-    def generate():
-        data = csv.writer()
-        yield "Email,Phone,Message\n"
-        for lead in leads:
-            yield f"{lead.email},{lead.phone},{lead.message}\n"
+    si = StringIO()
+    writer = csv.writer(si)
 
-    return Response(generate(), mimetype="text/csv",
-                    headers={"Content-Disposition":
-                             "attachment;filename=leads.csv"})
+    writer.writerow(["Email", "Phone", "Message"])
+
+    for lead in leads:
+        writer.writerow([
+            lead.email or "",
+            lead.phone or "",
+            lead.message or ""
+        ])
+
+    output = si.getvalue()
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=leads.csv"}
+    )
 
 # -------------------------
 # INIT
