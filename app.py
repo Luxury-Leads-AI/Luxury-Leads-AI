@@ -7,10 +7,6 @@ from flask_cors import CORS
 import os
 import re
 
-app = Flask(__name__, static_folder="static")
-CORS(app)
-
-
 # -------------------------
 # LOAD ENV VARIABLES (ABSOLUTE PATH)
 # -------------------------
@@ -24,6 +20,7 @@ load_dotenv(dotenv_path=env_path)
 # -------------------------
 
 app = Flask(__name__, static_folder="static")
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///luxury_leads.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -68,8 +65,8 @@ class Lead(db.Model):
 def home():
     return "Luxury Leads AI SaaS is Running"
 
-# ---------- STEP 4.1 ----------
-@app.route("/create-agency", methods=["POST"])
+# ---------- CREATE AGENCY ----------
+@app.route("/create-agency", methods=["POST", "OPTIONS"])
 def create_agency():
     data = request.json
 
@@ -88,8 +85,8 @@ def create_agency():
         "agency_id": new_agency.id
     })
 
-# ---------- STEP 4.2 LEAD CAPTURE ----------
-@app.route("/chat", methods=["POST"])
+# ---------- CHAT ----------
+@app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
     data = request.json
 
@@ -114,10 +111,7 @@ def chat():
 
     ai_reply = response.choices[0].message.content
 
-    # -------------------------
-    # SIMPLE LEAD DETECTION
-    # -------------------------
-
+    # ---------- LEAD DETECTION ----------
     email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", user_message)
     phone_match = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
 
@@ -133,13 +127,12 @@ def chat():
 
     return jsonify({"reply": ai_reply})
 
-# ---------- STEP 4.3 VIEW LEADS ----------
+# ---------- VIEW LEADS ----------
 @app.route("/leads/<int:agency_id>", methods=["GET"])
 def view_leads(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
 
     result = []
-
     for lead in leads:
         result.append({
             "id": lead.id,
@@ -153,8 +146,8 @@ def view_leads(agency_id):
 
     return jsonify(result)
 
-# ---------- STEP 6.1 AGENCY INFO (NEW) ----------
-@app.route("/agency/<int:agency_id>", methods=["GET"])
+# ---------- AGENCY INFO ----------
+@app.route("/agency/<int:agency_id>", methods=["GET", "OPTIONS"])
 def agency_info(agency_id):
     agency = Agency.query.get(agency_id)
 
@@ -164,7 +157,6 @@ def agency_info(agency_id):
     return jsonify({
         "name": agency.name
     })
-# -----------------------------------------------
 
 # -------------------------
 # INIT DATABASE
