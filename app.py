@@ -4,8 +4,10 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from pathlib import Path
 from flask_cors import CORS
-from io import StringIO
-import csv
+from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, Border, Side
+from io import BytesIO
 import os
 import re
 
@@ -54,6 +56,7 @@ class Lead(db.Model):
     email = db.Column(db.String(100))
     phone = db.Column(db.String(50))
     message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # -------------------------
 # ROUTES
@@ -94,9 +97,6 @@ def chat():
         user_message = data.get("message")
         agency_id = int(data.get("agency_id"))
 
-        if not user_message or not agency_id:
-            return jsonify({"error": "Missing message or agency_id"}), 400
-
         agency = Agency.query.get(agency_id)
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
@@ -131,59 +131,69 @@ def chat():
         print("CHAT ERROR:", e)
         return jsonify({"error": "Server error"}), 500
 
-# ---------- VIEW LEADS ----------
-@app.route("/leads/<int:agency_id>", methods=["GET"])
-def view_leads(agency_id):
-    leads = Lead.query.filter_by(agency_id=agency_id).all()
-    return jsonify([
-        {
-            "email": l.email,
-            "phone": l.phone,
-            "message": l.message
-        } for l in leads
-    ])
-
-# ---------- AGENCY INFO ----------
-@app.route("/agency/<int:agency_id>", methods=["GET", "OPTIONS"])
-def agency_info(agency_id):
-    if request.method == "OPTIONS":
-        return "", 200
-
-    agency = Agency.query.get(agency_id)
-    if not agency:
-        return jsonify({"error": "Invalid agency ID"}), 404
-
-    return jsonify({"name": agency.name})
-
 # ---------- ADMIN DASHBOARD ----------
 @app.route("/admin/<int:agency_id>")
 def admin_dashboard(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
     return render_template("admin.html", leads=leads)
 
-# ---------- EXPORT CSV ----------
+# ---------- EXPORT EXCEL ----------
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
 
-    si = StringIO()
-    writer = csv.writer(si)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Leads"
 
-    writer.writerow(["Email", "Phone", "Message"])
+    headers = ["Email", "Phone", "Message", "Date", "Time"]
+    ws.append(headers)
 
+    bold = Font(bold=True)
+    border = Border(left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin'))
+
+    # Header styling
+    for cell in ws[1]:
+        cell.font = bold
+        cell.border = border
+
+    # Data rows
     for lead in leads:
-        writer.writerow([
+        date = lead.created_at.strftime("%Y-%m-%d") if lead.created_at else ""
+        time = lead.created_at.strftime("%H:%M") if lead.created_at else ""
+
+        ws.append([
             lead.email or "",
             lead.phone or "",
-            lead.message or ""
+            lead.message or "",
+            date,
+            time
         ])
 
-    output = si.getvalue()
+    # Borders + Auto width
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.border = border
+
+    for col in ws.columns:
+        max_length = 0
+        letter = col[0].column_letter
+        for cell in col:
+            if cell.value:
+                max_length = max(max_length, len(str(cell.value)))
+        ws.column_dimensions[letter].width = max_length + 3
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
 
     return Response(
-        output,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=leads.csv"}
+        buffer,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=leads.xlsx"}
     )
 
 # -------------------------
