@@ -162,7 +162,8 @@ def export_leads(agency_id):
     ws = wb.active
     ws.title = "Leads"
 
-    headers = ["Email", "Phone", "Budget", "Message", "Date", "Time"]
+    headers = ["Sr #", "Name", "Email", "Phone", "Budget", "Message", "Date", "Time"]
+
     ws.append(headers)
 
     bold = Font(bold=True)
@@ -175,11 +176,13 @@ def export_leads(agency_id):
         cell.font = bold
         cell.border = border
 
-    for lead in leads:
+    for i, lead in enumerate(leads, start=1):
         date = lead.created_at.strftime("%Y-%m-%d") if lead.created_at else ""
         time = lead.created_at.strftime("%H:%M") if lead.created_at else ""
 
         ws.append([
+            i,                     # Sr #
+            lead.name or "",
             lead.email or "",
             lead.phone or "",
             lead.budget or "",
@@ -187,6 +190,7 @@ def export_leads(agency_id):
             date,
             time
         ])
+
 
     buffer = BytesIO()
     wb.save(buffer)
