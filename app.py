@@ -53,8 +53,10 @@ class Agency(db.Model):
 class Lead(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agency_id = db.Column(db.Integer)
+    name = db.Column(db.String(100))
     email = db.Column(db.String(100))
     phone = db.Column(db.String(50))
+    budget = db.Column(db.String(50))
     message = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -85,7 +87,7 @@ def create_agency():
 
     return jsonify({"agency_id": agency.id})
 
-# ---------- AGENCY INFO (ADDED) ----------
+# ---------- AGENCY INFO ----------
 @app.route("/agency/<int:agency_id>")
 def agency_info(agency_id):
     agency = Agency.query.get(agency_id)
@@ -119,14 +121,21 @@ def chat():
 
         ai_reply = response.choices[0].message.content
 
-        email = re.search(r"\S+@\S+\.\S+", user_message)
-        phone = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
+        # -------------------------
+        # ADVANCED LEAD DETECTION
+        # -------------------------
+        email_match = re.search(r"\S+@\S+\.\S+", user_message)
+        phone_match = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
+        budget_match = re.search(r"\b\d+(\.\d+)?\s?(m|million|k)?\b", user_message, re.IGNORECASE)
+        name_match = re.search(r"(?:i am|i'm|my name is)\s+([A-Za-z]+)", user_message, re.IGNORECASE)
 
-        if email or phone:
+        if email_match or phone_match or name_match or budget_match:
             lead = Lead(
                 agency_id=agency_id,
-                email=email.group(0) if email else None,
-                phone=phone.group(0) if phone else None,
+                name=name_match.group(1) if name_match else None,
+                email=email_match.group(0) if email_match else None,
+                phone=phone_match.group(0) if phone_match else None,
+                budget=budget_match.group(0) if budget_match else None,
                 message=user_message
             )
             db.session.add(lead)
@@ -153,7 +162,7 @@ def export_leads(agency_id):
     ws = wb.active
     ws.title = "Leads"
 
-    headers = ["Email", "Phone", "Message", "Date", "Time"]
+    headers = ["Email", "Phone", "Budget", "Message", "Date", "Time"]
     ws.append(headers)
 
     bold = Font(bold=True)
@@ -173,22 +182,11 @@ def export_leads(agency_id):
         ws.append([
             lead.email or "",
             lead.phone or "",
+            lead.budget or "",
             lead.message or "",
             date,
             time
         ])
-
-    for row in ws.iter_rows():
-        for cell in row:
-            cell.border = border
-
-    for col in ws.columns:
-        max_length = 0
-        letter = col[0].column_letter
-        for cell in col:
-            if cell.value:
-                max_length = max(max_length, len(str(cell.value)))
-        ws.column_dimensions[letter].width = max_length + 3
 
     buffer = BytesIO()
     wb.save(buffer)
@@ -201,9 +199,8 @@ def export_leads(agency_id):
     )
 
 # -------------------------
-# INIT
+# INIT (TEMP – REMOVE LATER)
 # -------------------------
 with app.app_context():
     db.drop_all()
     db.create_all()
-
