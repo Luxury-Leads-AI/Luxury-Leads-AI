@@ -89,17 +89,25 @@ def create_agency():
         return "", 200
 
     data = request.json
-    name = data.get("name")
-    prompt = data.get("prompt")
 
-    if not name or not prompt:
-        return jsonify({"error": "Missing name or prompt"}), 400
+    agency = Agency(
+        name=data.get("name"),
+        prompt=data.get("prompt"),
+        owner_name=data.get("owner_name"),
+        email=data.get("email"),
+        whatsapp=data.get("whatsapp"),
+        subscription_type=data.get("subscription_type"),
+        status="Pending"
+    )
 
-    agency = Agency(name=name, prompt=prompt)
     db.session.add(agency)
     db.session.commit()
 
-    return jsonify({"agency_id": agency.id})
+    return jsonify({
+        "message": "Agency created",
+        "agency_id": agency.id
+    })
+
 
 # ---------- AGENCY INFO ----------
 @app.route("/agency/<int:agency_id>")
