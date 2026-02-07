@@ -201,6 +201,22 @@ def export_leads(agency_id):
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=leads.xlsx"}
     )
+@app.route("/owner")
+def owner_panel():
+    return render_template("owner.html")
+
+@app.route("/agencies")
+def get_agencies():
+    agencies = Agency.query.all()
+    return jsonify([{"id":a.id,"name":a.name} for a in agencies])
+
+@app.route("/delete-agency/<int:id>", methods=["DELETE"])
+def delete_agency(id):
+    agency = Agency.query.get(id)
+    if agency:
+        db.session.delete(agency)
+        db.session.commit()
+    return jsonify({"status":"deleted"})
 
 # -------------------------
 # INIT (DEV / PROD SAFE)

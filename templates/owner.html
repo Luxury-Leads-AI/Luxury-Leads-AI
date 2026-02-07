@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Owner Panel</title>
+    <style>
+        body { font-family: Arial; padding: 40px; background:#111; color:white; }
+        input, button { padding:10px; margin:5px; }
+        table { width:100%; border-collapse: collapse; margin-top:20px; }
+        th, td { border:1px solid #333; padding:10px; }
+        th { background:#000; }
+        button { cursor:pointer; }
+    </style>
+</head>
+<body>
+
+<h2>Agency Owner Panel</h2>
+
+<h3>Create Agency</h3>
+<input id="name" placeholder="Agency Name">
+<input id="prompt" placeholder="AI Prompt">
+<button onclick="createAgency()">Create</button>
+
+<h3>Existing Agencies</h3>
+<table id="agencyTable">
+<tr>
+<th>ID</th>
+<th>Name</th>
+<th>Delete</th>
+</tr>
+</table>
+
+<script>
+async function loadAgencies() {
+  const res = await fetch("/agencies");
+  const data = await res.json();
+  const table = document.getElementById("agencyTable");
+
+  data.forEach(a => {
+    table.innerHTML += `
+      <tr>
+        <td>${a.id}</td>
+        <td>${a.name}</td>
+        <td><button onclick="deleteAgency(${a.id})">X</button></td>
+      </tr>`;
+  });
+}
+
+async function createAgency() {
+  const name = document.getElementById("name").value;
+  const prompt = document.getElementById("prompt").value;
+
+  await fetch("/create-agency", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name,prompt})
+  });
+
+  location.reload();
+}
+
+async function deleteAgency(id) {
+  await fetch(`/delete-agency/${id}`, {method:"DELETE"});
+  location.reload();
+}
+
+loadAgencies();
+</script>
+
+</body>
+</html>
