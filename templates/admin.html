@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Leads Dashboard</title>
+  <title>Agency Leads</title>
   <style>
     body { font-family: Arial; padding: 30px; }
     table { border-collapse: collapse; width: 100%; }
@@ -15,16 +15,26 @@
 
 <table>
   <tr>
+    <th>Sr #</th>
+    <th>Name</th>
     <th>Email</th>
     <th>Phone</th>
+    <th>Budget</th>
     <th>Message</th>
+    <th>Date</th>
+    <th>Time</th>
   </tr>
 
   {% for lead in leads %}
   <tr>
-    <td>{{ lead.email }}</td>
-    <td>{{ lead.phone }}</td>
-    <td>{{ lead.message }}</td>
+    <td>{{ loop.index }}</td>
+    <td>{{ lead.name or "" }}</td>
+    <td>{{ lead.email or "" }}</td>
+    <td>{{ lead.phone or "" }}</td>
+    <td>{{ lead.budget or "" }}</td>
+    <td>{{ lead.message or "" }}</td>
+    <td>{{ lead.created_at.strftime("%Y-%m-%d") if lead.created_at else "" }}</td>
+    <td>{{ lead.created_at.strftime("%H:%M") if lead.created_at else "" }}</td>
   </tr>
   {% endfor %}
 
