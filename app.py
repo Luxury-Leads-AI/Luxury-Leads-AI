@@ -85,6 +85,14 @@ def create_agency():
 
     return jsonify({"agency_id": agency.id})
 
+# ---------- AGENCY INFO (ADDED) ----------
+@app.route("/agency/<int:agency_id>")
+def agency_info(agency_id):
+    agency = Agency.query.get(agency_id)
+    if not agency:
+        return jsonify({"error": "Invalid agency ID"}), 404
+    return jsonify({"name": agency.name})
+
 # ---------- CHAT ----------
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
@@ -111,7 +119,6 @@ def chat():
 
         ai_reply = response.choices[0].message.content
 
-        # Lead detection
         email = re.search(r"\S+@\S+\.\S+", user_message)
         phone = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
 
@@ -155,12 +162,10 @@ def export_leads(agency_id):
                     top=Side(style='thin'),
                     bottom=Side(style='thin'))
 
-    # Header styling
     for cell in ws[1]:
         cell.font = bold
         cell.border = border
 
-    # Data rows
     for lead in leads:
         date = lead.created_at.strftime("%Y-%m-%d") if lead.created_at else ""
         time = lead.created_at.strftime("%H:%M") if lead.created_at else ""
@@ -173,7 +178,6 @@ def export_leads(agency_id):
             time
         ])
 
-    # Borders + Auto width
     for row in ws.iter_rows():
         for cell in row:
             cell.border = border
