@@ -47,8 +47,22 @@ client = OpenAI(api_key=api_key)
 
 class Agency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+
+    # Basic
     name = db.Column(db.String(100))
     prompt = db.Column(db.Text)
+
+    # Owner Info
+    owner_name = db.Column(db.String(100))
+    email = db.Column(db.String(150))
+    whatsapp = db.Column(db.String(50))
+
+    # Subscription
+    subscription_type = db.Column(db.String(50))  # Basic / Pro / Premium
+    status = db.Column(db.String(50), default="Pending")  # Pending / Active / Expired
+
+    # Dates
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Lead(db.Model):
     id = db.Column(db.Integer, primary_key=True)
