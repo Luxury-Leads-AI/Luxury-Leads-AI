@@ -175,6 +175,24 @@ def admin_dashboard(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
     return render_template("admin.html", leads=leads)
 
+@app.route("/owner-login", methods=["GET","POST"])
+def owner_login():
+    if request.method == "POST":
+        agency_id = request.form.get("agency_id")
+        password = request.form.get("password")
+
+        # TEMP SIMPLE PASSWORD
+        if password == "1234":
+            return redirect(f"/owner-dashboard/{agency_id}")
+
+    return render_template("owner_login.html")
+
+
+@app.route("/owner-dashboard/<int:agency_id>")
+def owner_dashboard(agency_id):
+    leads = Lead.query.filter_by(agency_id=agency_id).all()
+    return render_template("admin.html", leads=leads)
+
 # ---------- EXPORT EXCEL ----------
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
