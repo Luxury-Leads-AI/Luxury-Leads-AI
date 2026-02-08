@@ -110,6 +110,10 @@ class Lead(db.Model):
 # -------------------------
 # ROUTES
 # -------------------------
+@app.route("/ping")
+def ping():
+    return "pong"
+
 @app.route("/")
 def home():
     return "Luxury Leads AI SaaS is Running"
