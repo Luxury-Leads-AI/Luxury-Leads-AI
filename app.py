@@ -23,7 +23,7 @@ load_dotenv(dotenv_path=env_path)
 # -------------------------
 # APP SETUP
 # -------------------------
-app = Flask(__name__, static_folder="static")
+app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///luxury_leads.db'
