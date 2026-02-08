@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Activate AI Assistant</title>
+  <style>
+    body {
+      font-family: Arial;
+      background: #111;
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .box {
+      background: #1c1c1c;
+      padding: 30px;
+      border-radius: 12px;
+      width: 400px;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border: none;
+      border-radius: 6px;
+    }
+    button {
+      background: black;
+      color: white;
+      cursor: pointer;
+    }
+    #result {
+      margin-top: 15px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="box">
+  <h2>Activate AI Assistant</h2>
+
+  <input id="agency" placeholder="Agency Name">
+  <input id="owner" placeholder="Owner Name">
+  <input id="email" placeholder="Email">
+  <input id="whatsapp" placeholder="WhatsApp">
+
+  <select id="plan">
+    <option>Basic</option>
+    <option>Premium</option>
+  </select>
+
+  <button onclick="submitForm()">Activate</button>
+
+  <div id="result"></div>
+</div>
+
+<script>
+async function submitForm() {
+  const data = {
+    name: document.getElementById("agency").value,
+    owner_name: document.getElementById("owner").value,
+    email: document.getElementById("email").value,
+    whatsapp: document.getElementById("whatsapp").value,
+    subscription_type: document.getElementById("plan").value,
+    prompt: "You are a luxury real estate assistant."
+  };
+
+  const res = await fetch("/create-agency", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(data)
+  });
+
+  const json = await res.json();
+
+  document.getElementById("result").innerHTML =
+    `Agency Created!<br><br>
+     Paste this on your website:<br>
+     &lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="${json.agency_id}"&gt;&lt;/script&gt;`;
+}
+</script>
+
+</body>
+</html>

@@ -192,6 +192,10 @@ def owner_dashboard(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
     return render_template("admin.html", leads=leads)
 
+@app.route("/signup")
+def signup():
+    return render_template("signup.html")
+
 
 # ---------- EXPORT EXCEL ----------
 @app.route("/export/<int:agency_id>")
