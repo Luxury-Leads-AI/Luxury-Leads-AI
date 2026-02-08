@@ -39,26 +39,29 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 
 # -------------------------
+# MEMORY STORE (AI MEMORY)
+# -------------------------
+conversation_memory = {}
+
+# -------------------------
 # DATABASE MODELS
 # -------------------------
 class Agency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
-    # Basic
     name = db.Column(db.String(100))
     prompt = db.Column(db.Text)
     assistant_name = db.Column(db.String(100), default="AI Assistant")
 
-    # Owner Info
     owner_name = db.Column(db.String(100))
     email = db.Column(db.String(150))
     whatsapp = db.Column(db.String(50))
 
-    # Subscription
     subscription_type = db.Column(db.String(50))
     status = db.Column(db.String(50), default="Pending")
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 class Lead(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -129,7 +132,7 @@ def chat():
         if not agency:
             return jsonify({"error":"Invalid agency ID"}),400
 
-        # ---------- LEAD HUNTER SYSTEM PROMPT ----------
+        # ---------- SYSTEM PROMPT (SMART LEAD HUNTER) ----------
         system_prompt = f"""
 You are {agency.assistant_name}, a professional luxury real estate sales assistant.
 
@@ -137,28 +140,39 @@ RULES:
 - Reply short like WhatsApp (2–4 lines max)
 - Friendly and human tone
 - Never say you are AI
-- Never give long essays or articles
+- Never give long essays
 - Ask only ONE question each reply
-- Gradually collect:
-  Name, Budget, Location, Timeline, Email, Phone
-- Your goal is to generate leads for the agency
-- Sound like a real property consultant
+- NEVER repeat a question already answered
+- If name/budget/location already provided, do NOT ask again
+- Gradually collect: Name, Budget, Location, Timeline, Email, Phone
+- Goal = convert visitor into qualified lead
 """
+
+        # ---------- MEMORY HANDLING ----------
+        if agency_id not in conversation_memory:
+            conversation_memory[agency_id] = []
+
+        history = conversation_memory[agency_id]
+
+        # add user message to memory
+        history.append({"role": "user", "content": user_message})
+
+        messages = [{"role": "system", "content": system_prompt}] + history[-10:]
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role":"system","content":system_prompt},
-                {"role":"user","content":user_message}
-            ]
+            messages=messages
         )
 
         ai_reply = response.choices[0].message.content
 
+        # add AI reply to memory
+        history.append({"role": "assistant", "content": ai_reply})
+
         # ---------- LEAD DETECTION ----------
         email = re.search(r"\S+@\S+\.\S+", user_message)
         phone = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
-        budget = re.search(r"\b\d+(\.\d+)?\s?(m|million|k)?\b", user_message, re.IGNORECASE)
+        budget = re.search(r"\b\d+(\.\d+)?\s?(m|million|k|b)?\b", user_message, re.IGNORECASE)
         name = re.search(r"(?:i am|i'm|my name is)\s+([A-Za-z]+)", user_message, re.IGNORECASE)
 
         if email or phone or budget or name:
