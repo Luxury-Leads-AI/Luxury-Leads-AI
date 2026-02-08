@@ -1,44 +1,143 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Agency Leads</title>
+  <title>Agency Dashboard</title>
+
   <style>
-    body { font-family: Arial; padding: 30px; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 10px; }
-    th { background: black; color: white; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+
+    .topbar {
+      background: #020617;
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1f2933;
+    }
+
+    .title {
+      font-size: 20px;
+      font-weight: bold;
+      color: #38bdf8;
+    }
+
+    .actions a {
+      text-decoration: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      margin-left: 10px;
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .export-btn {
+      background: #22c55e;
+      color: black;
+    }
+
+    .logout-btn {
+      background: #ef4444;
+      color: white;
+    }
+
+    .container {
+      padding: 30px;
+    }
+
+    .lead-count {
+      margin-bottom: 20px;
+      font-size: 16px;
+      color: #cbd5f5;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #020617;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #1f2933;
+    }
+
+    th {
+      background: #020617;
+      color: #38bdf8;
+      font-weight: bold;
+    }
+
+    tr:hover {
+      background: #020617;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 30px;
+      color: #64748b;
+    }
   </style>
 </head>
+
 <body>
 
-<h2>Agency Leads</h2>
+<div class="topbar">
+  <div class="title">Agency Leads Dashboard</div>
 
-<table>
-  <tr>
-    <th>Sr #</th>
-    <th>Name</th>
-    <th>Email</th>
-    <th>Phone</th>
-    <th>Budget</th>
-    <th>Message</th>
-    <th>Date</th>
-    <th>Time</th>
-  </tr>
+  <div class="actions">
+    <a href="/export/{{ leads[0].agency_id if leads else 1 }}" class="export-btn">Export Excel</a>
+    <a href="/owner-login" class="logout-btn">Logout</a>
+  </div>
+</div>
 
-  {% for lead in leads %}
-  <tr>
-    <td>{{ loop.index }}</td>
-    <td>{{ lead.name or "" }}</td>
-    <td>{{ lead.email or "" }}</td>
-    <td>{{ lead.phone or "" }}</td>
-    <td>{{ lead.budget or "" }}</td>
-    <td>{{ lead.message or "" }}</td>
-    <td>{{ lead.created_at.strftime("%Y-%m-%d") if lead.created_at else "" }}</td>
-    <td>{{ lead.created_at.strftime("%H:%M") if lead.created_at else "" }}</td>
-  </tr>
-  {% endfor %}
+<div class="container">
 
-</table>
+  <div class="lead-count">
+    Total Leads: <b>{{ leads|length }}</b>
+  </div>
+
+  <table>
+    <tr>
+      <th>Sr. #</th>
+      <th>Name</th>
+      <th>Email</th>
+      <th>Phone</th>
+      <th>Budget</th>
+      <th>Message</th>
+      <th>Date</th>
+      <th>Time</th>
+    </tr>
+
+    {% if leads %}
+      {% for lead in leads %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ lead.name }}</td>
+        <td>{{ lead.email }}</td>
+        <td>{{ lead.phone }}</td>
+        <td>{{ lead.budget }}</td>
+        <td>{{ lead.message }}</td>
+        <td>{{ lead.created_at.strftime('%Y-%m-%d') if lead.created_at }}</td>
+        <td>{{ lead.created_at.strftime('%H:%M') if lead.created_at }}</td>
+      </tr>
+      {% endfor %}
+    {% else %}
+      <tr>
+        <td colspan="8" class="empty">No Leads Yet</td>
+      </tr>
+    {% endif %}
+
+  </table>
+
+</div>
 
 </body>
 </html>
