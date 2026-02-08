@@ -243,13 +243,11 @@ def export_leads(agency_id):
     )
 
 # -------------------------
-# INIT SAFE
+# INIT SAFE (PROD READY)
 # -------------------------
-ENV = os.getenv("ENV", "DEV")
+ENV = os.getenv("ENV", "PROD")
 
 with app.app_context():
-    if ENV == "DEV":
-        db.drop_all()
     db.create_all()
 
 if __name__ == "__main__":
