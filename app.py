@@ -10,6 +10,8 @@ from openpyxl.styles import Font, Border, Side
 from io import BytesIO
 import os
 import re
+import smtplib
+from email.mime.text import MIMEText
 
 # -------------------------
 # LOAD ENV VARIABLES
@@ -39,9 +41,41 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 
 # -------------------------
-# MEMORY STORE (AI MEMORY)
+# MEMORY STORE
 # -------------------------
 conversation_memory = {}
+
+# -------------------------
+# EMAIL CONFIG
+# -------------------------
+SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+
+def send_lead_email(agency, lead):
+    try:
+        subject = f"New Lead for {agency.name}"
+        body = f"""
+New Lead Received
+
+Name: {lead.name}
+Email: {lead.email}
+Phone: {lead.phone}
+Budget: {lead.budget}
+Message: {lead.message}
+Date: {lead.created_at}
+"""
+
+        msg = MIMEText(body)
+        msg['Subject'] = subject
+        msg['From'] = SMTP_EMAIL
+        msg['To'] = agency.email
+
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(SMTP_EMAIL, SMTP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+    except Exception as e:
+        print("EMAIL ERROR:", e)
 
 # -------------------------
 # DATABASE MODELS
@@ -132,32 +166,19 @@ def chat():
         if not agency:
             return jsonify({"error":"Invalid agency ID"}),400
 
-        # ---------- SYSTEM PROMPT (SMART LEAD HUNTER) ----------
         system_prompt = f"""
 You are {agency.assistant_name}, a professional luxury real estate sales assistant.
-
-RULES:
-- Reply short like WhatsApp (2–4 lines max)
-- Friendly and human tone
-- Never say you are AI
-- Never give long essays
-- Ask only ONE question each reply
-- NEVER repeat a question already answered
-- If name/budget/location already provided, do NOT ask again
-- Gradually collect: Name, Budget, Location, Timeline, Email, Phone
-- Goal = convert visitor into qualified lead
+Reply short. Friendly. One question only. Never repeat questions.
+Collect name, budget, location, email, phone gradually.
 """
 
-        # ---------- MEMORY HANDLING ----------
         if agency_id not in conversation_memory:
             conversation_memory[agency_id] = []
 
         history = conversation_memory[agency_id]
+        history.append({"role":"user","content":user_message})
 
-        # add user message to memory
-        history.append({"role": "user", "content": user_message})
-
-        messages = [{"role": "system", "content": system_prompt}] + history[-10:]
+        messages = [{"role":"system","content":system_prompt}] + history[-10:]
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -165,11 +186,8 @@ RULES:
         )
 
         ai_reply = response.choices[0].message.content
+        history.append({"role":"assistant","content":ai_reply})
 
-        # add AI reply to memory
-        history.append({"role": "assistant", "content": ai_reply})
-
-        # ---------- LEAD DETECTION ----------
         email = re.search(r"\S+@\S+\.\S+", user_message)
         phone = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
         budget = re.search(r"\b\d+(\.\d+)?\s?(m|million|k|b)?\b", user_message, re.IGNORECASE)
@@ -187,40 +205,15 @@ RULES:
             db.session.add(lead)
             db.session.commit()
 
+            send_lead_email(agency, lead)
+
         return jsonify({"reply": ai_reply})
 
     except Exception as e:
         print("CHAT ERROR:", e)
         return jsonify({"error":"Server error"}),500
 
-# ---------- ADMIN DASHBOARD ----------
-@app.route("/admin/<int:agency_id>")
-def admin_dashboard(agency_id):
-    leads = Lead.query.filter_by(agency_id=agency_id).all()
-    return render_template("admin.html", leads=leads)
-
-# ---------- OWNER LOGIN ----------
-@app.route("/owner-login", methods=["GET","POST"])
-def owner_login():
-    if request.method=="POST":
-        agency_id = request.form.get("agency_id")
-        password = request.form.get("password")
-
-        if password=="1234" and agency_id.isdigit():
-            return redirect(f"/owner-dashboard/{agency_id}")
-
-    return render_template("owner_login.html")
-
-@app.route("/owner-dashboard/<int:agency_id>")
-def owner_dashboard(agency_id):
-    leads = Lead.query.filter_by(agency_id=agency_id).all()
-    return render_template("admin.html", leads=leads)
-
-@app.route("/signup")
-def signup():
-    return render_template("signup.html")
-
-# ---------- EXPORT EXCEL ----------
+# ---------- EXPORT ----------
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
@@ -228,31 +221,12 @@ def export_leads(agency_id):
     wb = Workbook()
     ws = wb.active
     ws.title="Leads"
-
-    headers=["Sr #","Name","Email","Phone","Budget","Message","Date","Time"]
-    ws.append(headers)
-
-    bold=Font(bold=True)
-    border=Border(left=Side(style='thin'),right=Side(style='thin'),
-                  top=Side(style='thin'),bottom=Side(style='thin'))
-
-    for cell in ws[1]:
-        cell.font=bold
-        cell.border=border
+    ws.append(["Sr #","Name","Email","Phone","Budget","Message","Date","Time"])
 
     for i,lead in enumerate(leads,start=1):
-        date = lead.created_at.strftime("%Y-%m-%d") if lead.created_at else ""
-        time = lead.created_at.strftime("%H:%M") if lead.created_at else ""
-
         ws.append([
-            i,
-            lead.name or "",
-            lead.email or "",
-            lead.phone or "",
-            lead.budget or "",
-            lead.message or "",
-            date,
-            time
+            i,lead.name,lead.email,lead.phone,lead.budget,
+            lead.message,lead.created_at.date(),lead.created_at.time()
         ])
 
     buffer=BytesIO()
@@ -263,11 +237,6 @@ def export_leads(agency_id):
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition":"attachment; filename=leads.xlsx"}
     )
-
-# ---------- OWNER PANEL ----------
-@app.route("/owner")
-def owner_panel():
-    return render_template("owner.html")
 
 # -------------------------
 # INIT SAFE
