@@ -42,6 +42,8 @@
   <h2>Activate AI Assistant</h2>
 
   <input id="agency" placeholder="Agency Name">
+  <input id="assistant" placeholder="AI Assistant Name (e.g. Sophia)">
+  <small style="font-size:12px;color:#aaa;">This name will be used in chats</small>
   <input id="owner" placeholder="Owner Name">
   <input id="email" placeholder="Email">
   <input id="whatsapp" placeholder="WhatsApp">
@@ -59,13 +61,15 @@
 <script>
 async function submitForm() {
   const data = {
-    name: document.getElementById("agency").value,
-    owner_name: document.getElementById("owner").value,
-    email: document.getElementById("email").value,
-    whatsapp: document.getElementById("whatsapp").value,
-    subscription_type: document.getElementById("plan").value,
-    prompt: "You are a luxury real estate assistant."
-  };
+  name: document.getElementById("agency").value,
+  assistant_name: document.getElementById("assistant").value,
+  owner_name: document.getElementById("owner").value,
+  email: document.getElementById("email").value,
+  whatsapp: document.getElementById("whatsapp").value,
+  subscription_type: document.getElementById("plan").value,
+  prompt: "You are a luxury real estate assistant."
+};
+
 
   const res = await fetch("/create-agency", {
     method: "POST",

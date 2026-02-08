@@ -14,7 +14,6 @@ import re
 # -------------------------
 # LOAD ENV VARIABLES
 # -------------------------
-
 BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -22,7 +21,6 @@ load_dotenv(dotenv_path=env_path)
 # -------------------------
 # APP SETUP
 # -------------------------
-
 app = Flask(__name__, static_folder="static")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
@@ -34,7 +32,6 @@ db = SQLAlchemy(app)
 # -------------------------
 # OPENAI CLIENT
 # -------------------------
-
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY is not set.")
@@ -44,13 +41,13 @@ client = OpenAI(api_key=api_key)
 # -------------------------
 # DATABASE MODELS
 # -------------------------
-
 class Agency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     # Basic
     name = db.Column(db.String(100))
     prompt = db.Column(db.Text)
+    assistant_name = db.Column(db.String(100), default="AI Assistant")
 
     # Owner Info
     owner_name = db.Column(db.String(100))
@@ -58,10 +55,9 @@ class Agency(db.Model):
     whatsapp = db.Column(db.String(50))
 
     # Subscription
-    subscription_type = db.Column(db.String(50))  # Basic / Pro / Premium
-    status = db.Column(db.String(50), default="Pending")  # Pending / Active / Expired
+    subscription_type = db.Column(db.String(50))
+    status = db.Column(db.String(50), default="Pending")
 
-    # Dates
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Lead(db.Model):
@@ -77,13 +73,12 @@ class Lead(db.Model):
 # -------------------------
 # ROUTES
 # -------------------------
-
 @app.route("/")
 def home():
     return "Luxury Leads AI SaaS is Running"
 
 # ---------- CREATE AGENCY ----------
-@app.route("/create-agency", methods=["POST", "OPTIONS"])
+@app.route("/create-agency", methods=["POST","OPTIONS"])
 def create_agency():
     if request.method == "OPTIONS":
         return "", 200
@@ -93,6 +88,7 @@ def create_agency():
     agency = Agency(
         name=data.get("name"),
         prompt=data.get("prompt"),
+        assistant_name=data.get("assistant_name","AI Assistant"),
         owner_name=data.get("owner_name"),
         email=data.get("email"),
         whatsapp=data.get("whatsapp"),
@@ -103,25 +99,25 @@ def create_agency():
     db.session.add(agency)
     db.session.commit()
 
-    return jsonify({
-        "message": "Agency created",
-        "agency_id": agency.id
-    })
-
+    return jsonify({"agency_id": agency.id})
 
 # ---------- AGENCY INFO ----------
 @app.route("/agency/<int:agency_id>")
 def agency_info(agency_id):
     agency = Agency.query.get(agency_id)
     if not agency:
-        return jsonify({"error": "Invalid agency ID"}), 404
-    return jsonify({"name": agency.name})
+        return jsonify({"error":"Invalid agency ID"}),404
+
+    return jsonify({
+        "name": agency.name,
+        "assistant": agency.assistant_name or "AI Assistant"
+    })
 
 # ---------- CHAT ----------
-@app.route("/chat", methods=["POST", "OPTIONS"])
+@app.route("/chat", methods=["POST","OPTIONS"])
 def chat():
     if request.method == "OPTIONS":
-        return "", 200
+        return "",200
 
     try:
         data = request.get_json(force=True)
@@ -131,33 +127,47 @@ def chat():
 
         agency = Agency.query.get(agency_id)
         if not agency:
-            return jsonify({"error": "Invalid agency ID"}), 400
+            return jsonify({"error":"Invalid agency ID"}),400
+
+        # ---------- LEAD HUNTER SYSTEM PROMPT ----------
+        system_prompt = f"""
+You are {agency.assistant_name}, a professional luxury real estate sales assistant.
+
+RULES:
+- Reply short like WhatsApp (2–4 lines max)
+- Friendly and human tone
+- Never say you are AI
+- Never give long essays or articles
+- Ask only ONE question each reply
+- Gradually collect:
+  Name, Budget, Location, Timeline, Email, Phone
+- Your goal is to generate leads for the agency
+- Sound like a real property consultant
+"""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": agency.prompt},
-                {"role": "user", "content": user_message}
+                {"role":"system","content":system_prompt},
+                {"role":"user","content":user_message}
             ]
         )
 
         ai_reply = response.choices[0].message.content
 
-        # -------------------------
-        # ADVANCED LEAD DETECTION
-        # -------------------------
-        email_match = re.search(r"\S+@\S+\.\S+", user_message)
-        phone_match = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
-        budget_match = re.search(r"\b\d+(\.\d+)?\s?(m|million|k)?\b", user_message, re.IGNORECASE)
-        name_match = re.search(r"(?:i am|i'm|my name is)\s+([A-Za-z]+)", user_message, re.IGNORECASE)
+        # ---------- LEAD DETECTION ----------
+        email = re.search(r"\S+@\S+\.\S+", user_message)
+        phone = re.search(r"\+?\d[\d\s\-]{7,}\d", user_message)
+        budget = re.search(r"\b\d+(\.\d+)?\s?(m|million|k)?\b", user_message, re.IGNORECASE)
+        name = re.search(r"(?:i am|i'm|my name is)\s+([A-Za-z]+)", user_message, re.IGNORECASE)
 
-        if email_match or phone_match or name_match or budget_match:
+        if email or phone or budget or name:
             lead = Lead(
                 agency_id=agency_id,
-                name=name_match.group(1) if name_match else None,
-                email=email_match.group(0) if email_match else None,
-                phone=phone_match.group(0) if phone_match else None,
-                budget=budget_match.group(0) if budget_match else None,
+                name=name.group(1) if name else None,
+                email=email.group(0) if email else None,
+                phone=phone.group(0) if phone else None,
+                budget=budget.group(0) if budget else None,
                 message=user_message
             )
             db.session.add(lead)
@@ -167,7 +177,7 @@ def chat():
 
     except Exception as e:
         print("CHAT ERROR:", e)
-        return jsonify({"error": "Server error"}), 500
+        return jsonify({"error":"Server error"}),500
 
 # ---------- ADMIN DASHBOARD ----------
 @app.route("/admin/<int:agency_id>")
@@ -175,17 +185,17 @@ def admin_dashboard(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
     return render_template("admin.html", leads=leads)
 
+# ---------- OWNER LOGIN ----------
 @app.route("/owner-login", methods=["GET","POST"])
 def owner_login():
-    if request.method == "POST":
+    if request.method=="POST":
         agency_id = request.form.get("agency_id")
         password = request.form.get("password")
 
-        if password == "1234" and agency_id.isdigit():
-            return redirect(f"/owner-dashboard/{int(agency_id)}")
+        if password=="1234" and agency_id.isdigit():
+            return redirect(f"/owner-dashboard/{agency_id}")
 
     return render_template("owner_login.html")
-
 
 @app.route("/owner-dashboard/<int:agency_id>")
 def owner_dashboard(agency_id):
@@ -196,7 +206,6 @@ def owner_dashboard(agency_id):
 def signup():
     return render_template("signup.html")
 
-
 # ---------- EXPORT EXCEL ----------
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
@@ -204,28 +213,25 @@ def export_leads(agency_id):
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Leads"
+    ws.title="Leads"
 
-    headers = ["Sr #", "Name", "Email", "Phone", "Budget", "Message", "Date", "Time"]
-
+    headers=["Sr #","Name","Email","Phone","Budget","Message","Date","Time"]
     ws.append(headers)
 
-    bold = Font(bold=True)
-    border = Border(left=Side(style='thin'),
-                    right=Side(style='thin'),
-                    top=Side(style='thin'),
-                    bottom=Side(style='thin'))
+    bold=Font(bold=True)
+    border=Border(left=Side(style='thin'),right=Side(style='thin'),
+                  top=Side(style='thin'),bottom=Side(style='thin'))
 
     for cell in ws[1]:
-        cell.font = bold
-        cell.border = border
+        cell.font=bold
+        cell.border=border
 
-    for i, lead in enumerate(leads, start=1):
+    for i,lead in enumerate(leads,start=1):
         date = lead.created_at.strftime("%Y-%m-%d") if lead.created_at else ""
         time = lead.created_at.strftime("%H:%M") if lead.created_at else ""
 
         ws.append([
-            i,                     # Sr #
+            i,
             lead.name or "",
             lead.email or "",
             lead.phone or "",
@@ -235,40 +241,26 @@ def export_leads(agency_id):
             time
         ])
 
-
-    buffer = BytesIO()
+    buffer=BytesIO()
     wb.save(buffer)
     buffer.seek(0)
 
-    return Response(
-        buffer,
+    return Response(buffer,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=leads.xlsx"}
+        headers={"Content-Disposition":"attachment; filename=leads.xlsx"}
     )
+
+# ---------- OWNER PANEL ----------
 @app.route("/owner")
 def owner_panel():
     return render_template("owner.html")
 
-@app.route("/agencies")
-def get_agencies():
-    agencies = Agency.query.all()
-    return jsonify([{"id":a.id,"name":a.name} for a in agencies])
-
-@app.route("/delete-agency/<int:id>", methods=["DELETE"])
-def delete_agency(id):
-    agency = Agency.query.get(id)
-    if agency:
-        db.session.delete(agency)
-        db.session.commit()
-    return jsonify({"status":"deleted"})
-
 # -------------------------
-# INIT (DEV / PROD SAFE)
+# INIT SAFE
 # -------------------------
-ENV = os.getenv("ENV", "DEV")
+ENV = os.getenv("ENV","DEV")
 
 with app.app_context():
-    if ENV == "DEV":
+    if ENV=="DEV":
         db.drop_all()
     db.create_all()
-
