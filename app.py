@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, Response
+from flask import Flask, request, jsonify, render_template, Response, redirect
 from flask_sqlalchemy import SQLAlchemy
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -181,9 +181,8 @@ def owner_login():
         agency_id = request.form.get("agency_id")
         password = request.form.get("password")
 
-        # TEMP SIMPLE PASSWORD
-        if password == "1234":
-            return redirect(f"/owner-dashboard/{agency_id}")
+        if password == "1234" and agency_id.isdigit():
+            return redirect(f"/owner-dashboard/{int(agency_id)}")
 
     return render_template("owner_login.html")
 
@@ -192,6 +191,7 @@ def owner_login():
 def owner_dashboard(agency_id):
     leads = Lead.query.filter_by(agency_id=agency_id).all()
     return render_template("admin.html", leads=leads)
+
 
 # ---------- EXPORT EXCEL ----------
 @app.route("/export/<int:agency_id>")
