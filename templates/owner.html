@@ -1,68 +1,320 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Owner Panel</title>
+    <title>Super Admin Panel - Luxury Leads AI</title>
     <style>
-        body { font-family: Arial; padding: 40px; background:#111; color:white; }
-        input, button { padding:10px; margin:5px; }
-        table { width:100%; border-collapse: collapse; margin-top:20px; }
-        th, td { border:1px solid #333; padding:10px; }
-        th { background:#000; }
-        button { cursor:pointer; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body { 
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: white;
+            padding: 0;
+        }
+        .header {
+            background: #020617;
+            padding: 20px 40px;
+            border-bottom: 2px solid #1e293b;
+        }
+        .header h2 {
+            color: #38bdf8;
+            font-size: 24px;
+        }
+        .header p {
+            color: #64748b;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .container {
+            padding: 40px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .section {
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+        .section h3 {
+            color: #38bdf8;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+        .form-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        input, textarea, button { 
+            padding: 12px;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            background: #0f172a;
+            color: white;
+            font-size: 14px;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+        input {
+            flex: 1;
+            min-width: 200px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 80px;
+            resize: vertical;
+        }
+        button { 
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        .btn-create {
+            background: #22c55e;
+            color: black;
+            border: none;
+            padding: 12px 30px;
+        }
+        .btn-create:hover {
+            background: #16a34a;
+        }
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+        .btn-delete:hover {
+            background: #dc2626;
+        }
+        table { 
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td { 
+            border: 1px solid #334155;
+            padding: 14px;
+            text-align: left;
+        }
+        th { 
+            background: #0f172a;
+            color: #38bdf8;
+            font-weight: bold;
+        }
+        tr:hover {
+            background: #334155;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+        .status-active {
+            color: #22c55e;
+            font-weight: bold;
+        }
+        .status-pending {
+            color: #eab308;
+            font-weight: bold;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #64748b;
+        }
     </style>
 </head>
 <body>
 
-<h2>Agency Owner Panel</h2>
+<div class="header">
+    <h2>⚙️ Super Admin Panel</h2>
+    <p>Manage all agencies and their configurations</p>
+</div>
 
-<h3>Create Agency</h3>
-<input id="name" placeholder="Agency Name">
-<input id="prompt" placeholder="AI Prompt">
-<button onclick="createAgency()">Create</button>
+<div class="container">
 
-<h3>Existing Agencies</h3>
-<table id="agencyTable">
-<tr>
-<th>ID</th>
-<th>Name</th>
-<th>Delete</th>
-</tr>
-</table>
+    <div class="section">
+        <h3>➕ Create New Agency</h3>
+        <div class="form-row">
+            <input id="name" placeholder="Agency Name (e.g., Elite Properties)">
+            <input id="assistant_name" placeholder="AI Assistant Name (e.g., Sophia)">
+            <input id="owner_name" placeholder="Owner Name">
+        </div>
+        <div class="form-row">
+            <input id="email" type="email" placeholder="Email Address">
+            <input id="whatsapp" placeholder="WhatsApp Number">
+        </div>
+        <div class="form-row">
+            <textarea id="prompt" placeholder="AI Prompt (Optional - Leave empty for default)">You are a luxury real estate assistant.</textarea>
+        </div>
+        <button class="btn-create" onclick="createAgency()">✨ Create Agency</button>
+    </div>
+
+    <div class="section">
+        <h3>📋 All Agencies</h3>
+        <div id="loading" class="loading">⏳ Loading agencies...</div>
+        <table id="agencyTable" style="display: none;">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Agency Name</th>
+                    <th>Assistant Name</th>
+                    <th>Owner</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="agencyBody">
+            </tbody>
+        </table>
+        <div id="emptyState" class="empty-state" style="display: none;">
+            📭 No agencies created yet. Create your first one above!
+        </div>
+    </div>
+
+</div>
 
 <script>
 async function loadAgencies() {
-  const res = await fetch("/agencies");
-  const data = await res.json();
-  const table = document.getElementById("agencyTable");
-
-  data.forEach(a => {
-    table.innerHTML += `
-      <tr>
-        <td>${a.id}</td>
-        <td>${a.name}</td>
-        <td><button onclick="deleteAgency(${a.id})">X</button></td>
-      </tr>`;
-  });
+    const loading = document.getElementById("loading");
+    const table = document.getElementById("agencyTable");
+    const emptyState = document.getElementById("emptyState");
+    const tbody = document.getElementById("agencyBody");
+    
+    try {
+        const res = await fetch("/agencies");
+        const data = await res.json();
+        
+        loading.style.display = "none";
+        
+        if (data.length === 0) {
+            emptyState.style.display = "block";
+            table.style.display = "none";
+        } else {
+            emptyState.style.display = "none";
+            table.style.display = "table";
+            
+            tbody.innerHTML = "";
+            
+            data.forEach(a => {
+                const statusClass = a.status === "Active" ? "status-active" : "status-pending";
+                const createdDate = new Date(a.created_at).toLocaleDateString();
+                
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong>${a.id}</strong></td>
+                        <td>${a.name}</td>
+                        <td>${a.assistant_name || "AI Assistant"}</td>
+                        <td>${a.owner_name || "—"}</td>
+                        <td>${a.email}</td>
+                        <td class="${statusClass}">${a.status}</td>
+                        <td>${createdDate}</td>
+                        <td>
+                            <button class="btn-delete" onclick="deleteAgency(${a.id})">🗑️ Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+    } catch (error) {
+        loading.innerHTML = "❌ Failed to load agencies";
+        console.error("Error loading agencies:", error);
+    }
 }
 
 async function createAgency() {
-  const name = document.getElementById("name").value;
-  const prompt = document.getElementById("prompt").value;
-
-  await fetch("/create-agency", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({name,prompt})
-  });
-
-  location.reload();
+    const name = document.getElementById("name").value.trim();
+    const assistant_name = document.getElementById("assistant_name").value.trim();
+    const owner_name = document.getElementById("owner_name").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const whatsapp = document.getElementById("whatsapp").value.trim();
+    const prompt = document.getElementById("prompt").value.trim();
+    
+    if (!name || !email) {
+        alert("❌ Agency Name and Email are required!");
+        return;
+    }
+    
+    const btnCreate = event.target;
+    btnCreate.disabled = true;
+    btnCreate.textContent = "⏳ Creating...";
+    
+    try {
+        const res = await fetch("/create-agency", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                name,
+                assistant_name: assistant_name || "AI Assistant",
+                owner_name,
+                email,
+                whatsapp,
+                prompt: prompt || "You are a luxury real estate assistant.",
+                subscription_type: "Basic"
+            })
+        });
+        
+        const result = await res.json();
+        
+        if (res.ok) {
+            alert(`✅ Agency created successfully!\n\nAgency ID: ${result.agency_id}\nDefault Password: admin123`);
+            
+            // Clear form
+            document.getElementById("name").value = "";
+            document.getElementById("assistant_name").value = "";
+            document.getElementById("owner_name").value = "";
+            document.getElementById("email").value = "";
+            document.getElementById("whatsapp").value = "";
+            document.getElementById("prompt").value = "You are a luxury real estate assistant.";
+            
+            // Reload table
+            loadAgencies();
+        } else {
+            alert("❌ Error: " + (result.error || "Failed to create agency"));
+        }
+    } catch (error) {
+        alert("❌ Network error. Please try again.");
+        console.error("Error creating agency:", error);
+    } finally {
+        btnCreate.disabled = false;
+        btnCreate.textContent = "✨ Create Agency";
+    }
 }
 
 async function deleteAgency(id) {
-  await fetch(`/delete-agency/${id}`, {method:"DELETE"});
-  location.reload();
+    if (!confirm(`⚠️ Are you sure you want to delete Agency ID ${id}?\n\nThis will also delete all leads associated with this agency.`)) {
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/delete-agency/${id}`, {
+            method: "DELETE"
+        });
+        
+        if (res.ok) {
+            alert("✅ Agency deleted successfully!");
+            loadAgencies();
+        } else {
+            alert("❌ Failed to delete agency");
+        }
+    } catch (error) {
+        alert("❌ Network error. Please try again.");
+        console.error("Error deleting agency:", error);
+    }
 }
 
+// Load agencies on page load
 loadAgencies();
 </script>
 

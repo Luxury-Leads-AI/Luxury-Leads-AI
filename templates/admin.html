@@ -76,7 +76,7 @@
     }
 
     tr:hover {
-      background: #020617;
+      background: #1e293b;
     }
 
     .empty {
@@ -84,17 +84,29 @@
       padding: 30px;
       color: #64748b;
     }
+
+    .insights-cell {
+      max-width: 300px;
+      white-space: normal;
+      line-height: 1.4;
+      color: #cbd5e1;
+    }
+
+    .no-data {
+      color: #64748b;
+      font-style: italic;
+    }
   </style>
 </head>
 
 <body>
 
 <div class="topbar">
-  <div class="title">Agency Leads Dashboard</div>
+  <div class="title">📊 Agency Leads Dashboard</div>
 
   <div class="actions">
-    <a href="/export/{{ leads[0].agency_id if leads else 1 }}" class="export-btn">Export Excel</a>
-    <a href="/owner-login" class="logout-btn">Logout</a>
+    <a href="/export/{{ leads[0].agency_id if leads else 1 }}" class="export-btn">📥 Export Excel</a>
+    <a href="/owner-login" class="logout-btn">🚪 Logout</a>
   </div>
 </div>
 
@@ -111,7 +123,7 @@
       <th>Email</th>
       <th>Phone</th>
       <th>Budget</th>
-      <th>Message</th>
+      <th>Customer Insights</th>
       <th>Date</th>
       <th>Time</th>
     </tr>
@@ -120,18 +132,18 @@
       {% for lead in leads %}
       <tr>
         <td>{{ loop.index }}</td>
-        <td>{{ lead.name }}</td>
-        <td>{{ lead.email }}</td>
-        <td>{{ lead.phone }}</td>
-        <td>{{ lead.budget }}</td>
-        <td>{{ lead.message }}</td>
-        <td>{{ lead.created_at.strftime('%Y-%m-%d') if lead.created_at }}</td>
-        <td>{{ lead.created_at.strftime('%H:%M') if lead.created_at }}</td>
+        <td>{{ lead.name if lead.name else '<span class="no-data">—</span>' }}</td>
+        <td>{{ lead.email if lead.email else '<span class="no-data">—</span>' }}</td>
+        <td>{{ lead.phone if lead.phone else '<span class="no-data">—</span>' }}</td>
+        <td>{{ lead.budget if lead.budget else '<span class="no-data">—</span>' }}</td>
+        <td class="insights-cell">{{ lead.message if lead.message else '<span class="no-data">No insights available</span>' }}</td>
+        <td>{{ lead.created_at.strftime('%Y-%m-%d') if lead.created_at else '—' }}</td>
+        <td>{{ lead.created_at.strftime('%H:%M') if lead.created_at else '—' }}</td>
       </tr>
       {% endfor %}
     {% else %}
       <tr>
-        <td colspan="8" class="empty">No Leads Yet</td>
+        <td colspan="8" class="empty">📭 No Leads Yet - Share your widget to start collecting leads!</td>
       </tr>
     {% endif %}
 

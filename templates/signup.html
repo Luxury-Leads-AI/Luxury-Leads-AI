@@ -1,88 +1,214 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Activate AI Assistant</title>
+  <title>Activate AI Assistant - Luxury Leads AI</title>
   <style>
     body {
-      font-family: Arial;
+      font-family: Arial, sans-serif;
       background: #111;
       color: white;
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
+      min-height: 100vh;
+      padding: 20px;
     }
     .box {
       background: #1c1c1c;
-      padding: 30px;
+      padding: 40px;
       border-radius: 12px;
-      width: 400px;
+      width: 100%;
+      max-width: 450px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
     }
-    input, select, button {
+    h2 {
+      margin-top: 0;
+      color: #38bdf8;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 25px;
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      margin-bottom: 5px;
+      font-size: 14px;
+      color: #aaa;
+    }
+    input, select {
       width: 100%;
       padding: 12px;
-      margin: 8px 0;
-      border: none;
+      border: 1px solid #333;
       border-radius: 6px;
+      background: #222;
+      color: white;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #38bdf8;
     }
     button {
-      background: black;
+      width: 100%;
+      padding: 14px;
+      margin-top: 25px;
+      border: none;
+      border-radius: 6px;
+      background: #38bdf8;
       color: white;
+      font-size: 16px;
+      font-weight: bold;
       cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #0ea5e9;
+    }
+    button:disabled {
+      background: #333;
+      cursor: not-allowed;
     }
     #result {
-      margin-top: 15px;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
       font-size: 14px;
+      line-height: 1.6;
+      display: none;
+    }
+    .success {
+      background: #065f46;
+      border: 1px solid #10b981;
+      color: #d1fae5;
+    }
+    .error {
+      background: #7f1d1d;
+      border: 1px solid #ef4444;
+      color: #fecaca;
+    }
+    .embed-code {
+      background: #000;
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 12px;
+      word-wrap: break-word;
+      color: #22c55e;
+    }
+    .helper-text {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
     }
   </style>
 </head>
 <body>
 
 <div class="box">
-  <h2>Activate AI Assistant</h2>
+  <h2>🚀 Activate AI Assistant</h2>
+  <p class="subtitle">Set up your AI-powered lead generation widget</p>
 
-  <input id="agency" placeholder="Agency Name">
-  <input id="assistant" placeholder="AI Assistant Name (e.g. Sophia)">
-  <small style="font-size:12px;color:#aaa;">This name will be used in chats</small>
-  <input id="owner" placeholder="Owner Name">
-  <input id="email" placeholder="Email">
-  <input id="whatsapp" placeholder="WhatsApp">
+  <form id="signupForm" onsubmit="submitForm(event)">
+    <label>Agency Name *</label>
+    <input id="agency" placeholder="e.g., Elite Properties" required>
 
-  <select id="plan">
-    <option>Basic</option>
-    <option>Premium</option>
-  </select>
+    <label>AI Assistant Name *</label>
+    <input id="assistant" placeholder="e.g., Sophia, Alex, Maria" required>
+    <p class="helper-text">This name will appear in customer chats</p>
 
-  <button onclick="submitForm()">Activate</button>
+    <label>Owner Name *</label>
+    <input id="owner" placeholder="Your full name" required>
+
+    <label>Email Address *</label>
+    <input id="email" type="email" placeholder="your@email.com" required>
+    <p class="helper-text">You'll receive lead notifications here</p>
+
+    <label>WhatsApp Number</label>
+    <input id="whatsapp" placeholder="+92 300 1234567">
+
+    <label>Subscription Plan *</label>
+    <select id="plan" required>
+      <option value="Basic">Basic - Free Trial</option>
+      <option value="Premium">Premium - Coming Soon</option>
+    </select>
+
+    <button type="submit" id="submitBtn">🎯 Activate My Assistant</button>
+  </form>
 
   <div id="result"></div>
 </div>
 
 <script>
-async function submitForm() {
+async function submitForm(event) {
+  event.preventDefault();
+  
+  const submitBtn = document.getElementById("submitBtn");
+  const resultDiv = document.getElementById("result");
+  
+  // Disable button during submission
+  submitBtn.disabled = true;
+  submitBtn.textContent = "⏳ Creating your assistant...";
+  
   const data = {
-  name: document.getElementById("agency").value,
-  assistant_name: document.getElementById("assistant").value,
-  owner_name: document.getElementById("owner").value,
-  email: document.getElementById("email").value,
-  whatsapp: document.getElementById("whatsapp").value,
-  subscription_type: document.getElementById("plan").value,
-  prompt: "You are a luxury real estate assistant."
-};
+    name: document.getElementById("agency").value.trim(),
+    assistant_name: document.getElementById("assistant").value.trim(),
+    owner_name: document.getElementById("owner").value.trim(),
+    email: document.getElementById("email").value.trim(),
+    whatsapp: document.getElementById("whatsapp").value.trim(),
+    subscription_type: document.getElementById("plan").value,
+    prompt: "You are a luxury real estate assistant."
+  };
 
+  try {
+    const res = await fetch("/create-agency", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(data)
+    });
 
-  const res = await fetch("/create-agency", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(data)
-  });
+    const json = await res.json();
 
-  const json = await res.json();
+    if (res.ok) {
+      resultDiv.className = "success";
+      resultDiv.style.display = "block";
+      resultDiv.innerHTML = `
+        ✅ <strong>Agency Created Successfully!</strong><br><br>
+        
+        📝 <strong>Your Agency ID:</strong> ${json.agency_id}<br>
+        🔑 <strong>Default Password:</strong> admin123<br><br>
+        
+        <strong>📋 Embed Code (Copy & Paste on your website):</strong>
+        <div class="embed-code">&lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="${json.agency_id}"&gt;&lt;/script&gt;</div>
+        <br>
+        <strong>🔐 Login to view leads:</strong><br>
+        <a href="/owner-login" style="color: #38bdf8;">Click here to login</a>
+      `;
+      
+      // Reset form
+      document.getElementById("signupForm").reset();
+      
+    } else {
+      throw new Error(json.error || "Failed to create agency");
+    }
 
-  document.getElementById("result").innerHTML =
-    `Agency Created!<br><br>
-     Paste this on your website:<br>
-     &lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="${json.agency_id}"&gt;&lt;/script&gt;`;
+  } catch (error) {
+    resultDiv.className = "error";
+    resultDiv.style.display = "block";
+    resultDiv.innerHTML = `
+      ❌ <strong>Error:</strong> ${error.message}<br>
+      Please try again or contact support.
+    `;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "🎯 Activate My Assistant";
+  }
 }
 </script>
 
