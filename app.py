@@ -29,7 +29,14 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 # SECURITY: Restrict CORS to your domain only in production
 CORS(app, resources={r"/*": {"origins": "*"}})  # TODO: Change to your domain
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///luxury_leads.db')
+# Database URL configuration
+database_url = os.getenv('DATABASE_URL', 'sqlite:///luxury_leads.db')
+
+# Fix for psycopg3: Replace postgresql:// with postgresql+psycopg://
+if database_url.startswith('postgresql://'):
+    database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-this-in-production')
 
