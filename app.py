@@ -6,7 +6,7 @@ from pathlib import Path
 from flask_cors import CORS
 from datetime import datetime
 from openpyxl import Workbook
-from openpyxl.styles import Font, Border, Side
+from openpyxl.styles import Font
 from io import BytesIO
 import os
 import re
@@ -25,14 +25,12 @@ load_dotenv(dotenv_path=env_path)
 # APP SETUP
 # -------------------------
 app = Flask(__name__, static_folder="static", template_folder="templates")
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# SECURITY: Restrict CORS to your domain only in production
-CORS(app, resources={r"/*": {"origins": "*"}})  # TODO: Change to your domain
-
-# Database URL configuration
+# -------------------------
+# DATABASE URL FIX
+# -------------------------
 database_url = os.getenv('DATABASE_URL', 'sqlite:///luxury_leads.db')
-
-# Fix for psycopg3: Replace postgresql:// with postgresql+psycopg://
 if database_url.startswith('postgresql://'):
     database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
 
@@ -54,6 +52,7 @@ client = OpenAI(api_key=api_key)
 # -------------------------
 # MEMORY STORE
 # -------------------------
+# Key: (agency_id, session_id) to separate conversations per user
 conversation_memory = {}
 
 # -------------------------
@@ -67,17 +66,17 @@ def send_lead_email(agency, lead):
     if not SMTP_EMAIL or not SMTP_PASSWORD:
         print("⚠️ SMTP credentials not configured")
         return False
-    
+
     try:
         subject = f"🎯 New Lead for {agency.name}"
         body = f"""
 New Lead Received from {agency.name}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 Name: {lead.name or 'Not provided'}
-📧 Email: {lead.email or 'Not provided'}
-📱 Phone: {lead.phone or 'Not provided'}
-💰 Budget: {lead.budget or 'Not provided'}
+👤 Name:    {lead.name or 'Not provided'}
+📧 Email:   {lead.email or 'Not provided'}
+📱 Phone:   {lead.phone or 'Not provided'}
+💰 Budget:  {lead.budget or 'Not provided'}
 
 📝 CUSTOMER INSIGHTS:
 {lead.message or 'No summary available'}
@@ -88,7 +87,6 @@ New Lead Received from {agency.name}
 Login to view all leads:
 https://luxury-leads-ai.onrender.com/owner-login
 """
-
         msg = MIMEText(body)
         msg['Subject'] = subject
         msg['From'] = SMTP_EMAIL
@@ -98,10 +96,10 @@ https://luxury-leads-ai.onrender.com/owner-login
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
-        
+
         print(f"✅ Email sent to {agency.email}")
         return True
-        
+
     except Exception as e:
         print(f"❌ EMAIL ERROR: {e}")
         return False
@@ -113,13 +111,11 @@ def generate_lead_summary(conversation_history):
     an intelligent summary of customer needs and preferences
     """
     try:
-        # Build full conversation context
         conversation_text = "\n".join([
             f"{'Customer' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
             for msg in conversation_history
         ])
-        
-        # AI analysis prompt
+
         analysis_prompt = f"""
 Analyze this real estate conversation and create a SHORT business summary (max 2-3 sentences).
 
@@ -141,11 +137,11 @@ Write a concise business summary that helps a real estate agent quickly understa
             temperature=0.3,
             max_tokens=100
         )
-        
+
         summary = response.choices[0].message.content.strip()
-        print(f"✅ AI Summary generated: {summary[:50]}...")
+        print(f"✅ AI Summary generated")
         return summary
-        
+
     except Exception as e:
         print(f"❌ Summary generation error: {e}")
         return "Customer engaged in conversation about properties."
@@ -156,25 +152,25 @@ Write a concise business summary that helps a real estate agent quickly understa
 # -------------------------
 class Agency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    
+
     name = db.Column(db.String(100), nullable=False)
     prompt = db.Column(db.Text)
     assistant_name = db.Column(db.String(100), default="AI Assistant")
-    
+
     owner_name = db.Column(db.String(100))
     email = db.Column(db.String(150), nullable=False)
     whatsapp = db.Column(db.String(50))
-    
-    password_hash = db.Column(db.String(200))  # For owner login
-    
+
+    password_hash = db.Column(db.String(200))
+
     subscription_type = db.Column(db.String(50))
     status = db.Column(db.String(50), default="Active")
-    
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
-    
+
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
@@ -182,74 +178,81 @@ class Agency(db.Model):
 class Lead(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agency_id = db.Column(db.Integer, nullable=False)
-    
+
     name = db.Column(db.String(100))
     email = db.Column(db.String(100))
     phone = db.Column(db.String(50))
     budget = db.Column(db.String(50))
-    message = db.Column(db.Text)  # Now stores AI-generated summary
-    
+    message = db.Column(db.Text)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
 # -------------------------
-# ROUTES - TEMPLATE PAGES
+# TEMPLATE ROUTES
 # -------------------------
 
 @app.route("/")
 def home():
-    """Landing page"""
     return render_template("index.html")
 
 
 @app.route("/signup")
 def signup():
-    """Agency signup page"""
     return render_template("signup.html")
 
 
 @app.route("/owner-login", methods=["GET", "POST"])
 def owner_login():
-    """Owner login page with authentication"""
     if request.method == "GET":
         return render_template("owner_login.html")
-    
-    # POST - Handle login
-    agency_id = request.form.get("agency_id")
-    password = request.form.get("password")
-    
+
+    agency_id = request.form.get("agency_id", "").strip()
+    password = request.form.get("password", "").strip()
+
     if not agency_id or not password:
-        return "Missing credentials", 400
-    
-    agency = Agency.query.get(agency_id)
-    
+        return redirect("/owner-login?error=Missing+credentials")
+
+    try:
+        agency = db.session.get(Agency, int(agency_id))
+    except Exception:
+        return redirect("/owner-login?error=Invalid+Agency+ID")
+
     if not agency:
-        return "Invalid Agency ID", 401
-    
-    # For now, simple password check (default: "admin123")
-    # TODO: Implement proper password check with agency.check_password()
+        return redirect("/owner-login?error=Agency+not+found")
+
     if password == "admin123":
-        session['agency_id'] = agency_id
+        session['agency_id'] = str(agency_id)
         return redirect(f"/admin?agency_id={agency_id}")
     else:
-        return "Invalid password", 401
+        return redirect("/owner-login?error=Invalid+password")
 
 
 @app.route("/admin")
 def admin():
-    """Agency dashboard - shows leads"""
     agency_id = request.args.get("agency_id")
-    
+
     if not agency_id:
-        return "Agency ID required", 400
-    
-    leads = Lead.query.filter_by(agency_id=agency_id).order_by(Lead.created_at.desc()).all()
-    
-    return render_template("admin.html", leads=leads)
+        return redirect("/owner-login?error=Please+login+first")
+
+    try:
+        leads = Lead.query.filter_by(
+            agency_id=int(agency_id)
+        ).order_by(Lead.created_at.desc()).all()
+
+        agency = db.session.get(Agency, int(agency_id))
+        if not agency:
+            return redirect("/owner-login?error=Agency+not+found")
+
+        return render_template("admin.html", leads=leads, agency=agency)
+
+    except Exception as e:
+        print(f"❌ ADMIN ERROR: {e}")
+        return redirect("/owner-login?error=Something+went+wrong")
 
 
 @app.route("/owner")
 def owner():
-    """Owner panel for managing agencies"""
     return render_template("owner.html")
 
 
@@ -259,22 +262,19 @@ def owner():
 
 @app.route("/ping")
 def ping():
-    """Health check"""
     return jsonify({"status": "ok", "message": "pong"})
 
 
 @app.route("/create-agency", methods=["POST", "OPTIONS"])
 def create_agency():
-    """Create new agency"""
     if request.method == "OPTIONS":
         return "", 200
-    
+
     data = request.json
-    
-    # Validation
+
     if not data.get("name") or not data.get("email"):
         return jsonify({"error": "Name and email required"}), 400
-    
+
     agency = Agency(
         name=data.get("name"),
         prompt=data.get("prompt", "You are a luxury real estate assistant."),
@@ -285,13 +285,12 @@ def create_agency():
         subscription_type=data.get("subscription_type", "Basic"),
         status="Active"
     )
-    
-    # Set default password
+
     agency.set_password("admin123")
-    
+
     db.session.add(agency)
     db.session.commit()
-    
+
     return jsonify({
         "agency_id": agency.id,
         "message": "Agency created successfully"
@@ -300,12 +299,13 @@ def create_agency():
 
 @app.route("/agencies")
 def get_agencies():
-    """Get all agencies (for owner panel)"""
     agencies = Agency.query.all()
-    
+
     return jsonify([{
         "id": a.id,
         "name": a.name,
+        "assistant_name": a.assistant_name or "AI Assistant",
+        "owner_name": a.owner_name or "—",
         "email": a.email,
         "status": a.status,
         "created_at": a.created_at.isoformat()
@@ -314,30 +314,25 @@ def get_agencies():
 
 @app.route("/delete-agency/<int:agency_id>", methods=["DELETE"])
 def delete_agency(agency_id):
-    """Delete agency and all its leads"""
-    agency = Agency.query.get(agency_id)
-    
+    agency = db.session.get(Agency, agency_id)
+
     if not agency:
         return jsonify({"error": "Agency not found"}), 404
-    
-    # Delete all leads first
+
     Lead.query.filter_by(agency_id=agency_id).delete()
-    
-    # Delete agency
     db.session.delete(agency)
     db.session.commit()
-    
+
     return jsonify({"message": "Agency deleted"})
 
 
 @app.route("/agency/<int:agency_id>")
 def agency_info(agency_id):
-    """Get agency info for widget"""
-    agency = Agency.query.get(agency_id)
-    
+    agency = db.session.get(Agency, agency_id)
+
     if not agency:
         return jsonify({"error": "Invalid agency ID"}), 404
-    
+
     return jsonify({
         "name": agency.name,
         "assistant": agency.assistant_name or "AI Assistant"
@@ -346,89 +341,103 @@ def agency_info(agency_id):
 
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
-    """Chat endpoint with intelligent lead detection and AI summary"""
     if request.method == "OPTIONS":
         return "", 200
-    
+
     try:
         data = request.get_json(force=True)
-        
-        user_message = data.get("message")
+
+        user_message = data.get("message", "").strip()
         agency_id = int(data.get("agency_id"))
-        
+        # Unique session per visitor using their IP + agency
+        visitor_ip = request.remote_addr or "unknown"
+        session_key = f"{agency_id}_{visitor_ip}"
+
         if not user_message:
             return jsonify({"error": "Message required"}), 400
-        
-        agency = Agency.query.get(agency_id)
+
+        agency = db.session.get(Agency, agency_id)
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
-        
+
         # System prompt
         system_prompt = f"""
-You are {agency.assistant_name}, a professional luxury real estate sales assistant.
+You are {agency.assistant_name}, a professional luxury real estate sales consultant.
 
 Rules:
 - Reply in 1-2 short sentences max
 - Ask ONE question at a time
-- Be friendly and conversational
+- Be warm, friendly and conversational
 - Gradually collect: name, budget, location preference, email, phone
-- Never repeat questions
-- If user gives info, acknowledge and ask next question naturally
-- Sound human, not robotic
+- Never repeat questions already asked
+- Acknowledge what user says before asking next question
+- Sound human, never robotic
+- If user seems ready, tell them an agent will contact them soon
 """
-        
-        # Conversation memory
-        if agency_id not in conversation_memory:
-            conversation_memory[agency_id] = []
-        
-        history = conversation_memory[agency_id]
+
+        # Per-visitor conversation memory
+        if session_key not in conversation_memory:
+            conversation_memory[session_key] = []
+
+        history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
-        
-        # Build messages (last 10 for context)
-        messages = [{"role": "system", "content": system_prompt}] + history[-10:]
-        
+
+        # Build messages
+        messages = [{"role": "system", "content": system_prompt}] + history[-20:]
+
         # Call OpenAI
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
             temperature=0.7,
-            max_tokens=150
+            max_tokens=200
         )
-        
+
         ai_reply = response.choices[0].message.content
         history.append({"role": "assistant", "content": ai_reply})
-        
-        # LEAD DETECTION - Improved regex
-        email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", user_message)
-        phone_match = re.search(r"\+?\d[\d\s\-\(\)]{7,}\d", user_message)
-        budget_match = re.search(r"\$?\d+[\d,]*\.?\d*\s?(million|m|k|thousand|lakh|crore|pkr|rs)?\b", user_message, re.IGNORECASE)
-        name_match = re.search(r"(?:i am|i'm|my name is|call me|this is)\s+([A-Z][a-z]+)", user_message, re.IGNORECASE)
-        
-        # Save lead if ANY valuable info detected OR conversation has meaningful content
+
+        # LEAD DETECTION
+        email_match = re.search(
+            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+            user_message
+        )
+        phone_match = re.search(
+            r"\+?\d[\d\s\-\(\)]{7,}\d",
+            user_message
+        )
+        budget_match = re.search(
+            r"\$?\d+[\d,]*\.?\d*\s?(million|m|k|thousand|lakh|crore|pkr|rs)?\b",
+            user_message,
+            re.IGNORECASE
+        )
+        name_match = re.search(
+            r"(?:i am|i'm|my name is|call me|this is)\s+([A-Z][a-z]+)",
+            user_message,
+            re.IGNORECASE
+        )
+
+        # Save lead if valuable info detected OR 6+ messages exchanged
         if email_match or phone_match or budget_match or name_match or len(history) >= 6:
-            
-            # Generate AI summary of the conversation
+
             ai_summary = generate_lead_summary(history)
-            
+
             lead = Lead(
                 agency_id=agency_id,
                 name=name_match.group(1) if name_match else None,
                 email=email_match.group(0) if email_match else None,
                 phone=phone_match.group(0) if phone_match else None,
                 budget=budget_match.group(0) if budget_match else None,
-                message=ai_summary  # AI-generated intelligent summary
+                message=ai_summary
             )
-            
+
             db.session.add(lead)
             db.session.commit()
-            
-            print(f"✅ Lead saved with AI summary: {lead.id}")
-            
-            # Send email notification
+
+            print(f"✅ Lead saved: ID {lead.id}")
             send_lead_email(agency, lead)
-        
+
         return jsonify({"reply": ai_reply})
-    
+
     except Exception as e:
         print(f"❌ CHAT ERROR: {e}")
         return jsonify({"error": "Server error", "details": str(e)}), 500
@@ -436,24 +445,21 @@ Rules:
 
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
-    """Export leads to Excel"""
     try:
-        leads = Lead.query.filter_by(agency_id=agency_id).order_by(Lead.created_at.desc()).all()
-        
-        # Create workbook
+        leads = Lead.query.filter_by(
+            agency_id=agency_id
+        ).order_by(Lead.created_at.desc()).all()
+
         wb = Workbook()
         ws = wb.active
         ws.title = "Leads"
-        
-        # Headers
+
         headers = ["Sr #", "Name", "Email", "Phone", "Budget", "Customer Insights", "Date", "Time"]
         ws.append(headers)
-        
-        # Style headers
+
         for cell in ws[1]:
             cell.font = Font(bold=True)
-        
-        # Add data
+
         for i, lead in enumerate(leads, start=1):
             ws.append([
                 i,
@@ -461,42 +467,39 @@ def export_leads(agency_id):
                 lead.email or "—",
                 lead.phone or "—",
                 lead.budget or "—",
-                lead.message or "—",  # AI-generated summary
+                lead.message or "—",
                 lead.created_at.strftime('%Y-%m-%d') if lead.created_at else "—",
                 lead.created_at.strftime('%H:%M:%S') if lead.created_at else "—"
             ])
-        
-        # Auto-adjust column widths
+
         for column in ws.columns:
             max_length = 0
             column_letter = column[0].column_letter
             for cell in column:
                 try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(cell.value)
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
                 except:
                     pass
-            adjusted_width = min(max_length + 2, 50)
-            ws.column_dimensions[column_letter].width = adjusted_width
-        
-        # Save to buffer
+            ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
+
         buffer = BytesIO()
         wb.save(buffer)
         buffer.seek(0)
-        
+
         return Response(
             buffer,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename=leads_agency_{agency_id}.xlsx"}
         )
-    
+
     except Exception as e:
         print(f"❌ EXPORT ERROR: {e}")
         return jsonify({"error": "Export failed"}), 500
 
 
 # -------------------------
-# DATABASE INITIALIZATION
+# DATABASE INIT
 # -------------------------
 with app.app_context():
     db.create_all()
@@ -504,7 +507,7 @@ with app.app_context():
 
 
 # -------------------------
-# RUN APP
+# RUN
 # -------------------------
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
