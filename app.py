@@ -716,7 +716,6 @@ with app.app_context():
             
     except Exception as e:
         print(f"⚠️ Migration check: {e}")
-        # Continue anyway - column might already exist
         pass
 
 
@@ -726,3 +725,4 @@ with app.app_context():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
