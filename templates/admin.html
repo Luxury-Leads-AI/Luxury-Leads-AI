@@ -369,56 +369,59 @@
       </tr>
     </thead>
     <tbody>
-    {% if leads %}
-      {% for lead in leads %}
-      <tr class="lead-row" data-quality="{{ lead.intent_score or 1 }}">
-        <td>
-          {% if lead.intent_score == 5 %}
-            <span class="hot-lead-indicator"></span>
-          {% endif %}
-          {{ loop.index }}
-          {% if (now - lead.created_at).days < 1 if now and lead.created_at else False %}
-            <span class="badge badge-new">New</span>
-          {% endif %}
-        </td>
-        <td>
-          <span class="quality-badge quality-{{ lead.intent_score or 1 }}">
-            {% if lead.intent_score == 5 %}🔥 Hot
-            {% elif lead.intent_score == 4 %}💎 High
-            {% elif lead.intent_score == 3 %}⚡ Medium
-            {% elif lead.intent_score == 2 %}💡 Low
-            {% else %}📝 Basic
-            {% endif %}
-          </span>
-        </td>
-        <td>
-          <strong>{{ lead.name if lead.name else '<span class="no-data">—</span>' }}</strong>
-        </td>
-        <td>{{ lead.email if lead.email else '<span class="no-data">—</span>' }}</td>
-        <td>{{ lead.phone if lead.phone else '<span class="no-data">—</span>' }}</td>
-        <td>{{ lead.budget if lead.budget else '<span class="no-data">—</span>' }}</td>
-        <td class="insights-cell">
-          {{ lead.message if lead.message else '<span class="no-data">No insights available</span>' }}
-        </td>
-        <td>{{ lead.created_at.strftime('%Y-%m-%d') if lead.created_at else '—' }}</td>
-        <td>{{ lead.created_at.strftime('%H:%M') if lead.created_at else '—' }}</td>
-      </tr>
-      {% endfor %}
-    {% else %}
-      <tr>
-        <td colspan="9" class="empty">
-          <div class="empty-icon">📭</div>
-          <div style="font-size: 18px; margin-bottom: 8px; font-weight: 600;">No Leads Yet</div>
-          <div style="font-size: 14px; color: #64748b;">
-            Share your widget to start collecting leads!<br>
-            <code style="background: #0f172a; padding: 4px 8px; border-radius: 4px; margin-top: 10px; display: inline-block;">
-              &lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="{{ agency.id }}"&gt;&lt;/script&gt;
-            </code>
-          </div>
-        </td>
-      </tr>
-    {% endif %}
-    </tbody>
+{% if leads %}
+  {% for lead in leads %}
+  <tr class="lead-row" data-quality="{{ lead.intent_score or 1 }}">
+    <td>
+      {% if lead.intent_score == 5 %}
+        <span class="hot-lead-indicator"></span>
+      {% endif %}
+      {{ loop.index }}
+      {% if lead.created_at %}
+        {% set hours_old = ((now() - lead.created_at).total_seconds() / 3600)|int %}
+        {% if hours_old < 24 %}
+          <span class="badge badge-new">New</span>
+        {% endif %}
+      {% endif %}
+    </td>
+    <td>
+      <span class="quality-badge quality-{{ lead.intent_score or 1 }}">
+        {% if lead.intent_score == 5 %}🔥 Hot
+        {% elif lead.intent_score == 4 %}💎 High
+        {% elif lead.intent_score == 3 %}⚡ Medium
+        {% elif lead.intent_score == 2 %}💡 Low
+        {% else %}📝 Basic
+        {% endif %}
+      </span>
+    </td>
+    <td>
+      <strong>{% if lead.name %}{{ lead.name }}{% else %}<span class="no-data">—</span>{% endif %}</strong>
+    </td>
+    <td>{% if lead.email %}{{ lead.email }}{% else %}<span class="no-data">—</span>{% endif %}</td>
+    <td>{% if lead.phone %}{{ lead.phone }}{% else %}<span class="no-data">—</span>{% endif %}</td>
+    <td>{% if lead.budget %}{{ lead.budget }}{% else %}<span class="no-data">—</span>{% endif %}</td>
+    <td class="insights-cell">
+      {% if lead.message %}{{ lead.message }}{% else %}<span class="no-data">No insights available</span>{% endif %}
+    </td>
+    <td>{% if lead.created_at %}{{ lead.created_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
+    <td>{% if lead.created_at %}{{ lead.created_at.strftime('%H:%M') }}{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+{% else %}
+  <tr>
+    <td colspan="9" class="empty">
+      <div class="empty-icon">📭</div>
+      <div style="font-size: 18px; margin-bottom: 8px; font-weight: 600;">No Leads Yet</div>
+      <div style="font-size: 14px; color: #64748b;">
+        Share your widget to start collecting leads!<br>
+        <code style="background: #0f172a; padding: 4px 8px; border-radius: 4px; margin-top: 10px; display: inline-block;">
+          &lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="{{ agency.id }}"&gt;&lt;/script&gt;
+        </code>
+      </div>
+    </td>
+  </tr>
+{% endif %}
+</tbody>
   </table>
 
 </div>
