@@ -682,11 +682,42 @@ def export_leads(agency_id):
 
 
 # -------------------------
-# DATABASE INIT
+# DATABASE INIT & MIGRATION
 # -------------------------
 with app.app_context():
     db.create_all()
-    print("✅ Database initialized")
+    print("✅ Database tables created/verified")
+    
+    # Auto-migration: Add intent_score column if missing
+    try:
+        from sqlalchemy import text, inspect
+        
+        inspector = inspect(db.engine)
+        columns = [col['name'] for col in inspector.get_columns('lead')]
+        
+        if 'intent_score' not in columns:
+            print("🔄 Running migration: Adding intent_score column...")
+            
+            db.session.execute(text("""
+                ALTER TABLE lead 
+                ADD COLUMN intent_score INTEGER DEFAULT 1;
+            """))
+            
+            db.session.execute(text("""
+                UPDATE lead 
+                SET intent_score = 3 
+                WHERE intent_score IS NULL;
+            """))
+            
+            db.session.commit()
+            print("✅ Migration complete: intent_score column added")
+        else:
+            print("✅ intent_score column already exists")
+            
+    except Exception as e:
+        print(f"⚠️ Migration check: {e}")
+        # Continue anyway - column might already exist
+        pass
 
 
 # -------------------------
