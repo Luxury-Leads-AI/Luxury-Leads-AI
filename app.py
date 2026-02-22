@@ -4,7 +4,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from pathlib import Path
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
 from io import BytesIO
@@ -15,6 +15,15 @@ from email.mime.text import MIMEText
 from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
 
+# SendGrid email imports
+try:
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail
+    SENDGRID_AVAILABLE = True
+except ImportError:
+    SENDGRID_AVAILABLE = False
+    print("⚠️ SendGrid not installed - email will use Gmail SMTP only")
+    
 # -------------------------
 # LOAD ENV VARIABLES
 # -------------------------
