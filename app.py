@@ -62,19 +62,10 @@ SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 def send_lead_email(agency, lead):
-    """Send email notification when new lead is captured - ENHANCED LOGGING"""
-    if not SMTP_EMAIL or not SMTP_PASSWORD:
-        print("⚠️ SMTP credentials not configured")
-        print(f"   SMTP_EMAIL exists: {bool(SMTP_EMAIL)}")
-        print(f"   SMTP_PASSWORD exists: {bool(SMTP_PASSWORD)}")
-        return False
-
-    try:
-        print(f"📧 Attempting to send email to: {agency.email}")
-        print(f"   From: {SMTP_EMAIL}")
-        
-        subject = f"🎯 New Lead for {agency.name}"
-        body = f"""
+    """Send email notification - Tries SendGrid first, then Gmail SMTP"""
+    
+    subject = f"🎯 New Lead for {agency.name}"
+    body = f"""
 New Lead Received from {agency.name}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -95,34 +86,66 @@ https://luxury-leads-ai.onrender.com/owner-login
 Agency ID: {agency.id}
 Default Password: admin123
 """
+    
+    # Try SendGrid first (works on Render free tier)
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+    
+    if SENDGRID_API_KEY:
+        try:
+            from sendgrid import SendGridAPIClient
+            from sendgrid.helpers.mail import Mail
+            
+            print(f"📧 Sending via SendGrid to: {agency.email}")
+            
+            message = Mail(
+                from_email=SMTP_EMAIL,
+                to_emails=agency.email,
+                subject=subject,
+                plain_text_content=body
+            )
+            
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+            response = sg.send(message)
+            
+            print(f"✅ EMAIL SENT via SendGrid (Status: {response.status_code})")
+            return True
+            
+        except Exception as e:
+            print(f"⚠️ SendGrid failed: {e}")
+            print("   Trying Gmail SMTP as backup...")
+    
+    # Fallback to Gmail SMTP (may be blocked on Render)
+    if not SMTP_EMAIL or not SMTP_PASSWORD:
+        print("⚠️ SMTP credentials not configured")
+        return False
+
+    try:
+        print(f"📧 Attempting Gmail SMTP to: {agency.email}")
+        
         msg = MIMEText(body)
         msg['Subject'] = subject
         msg['From'] = SMTP_EMAIL
         msg['To'] = agency.email
 
-        print("   Connecting to Gmail SMTP server...")
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
-        
-        print("   Logging in...")
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
-        
-        print("   Sending message...")
         server.send_message(msg)
         server.quit()
 
-        print(f"✅ EMAIL SENT SUCCESSFULLY to {agency.email}")
+        print(f"✅ EMAIL SENT via Gmail SMTP")
         return True
 
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"❌ SMTP AUTH ERROR: Invalid credentials")
-        print(f"   Details: {e}")
+    except OSError as e:
+        if e.errno == 101:
+            print(f"❌ Network Error: Render is blocking Gmail SMTP (port 465)")
+            print(f"   Solution: Set up SendGrid API key in environment variables")
+            print(f"   Sign up at: https://signup.sendgrid.com/")
+        else:
+            print(f"❌ Network Error: {e}")
         return False
-    except smtplib.SMTPException as e:
-        print(f"❌ SMTP ERROR: {e}")
-        return False
+        
     except Exception as e:
-        print(f"❌ GENERAL EMAIL ERROR: {type(e).__name__}")
-        print(f"   Details: {e}")
+        print(f"❌ EMAIL ERROR: {type(e).__name__}: {e}")
         return False
 
 
@@ -306,7 +329,7 @@ def admin():
         if not agency:
             return redirect("/owner-login?error=Agency+not+found")
 
-        return render_template("admin.html", leads=leads, agency=agency)
+        return render_template("admin.html", leads=leads, agency=agency, now=datetime.utcnow)
 
     except Exception as e:
         print(f"❌ ADMIN ERROR: {e}")
@@ -725,4 +748,3 @@ with app.app_context():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
-
