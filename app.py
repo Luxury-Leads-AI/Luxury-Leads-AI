@@ -23,7 +23,7 @@ try:
 except ImportError:
     SENDGRID_AVAILABLE = False
     print("⚠️ SendGrid not installed - email will use Gmail SMTP only")
-    
+
 # -------------------------
 # LOAD ENV VARIABLES
 # -------------------------
@@ -338,7 +338,7 @@ def admin():
         if not agency:
             return redirect("/owner-login?error=Agency+not+found")
 
-        return render_template("admin.html", leads=leads, agency=agency, now=datetime.utcnow)
+        return render_template("admin.html", leads=leads, agency=agency, now=datetime.utcnow())
 
     except Exception as e:
         print(f"❌ ADMIN ERROR: {e}")
