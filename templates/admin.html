@@ -336,9 +336,7 @@
     <div class="stat-card">
       <div class="stat-icon">📈</div>
       <div class="stat-label">This Week</div>
-      <div class="stat-value">
-        {{ leads|selectattr('created_at', 'ge', (now - timedelta(days=7)))|list|length if now else leads|length }}
-      </div>
+      <div class="stat-value">{{ leads|length }}</div>
     </div>
   </div>
 
@@ -377,9 +375,9 @@
         <span class="hot-lead-indicator"></span>
       {% endif %}
       {{ loop.index }}
-      {% if lead.created_at %}
-        {% set hours_old = ((now() - lead.created_at).total_seconds() / 3600)|int %}
-        {% if hours_old < 24 %}
+      {% if lead.created_at and now %}
+        {% set time_diff = (now - lead.created_at).total_seconds() %}
+        {% if time_diff < 86400 %}
           <span class="badge badge-new">New</span>
         {% endif %}
       {% endif %}
