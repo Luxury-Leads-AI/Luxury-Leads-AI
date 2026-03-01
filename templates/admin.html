@@ -37,7 +37,7 @@
       margin-top: 4px;
     }
 
-    .actions a {
+    .actions a, .actions button {
       text-decoration: none;
       padding: 10px 20px;
       border-radius: 8px;
@@ -46,9 +46,11 @@
       font-weight: 600;
       transition: transform 0.2s, box-shadow 0.2s;
       display: inline-block;
+      border: none;
+      cursor: pointer;
     }
 
-    .actions a:hover {
+    .actions a:hover, .actions button:hover {
       transform: translateY(-2px);
     }
 
@@ -60,6 +62,16 @@
 
     .export-btn:hover {
       box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
+    }
+
+    .clear-all-btn {
+      background: #f59e0b;
+      color: white;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+
+    .clear-all-btn:hover {
+      box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
     }
 
     .logout-btn {
@@ -275,6 +287,26 @@
       color: #22c55e;
     }
 
+    .btn-delete {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-delete:hover {
+      background: #dc2626;
+      transform: scale(1.05);
+    }
+
+    .actions-cell {
+      text-align: center;
+    }
+
     @media (max-width: 768px) {
       .container {
         padding: 20px;
@@ -307,6 +339,9 @@
 
   <div class="actions">
     <a href="/export/{{ agency.id }}" class="export-btn">📥 Export Excel</a>
+    {% if leads %}
+    <button onclick="clearAllLeads()" class="clear-all-btn">🗑️ Clear All Leads</button>
+    {% endif %}
     <a href="/owner-login" class="logout-btn">🚪 Logout</a>
   </div>
 </div>
@@ -364,12 +399,13 @@
         <th>Customer Insights</th>
         <th>Date</th>
         <th>Time</th>
+        <th>Action</th>
       </tr>
     </thead>
     <tbody>
 {% if leads %}
   {% for lead in leads %}
-  <tr class="lead-row" data-quality="{{ lead.intent_score or 1 }}">
+  <tr class="lead-row" data-quality="{{ lead.intent_score or 1 }}" id="lead-{{ lead.id }}">
     <td>
       {% if lead.intent_score == 5 %}
         <span class="hot-lead-indicator"></span>
@@ -403,11 +439,14 @@
     </td>
     <td>{% if lead.created_at %}{{ lead.created_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
     <td>{% if lead.created_at %}{{ lead.created_at.strftime('%H:%M') }}{% else %}—{% endif %}</td>
+    <td class="actions-cell">
+      <button class="btn-delete" onclick="deleteLead({{ lead.id }})">🗑️ Delete</button>
+    </td>
   </tr>
   {% endfor %}
 {% else %}
   <tr>
-    <td colspan="9" class="empty">
+    <td colspan="10" class="empty">
       <div class="empty-icon">📭</div>
       <div style="font-size: 18px; margin-bottom: 8px; font-weight: 600;">No Leads Yet</div>
       <div style="font-size: 14px; color: #64748b;">
@@ -425,6 +464,79 @@
 </div>
 
 <script>
+// Delete single lead
+async function deleteLead(leadId) {
+  if (!confirm('⚠️ Are you sure you want to delete this lead?\n\nThis action cannot be undone.')) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/delete-lead/${leadId}`, {
+      method: 'DELETE'
+    });
+    
+    if (response.ok) {
+      // Remove row from table with animation
+      const row = document.getElementById(`lead-${leadId}`);
+      row.style.opacity = '0';
+      row.style.transform = 'translateX(-20px)';
+      setTimeout(() => {
+        row.remove();
+        
+        // Check if table is now empty
+        const remainingRows = document.querySelectorAll('.lead-row');
+        if (remainingRows.length === 0) {
+          location.reload();
+        }
+      }, 300);
+      
+      // Update stats
+      updateStats();
+    } else {
+      alert('❌ Failed to delete lead. Please try again.');
+    }
+  } catch (error) {
+    alert('❌ Network error. Please check your connection.');
+  }
+}
+
+// Clear all leads
+async function clearAllLeads() {
+  if (!confirm('⚠️ WARNING: Delete ALL leads?\n\nThis will permanently delete all leads from your dashboard.\n\nAre you absolutely sure?')) {
+    return;
+  }
+  
+  if (!confirm('⚠️ FINAL CONFIRMATION\n\nThis action CANNOT be undone!\n\nClick OK to proceed with deletion.')) {
+    return;
+  }
+  
+  const agencyId = new URLSearchParams(window.location.search).get('agency_id');
+  
+  try {
+    const response = await fetch(`/clear-all-leads/${agencyId}`, {
+      method: 'DELETE'
+    });
+    
+    if (response.ok) {
+      alert('✅ All leads have been deleted successfully!');
+      location.reload();
+    } else {
+      alert('❌ Failed to delete leads. Please try again.');
+    }
+  } catch (error) {
+    alert('❌ Network error. Please check your connection.');
+  }
+}
+
+// Update stats after deletion
+function updateStats() {
+  const remainingRows = document.querySelectorAll('.lead-row');
+  const totalLeads = remainingRows.length;
+  
+  // Update total leads counter
+  document.querySelector('.stat-value').textContent = totalLeads;
+}
+
 // Filter leads by quality
 function filterLeads(quality) {
   const rows = document.querySelectorAll('.lead-row');
@@ -452,7 +564,7 @@ function filterLeads(quality) {
   if (visibleRows.length === 0 && quality !== 'all') {
     const emptyRow = document.createElement('tr');
     emptyRow.innerHTML = `
-      <td colspan="9" class="empty">
+      <td colspan="10" class="empty">
         <div class="empty-icon">🔍</div>
         <div style="font-size: 16px;">No leads found with this quality filter</div>
       </td>
@@ -465,10 +577,13 @@ function filterLeads(quality) {
   }
 }
 
-// Auto-refresh every 30 seconds to show new leads
-setInterval(() => {
-  location.reload();
-}, 30000);
+// Add smooth transitions
+document.addEventListener('DOMContentLoaded', () => {
+  const rows = document.querySelectorAll('.lead-row');
+  rows.forEach(row => {
+    row.style.transition = 'opacity 0.3s, transform 0.3s';
+  });
+});
 </script>
 
 </body>
