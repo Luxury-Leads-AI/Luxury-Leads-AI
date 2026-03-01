@@ -73,9 +73,9 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 def send_lead_email(agency, lead):
     """Send email notification - Tries SendGrid first, then Gmail SMTP"""
     
-    subject = f"🎯 New Lead for {agency.name}"
+    subject = f"🎯 New Qualified Lead for {agency.name}"
     body = f"""
-New Lead Received from {agency.name}
+New QUALIFIED Lead Received from {agency.name}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 Name:    {lead.name or 'Not provided'}
@@ -85,6 +85,8 @@ New Lead Received from {agency.name}
 
 📝 CUSTOMER INSIGHTS:
 {lead.message or 'No summary available'}
+
+🌟 Lead Quality: {"⭐" * (lead.intent_score or 1)} ({lead.intent_score}/5)
 
 📅 Date: {lead.created_at.strftime('%Y-%m-%d %H:%M:%S')}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -101,9 +103,6 @@ Default Password: admin123
     
     if SENDGRID_API_KEY:
         try:
-            from sendgrid import SendGridAPIClient
-            from sendgrid.helpers.mail import Mail
-            
             print(f"📧 Sending via SendGrid to: {agency.email}")
             
             message = Mail(
@@ -159,9 +158,7 @@ Default Password: admin123
 
 
 def generate_lead_summary(conversation_history, agency_name):
-    """
-    AI-powered conversation summary with ENHANCED business intelligence
-    """
+    """AI-powered conversation summary with ENHANCED business intelligence"""
     try:
         conversation_text = "\n".join([
             f"{'Customer' if msg['role'] == 'user' else msg.get('name', 'Assistant')}: {msg['content']}"
@@ -186,9 +183,9 @@ Conversation:
 
 Format: "[INTENT] + [REQUIREMENTS] + [NEXT ACTION]"
 
-Example good summary: "Buyer looking for 3-bed villa in Dubai Marina, budget 2-3M AED, wants to move within 3 months. Prioritizes sea view and proximity to metro. Requested tour availability."
+Example: "Buyer looking for 3-bed villa in Dubai Marina, budget 2-3M AED, wants to move within 3 months. Prioritizes sea view and proximity to metro. Ready for property tour."
 
-Write the summary now:"""
+Write summary now:"""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -198,7 +195,7 @@ Write the summary now:"""
         )
 
         summary = response.choices[0].message.content.strip()
-        print(f"✅ AI Summary: {summary[:80]}...")
+        print(f"✅ AI Summary generated")
         return summary
 
     except Exception as e:
@@ -206,37 +203,110 @@ Write the summary now:"""
         return "Customer engaged in property conversation. Review chat history for details."
 
 
-def analyze_lead_intent(conversation_history):
+def analyze_lead_quality(lead_data, conversation_history):
     """
-    Calculate lead quality score (1-5) based on conversation signals
+    STRICT QUALITY SCORING:
+    5 stars: Name + Email + Phone + Budget + Timeline/Urgency
+    4 stars: Name + Email + Phone + Budget
+    3 stars: Name + Email + Budget (no phone)
+    2 stars: Email + Budget (no name)
+    1 star: Email only (minimum requirement)
     """
-    score = 1
-    intent_keywords = {
-        'high': ['buy', 'purchase', 'interested', 'schedule', 'tour', 'viewing', 'offer', 'serious'],
-        'medium': ['looking', 'searching', 'find', 'need', 'want', 'considering'],
-        'timing': ['asap', 'urgent', 'soon', 'this week', 'this month', 'immediately'],
-        'budget': ['budget', 'price', 'afford', 'million', 'lakh', 'crore', 'aed', 'usd']
+    score = 1  # Base score for having email
+    
+    # Check completeness
+    if lead_data.get('name'):
+        score += 1
+    
+    if lead_data.get('phone'):
+        score += 1
+    
+    if lead_data.get('budget'):
+        score += 1
+    
+    # Check for urgency/timeline in conversation
+    full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
+    urgency_keywords = ['asap', 'urgent', 'soon', 'this week', 'this month', 'immediately', 'now', 'quickly']
+    
+    if any(keyword in full_text for keyword in urgency_keywords):
+        score = min(score + 1, 5)  # Bonus for urgency, cap at 5
+    
+    return min(score, 5)
+
+
+def extract_lead_data(conversation_history):
+    """
+    Extract lead information from conversation with IMPROVED regex
+    Returns: dict with name, email, phone, budget
+    """
+    full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
+    
+    lead_data = {
+        'name': None,
+        'email': None,
+        'phone': None,
+        'budget': None
     }
     
-    full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
+    # Extract email (most important)
+    email_match = re.search(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+        full_conversation
+    )
+    if email_match:
+        lead_data['email'] = email_match.group(0)
     
-    # Check for high-intent keywords
-    if any(word in full_text for word in intent_keywords['high']):
-        score += 2
+    # Extract name (improved to catch full names)
+    name_match = re.search(
+        r"(?:i am|i'm|my name is|call me|this is|name's|i'm)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+        full_conversation,
+        re.IGNORECASE
+    )
+    if name_match:
+        lead_data['name'] = name_match.group(1).strip()
     
-    # Check for medium-intent keywords
-    if any(word in full_text for word in intent_keywords['medium']):
-        score += 1
+    # Extract phone
+    phone_match = re.search(
+        r"\+?\d[\d\s\-\(\)]{7,}\d",
+        full_conversation
+    )
+    if phone_match:
+        lead_data['phone'] = phone_match.group(0).strip()
     
-    # Check for urgency
-    if any(word in full_text for word in intent_keywords['timing']):
-        score += 1
+    # Extract budget (improved to capture more formats)
+    budget_match = re.search(
+        r"(?:budget|price|afford|around|approximately|about)[\s:]*\$?(\d+[\d,]*\.?\d*)\s*(million|m|k|thousand|lakh|crore|pkr|rs|aed|usd)?",
+        full_conversation,
+        re.IGNORECASE
+    )
+    if budget_match:
+        amount = budget_match.group(1).replace(',', '')
+        unit = budget_match.group(2) or ''
+        lead_data['budget'] = f"{amount} {unit}".strip()
     
-    # Check for budget discussion
-    if any(word in full_text for word in intent_keywords['budget']):
-        score += 1
+    return lead_data
+
+
+def is_lead_qualified(lead_data):
+    """
+    STRICT QUALIFICATION CRITERIA:
+    Minimum required: Email + (Name OR Budget)
     
-    return min(score, 5)  # Cap at 5
+    This ensures we only save leads that are actually useful
+    """
+    has_email = bool(lead_data.get('email'))
+    has_name = bool(lead_data.get('name'))
+    has_budget = bool(lead_data.get('budget'))
+    
+    # Minimum: Email + either Name or Budget
+    is_qualified = has_email and (has_name or has_budget)
+    
+    if is_qualified:
+        print(f"✅ Lead QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}")
+    else:
+        print(f"⚠️ Lead NOT qualified: Email={has_email}, Name={has_name}, Budget={has_budget}")
+    
+    return is_qualified
 
 
 # -------------------------
@@ -277,7 +347,7 @@ class Lead(db.Model):
     budget = db.Column(db.String(50))
     message = db.Column(db.Text)  # AI-generated summary
     
-    intent_score = db.Column(db.Integer, default=1)  # NEW: Lead quality 1-5
+    intent_score = db.Column(db.Integer, default=1)  # Lead quality 1-5
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -436,11 +506,11 @@ def agency_info(agency_id):
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
     """
-    ENHANCED CHAT ENDPOINT
-    - Human Sales Consultant personality
-    - Context-aware responses
-    - Intelligent lead detection
-    - Quality scoring
+    PRODUCTION-GRADE CHAT ENDPOINT
+    - Strict lead qualification
+    - No duplicate leads per email
+    - Proper data extraction
+    - Quality-based scoring
     """
     if request.method == "OPTIONS":
         return "", 200
@@ -465,69 +535,50 @@ def chat():
             return jsonify({"error": "Invalid agency ID"}), 400
 
         # -------------------------
-        # HUMAN SALES CONSULTANT PERSONALITY SYSTEM PROMPT
+        # ENHANCED SYSTEM PROMPT - ASKS FOR NAME
         # -------------------------
-        system_prompt = f"""You are {agency.assistant_name}, a warm and professional real estate consultant at {agency.name}.
+        system_prompt = f"""You are {agency.assistant_name}, a professional real estate consultant at {agency.name}.
 
 🎯 YOUR PERSONALITY:
-- Conversational and friendly (use "I'm", "you're", occasional 👋 😊)
-- Proactive helper who provides value BEFORE asking for contact info
-- Context-aware: reference what was said earlier
-- Natural flow: never sound scripted or robotic
+- Warm, conversational, and helpful
+- Natural language (use "I'm", "you're", occasional 👋)
+- Short responses (1-2 sentences max)
+- Ask ONE question at a time
+- Never repeat questions
 
-💡 YOUR MISSION:
-1. Understand what they're looking for through natural conversation
-2. Provide genuine value (neighborhood insights, property details, market knowledge)
-3. Collect contact info ONLY when it helps them (to send listings, schedule tour, follow up)
-4. Use helpful phrases: "I can help with that", "Let me check that for you", "Would it be helpful if I..."
+💡 YOUR MISSION - COLLECT IN THIS ORDER:
+1. What they're looking for (property type)
+2. Location preference
+3. Budget range
+4. Their NAME (always ask: "And what's your name?")
+5. Email (to send listings)
+6. Phone (optional - "What's the best number to reach you?")
 
-📋 CONVERSATION STRATEGY:
-OPENING (First message):
-- Warm greeting: "Hi! 👋 What brings you here today?" or "Hey! Looking for something specific or just browsing?"
+📋 CONVERSATION FLOW:
+OPENING:
+"Hi! 👋 What brings you here today?"
 
-QUALIFYING (Messages 2-4):
-- Ask about property type: "Are you looking for a villa, apartment, or something else?"
-- Location preference: "Which area are you most interested in?"
-- Timeline: "Is this something you're looking to move on soon, or just exploring options?"
-
-VALUE DELIVERY (Messages 3-6):
-- Share insights: "That area has great schools and the metro is expanding there next year!"
-- Provide context: "Properties in that range typically sell within 2-3 weeks in this market."
-- Be helpful: "I can send you a few options that match what you're looking for."
-
-LEAD CAPTURE (Natural moment):
-- When they show interest: "I'd love to send you some listings! What's the best email to reach you?"
-- When scheduling: "Want to see it in person? I can check availability. What's your phone number?"
-- When following up: "I'll keep an eye out for you. Quick email so I can update you?"
+QUALIFYING:
+- Ask about property type first
+- Then location
+- Then budget
+- THEN ask for their name: "Great! And what's your name?"
+- Then email: "Perfect! What's your email so I can send you some listings?"
+- Then phone: "And what's the best number to reach you?"
 
 🚫 NEVER:
-- Ask for email/phone in first 2 messages
-- Repeat questions already answered
-- Sound like a form: "Please provide your name, email, phone..."
-- Be pushy: "Buy now!" or "Limited time!"
-- Give long, paragraph responses
+- Skip asking for name
+- Ask for contact info in first 2 messages
+- Sound like a form
+- Give long responses
 
 ✅ ALWAYS:
-- Keep responses 1-2 sentences (3 max)
-- Ask ONE question at a time
-- Sound like texting with a knowledgeable friend
-- Reference previous conversation
-- Provide value before asking for anything
+- Ask for name after budget discussion
+- Keep it conversational
+- Reference previous answers
+- Sound human and helpful
 
-Example good flow:
-User: "Hi"
-You: "Hey! 👋 Looking for a property or just browsing around?"
-
-User: "Looking for a 2 bedroom apartment"
-You: "Nice! Which area were you thinking? Or open to suggestions?"
-
-User: "Dubai Marina or JBR"
-You: "Great choice! Both areas have amazing waterfront access. What's your budget range?"
-
-User: "Around 1.5M"
-You: "Perfect, there are some great options in that range. Want me to send you a few that just came on the market? I can email them over."
-
-Now respond naturally to the user's message."""
+Now respond to the user naturally:"""
 
         # -------------------------
         # CONVERSATION MEMORY
@@ -538,7 +589,7 @@ Now respond naturally to the user's message."""
         history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
 
-        # Build messages with context (last 20 messages)
+        # Build messages with context
         messages = [{"role": "system", "content": system_prompt}] + history[-20:]
 
         # -------------------------
@@ -547,15 +598,14 @@ Now respond naturally to the user's message."""
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
-            temperature=0.8,  # Higher for more natural variation
+            temperature=0.8,
             max_tokens=150,
-            presence_penalty=0.6,  # Reduce repetition
+            presence_penalty=0.6,
             frequency_penalty=0.3
         )
 
         ai_reply = response.choices[0].message.content.strip()
         
-        # Add assistant name to memory
         history.append({
             "role": "assistant",
             "content": ai_reply,
@@ -563,83 +613,51 @@ Now respond naturally to the user's message."""
         })
 
         # -------------------------
-        # INTELLIGENT LEAD DETECTION
+        # INTELLIGENT LEAD EXTRACTION & QUALIFICATION
         # -------------------------
-        email_match = re.search(
-            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-            user_message
-        )
-        phone_match = re.search(
-            r"\+?\d[\d\s\-\(\)]{7,}\d",
-            user_message
-        )
-        budget_match = re.search(
-            r"(?:budget|price|afford|spend).*?\$?\d+[\d,]*\.?\d*\s?(?:million|m|k|thousand|lakh|crore|pkr|rs|aed|usd)?\b",
-            user_message,
-            re.IGNORECASE
-        )
-        name_match = re.search(
-            r"(?:i am|i'm|my name is|call me|this is|name's)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
-            user_message,
-            re.IGNORECASE
-        )
-
-        # High-intent keywords
-        high_intent_keywords = [
-            'schedule', 'tour', 'viewing', 'visit', 'see the property',
-            'interested', 'want to buy', 'looking to purchase', 'make an offer',
-            'talk to agent', 'speak to someone', 'call me', 'contact me'
-        ]
+        lead_data = extract_lead_data(history)
         
-        has_high_intent = any(keyword in user_message.lower() for keyword in high_intent_keywords)
-
-        # -------------------------
-        # SAVE LEAD LOGIC (ENHANCED)
-        # -------------------------
-        should_save_lead = (
-            email_match or  # Contact info provided
-            phone_match or
-            (budget_match and len(history) >= 4) or  # Budget + engaged conversation
-            (name_match and len(history) >= 4) or  # Name + engaged conversation
-            has_high_intent or  # High-intent keywords
-            len(history) >= 10  # Long conversation = serious interest
-        )
-
-        if should_save_lead:
-            # Check if lead already exists for this session
+        # Check if lead is qualified
+        if is_lead_qualified(lead_data):
+            # Check for duplicate email
             existing_lead = Lead.query.filter_by(
                 agency_id=agency_id,
-                email=email_match.group(0) if email_match else None
-            ).first() if email_match else None
-
-            if not existing_lead:
+                email=lead_data['email']
+            ).first()
+            
+            if existing_lead:
+                print(f"⚠️ Duplicate lead prevented: {lead_data['email']} already exists (Lead ID: {existing_lead.id})")
+            else:
                 # Generate AI summary
                 ai_summary = generate_lead_summary(history, agency.name)
                 
-                # Calculate intent score
-                intent_score = analyze_lead_intent(history)
+                # Calculate quality score
+                quality_score = analyze_lead_quality(lead_data, history)
 
+                # Create new lead
                 lead = Lead(
                     agency_id=agency_id,
-                    name=name_match.group(1) if name_match else None,
-                    email=email_match.group(0) if email_match else None,
-                    phone=phone_match.group(0) if phone_match else None,
-                    budget=budget_match.group(0) if budget_match else None,
+                    name=lead_data['name'],
+                    email=lead_data['email'],
+                    phone=lead_data['phone'],
+                    budget=lead_data['budget'],
                     message=ai_summary,
-                    intent_score=intent_score
+                    intent_score=quality_score
                 )
 
                 db.session.add(lead)
                 db.session.commit()
 
-                print(f"✅ Lead saved: ID {lead.id} | Score: {intent_score}/5")
+                print(f"✅ QUALIFIED Lead saved: ID {lead.id} | Score: {quality_score}/5 | Email: {lead_data['email']}")
                 
-                # Send email notification
+                # Send email notification ONLY for qualified leads
                 email_sent = send_lead_email(agency, lead)
                 if email_sent:
                     print(f"   📧 Email notification sent to {agency.email}")
                 else:
                     print(f"   ⚠️ Email notification failed")
+        else:
+            print(f"⚠️ Lead not qualified yet - continuing conversation")
 
         return jsonify({"reply": ai_reply})
 
@@ -653,6 +671,41 @@ Now respond naturally to the user's message."""
         }), 500
 
 
+@app.route("/delete-lead/<int:lead_id>", methods=["DELETE"])
+def delete_lead(lead_id):
+    """Delete a single lead"""
+    try:
+        lead = db.session.get(Lead, lead_id)
+        
+        if not lead:
+            return jsonify({"error": "Lead not found"}), 404
+        
+        db.session.delete(lead)
+        db.session.commit()
+        
+        print(f"🗑️ Lead deleted: ID {lead_id}")
+        return jsonify({"message": "Lead deleted successfully"})
+        
+    except Exception as e:
+        print(f"❌ DELETE ERROR: {e}")
+        return jsonify({"error": "Failed to delete lead"}), 500
+
+
+@app.route("/clear-all-leads/<int:agency_id>", methods=["DELETE"])
+def clear_all_leads(agency_id):
+    """Delete all leads for an agency"""
+    try:
+        deleted_count = Lead.query.filter_by(agency_id=agency_id).delete()
+        db.session.commit()
+        
+        print(f"🗑️ Cleared {deleted_count} leads for agency {agency_id}")
+        return jsonify({"message": f"{deleted_count} leads deleted successfully"})
+        
+    except Exception as e:
+        print(f"❌ CLEAR ALL ERROR: {e}")
+        return jsonify({"error": "Failed to clear leads"}), 500
+
+
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
     try:
@@ -664,7 +717,6 @@ def export_leads(agency_id):
         ws = wb.active
         ws.title = "Leads"
 
-        # Updated headers with Quality Score
         headers = ["Sr #", "Quality", "Name", "Email", "Phone", "Budget", "Customer Insights", "Date", "Time"]
         ws.append(headers)
 
@@ -686,7 +738,6 @@ def export_leads(agency_id):
                 lead.created_at.strftime('%H:%M:%S') if lead.created_at else "—"
             ])
 
-        # Auto-adjust column widths
         for column in ws.columns:
             max_length = 0
             column_letter = column[0].column_letter
