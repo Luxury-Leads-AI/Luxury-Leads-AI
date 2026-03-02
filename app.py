@@ -203,41 +203,9 @@ Write summary now:"""
         return "Customer engaged in property conversation. Review chat history for details."
 
 
-def analyze_lead_quality(lead_data, conversation_history):
-    """
-    STRICT QUALITY SCORING:
-    5 stars: Name + Email + Phone + Budget + Timeline/Urgency
-    4 stars: Name + Email + Phone + Budget
-    3 stars: Name + Email + Budget (no phone)
-    2 stars: Email + Budget (no name)
-    1 star: Email only (minimum requirement)
-    """
-    score = 1  # Base score for having email
-    
-    # Check completeness
-    if lead_data.get('name'):
-        score += 1
-    
-    if lead_data.get('phone'):
-        score += 1
-    
-    if lead_data.get('budget'):
-        score += 1
-    
-    # Check for urgency/timeline in conversation
-    full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
-    urgency_keywords = ['asap', 'urgent', 'soon', 'this week', 'this month', 'immediately', 'now', 'quickly']
-    
-    if any(keyword in full_text for keyword in urgency_keywords):
-        score = min(score + 1, 5)  # Bonus for urgency, cap at 5
-    
-    return min(score, 5)
-
-
 def extract_lead_data(conversation_history):
     """
-    Extract lead information from conversation with IMPROVED regex
-    Returns: dict with name, email, phone, budget
+    FIXED: Extract lead information with IMPROVED regex patterns
     """
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
@@ -248,7 +216,7 @@ def extract_lead_data(conversation_history):
         'budget': None
     }
     
-    # Extract email (most important)
+    # Extract email (most reliable)
     email_match = re.search(
         r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
         full_conversation
@@ -256,43 +224,113 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # Extract name (improved to catch full names)
-    name_match = re.search(
-        r"(?:i am|i'm|my name is|call me|this is|name's|i'm)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
-        full_conversation,
-        re.IGNORECASE
-    )
-    if name_match:
-        lead_data['name'] = name_match.group(1).strip()
+    # Extract name - IMPROVED to avoid false positives
+    # Try multiple patterns in order of reliability
+    name_patterns = [
+        r"(?:my name is|name is|i'm|i am|call me|this is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
+        r"(?:^|\s)([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})(?:\s|$)",  # Full name pattern
+    ]
     
-    # Extract phone
-    phone_match = re.search(
-        r"\+?\d[\d\s\-\(\)]{7,}\d",
-        full_conversation
-    )
-    if phone_match:
-        lead_data['phone'] = phone_match.group(0).strip()
+    for pattern in name_patterns:
+        name_match = re.search(pattern, full_conversation, re.IGNORECASE | re.MULTILINE)
+        if name_match:
+            potential_name = name_match.group(1).strip()
+            # Validate it's not a common false positive
+            false_positives = ['looking for', 'interested in', 'searching for', 'want to', 'need to', 'like to', 'going to']
+            if not any(fp in potential_name.lower() for fp in false_positives):
+                lead_data['name'] = potential_name
+                print(f"✅ Name extracted: {potential_name}")
+                break
     
-    # Extract budget (improved to capture more formats)
-    budget_match = re.search(
-        r"(?:budget|price|afford|around|approximately|about)[\s:]*\$?(\d+[\d,]*\.?\d*)\s*(million|m|k|thousand|lakh|crore|pkr|rs|aed|usd)?",
-        full_conversation,
-        re.IGNORECASE
-    )
-    if budget_match:
-        amount = budget_match.group(1).replace(',', '')
-        unit = budget_match.group(2) or ''
-        lead_data['budget'] = f"{amount} {unit}".strip()
+    # Extract phone - IMPROVED to capture international formats
+    phone_patterns = [
+        r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{3,4}",  # +971 50 123 4567
+        r"\+?\d[\d\s\-\(\)]{9,}",  # General international
+    ]
+    
+    for pattern in phone_patterns:
+        phone_match = re.search(pattern, full_conversation)
+        if phone_match:
+            lead_data['phone'] = phone_match.group(0).strip()
+            print(f"✅ Phone extracted: {lead_data['phone']}")
+            break
+    
+    # Extract budget - IMPROVED for multiple formats including $5M
+    budget_patterns = [
+        # Pattern 1: Direct number with currency symbol ($5M, $5 million)
+        r"[\$]\s*(\d+(?:\.\d+)?)\s*(million|m|k|thousand|lakh|crore)?",
+        # Pattern 2: "budget is/around/approximately X"
+        r"(?:budget|price|afford|spend)(?:\s+is|\s+around|\s+approximately)?\s*[\$]?\s*(\d+(?:\.\d+)?)\s*(million|m|k|thousand|lakh|crore)?\s*(?:aed|usd|pkr|rs)?",
+    ]
+    
+    for pattern in budget_patterns:
+        budget_match = re.search(pattern, full_conversation, re.IGNORECASE)
+        if budget_match:
+            amount = budget_match.group(1)
+            unit = budget_match.group(2) if len(budget_match.groups()) > 1 and budget_match.group(2) else ''
+            
+            # Check if there's a currency symbol
+            currency = ''
+            if '$' in full_conversation:
+                currency = 'USD'
+            elif 'aed' in full_conversation.lower():
+                currency = 'AED'
+            elif 'pkr' in full_conversation.lower() or 'rs' in full_conversation.lower():
+                currency = 'PKR'
+            
+            # Format the budget nicely
+            if unit:
+                lead_data['budget'] = f"{amount} {unit} {currency}".strip()
+            else:
+                lead_data['budget'] = f"{amount} {currency}".strip()
+            
+            print(f"✅ Budget extracted: {lead_data['budget']}")
+            break
     
     return lead_data
+
+
+def analyze_lead_quality(lead_data, conversation_history):
+    """
+    FIXED QUALITY SCORING:
+    5 stars: Name + Email + Phone + Budget + Timeline/Urgency
+    4 stars: Name + Email + Phone + Budget
+    3 stars: Name + Email + Budget (no phone)
+    2 stars: Email + (Name OR Budget)
+    1 star: Email only
+    """
+    score = 1  # Base score for having email
+    
+    has_name = bool(lead_data.get('name'))
+    has_phone = bool(lead_data.get('phone'))
+    has_budget = bool(lead_data.get('budget'))
+    
+    # Score calculation
+    if has_name:
+        score += 1
+    
+    if has_budget:
+        score += 1
+    
+    if has_phone:
+        score += 1
+    
+    # Check for urgency/timeline
+    full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
+    urgency_keywords = ['asap', 'urgent', 'soon', 'this week', 'this month', 'immediately', 'now', 'quickly', 'move soon', 'moving soon']
+    
+    if any(keyword in full_text for keyword in urgency_keywords):
+        score = min(score + 1, 5)
+    
+    print(f"📊 Quality Score Breakdown: Name={has_name}, Phone={has_phone}, Budget={has_budget}, Urgency=detected, Score={score}/5")
+    
+    return min(score, 5)
 
 
 def is_lead_qualified(lead_data):
     """
     STRICT QUALIFICATION CRITERIA:
     Minimum required: Email + (Name OR Budget)
-    
-    This ensures we only save leads that are actually useful
     """
     has_email = bool(lead_data.get('email'))
     has_name = bool(lead_data.get('name'))
@@ -619,7 +657,7 @@ Now respond to the user naturally:"""
         
         # Check if lead is qualified
         if is_lead_qualified(lead_data):
-            # Check for duplicate email
+            # FIXED: Check for duplicate email
             existing_lead = Lead.query.filter_by(
                 agency_id=agency_id,
                 email=lead_data['email']
@@ -627,6 +665,7 @@ Now respond to the user naturally:"""
             
             if existing_lead:
                 print(f"⚠️ Duplicate lead prevented: {lead_data['email']} already exists (Lead ID: {existing_lead.id})")
+                print(f"   User can continue chatting, but no new lead will be created.")
             else:
                 # Generate AI summary
                 ai_summary = generate_lead_summary(history, agency.name)
