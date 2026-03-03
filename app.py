@@ -205,7 +205,7 @@ Write summary now:"""
 
 def extract_lead_data(conversation_history):
     """
-    FIXED: Extract lead information with IMPROVED regex patterns
+    PRODUCTION FIX: Extract lead information with ALL budget formats
     """
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
@@ -224,28 +224,26 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # Extract name - IMPROVED to avoid false positives
-    # Try multiple patterns in order of reliability
+    # Extract name - IMPROVED
     name_patterns = [
         r"(?:my name is|name is|i'm|i am|call me|this is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
-        r"(?:^|\s)([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})(?:\s|$)",  # Full name pattern
+        r"(?:^|\s)([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})(?:\s|$)",
     ]
     
     for pattern in name_patterns:
         name_match = re.search(pattern, full_conversation, re.IGNORECASE | re.MULTILINE)
         if name_match:
             potential_name = name_match.group(1).strip()
-            # Validate it's not a common false positive
             false_positives = ['looking for', 'interested in', 'searching for', 'want to', 'need to', 'like to', 'going to']
             if not any(fp in potential_name.lower() for fp in false_positives):
                 lead_data['name'] = potential_name
                 print(f"✅ Name extracted: {potential_name}")
                 break
     
-    # Extract phone - IMPROVED to capture international formats
+    # Extract phone - IMPROVED
     phone_patterns = [
-        r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{3,4}",  # +971 50 123 4567
-        r"\+?\d[\d\s\-\(\)]{9,}",  # General international
+        r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{3,4}",
+        r"\+?\d[\d\s\-\(\)]{9,}",
     ]
     
     for pattern in phone_patterns:
@@ -255,36 +253,54 @@ def extract_lead_data(conversation_history):
             print(f"✅ Phone extracted: {lead_data['phone']}")
             break
     
-    # Extract budget - IMPROVED for multiple formats including $5M
+    # Extract budget - COMPREHENSIVE FIX for ALL formats
     budget_patterns = [
-        # Pattern 1: Direct number with currency symbol ($5M, $5 million)
-        r"[\$]\s*(\d+(?:\.\d+)?)\s*(million|m|k|thousand|lakh|crore)?",
-        # Pattern 2: "budget is/around/approximately X"
-        r"(?:budget|price|afford|spend)(?:\s+is|\s+around|\s+approximately)?\s*[\$]?\s*(\d+(?:\.\d+)?)\s*(million|m|k|thousand|lakh|crore)?\s*(?:aed|usd|pkr|rs)?",
+        # Pattern 1: "10M $" or "10M$" (number + unit + $)
+        r"(\d+(?:\.\d+)?)\s*([MmKk])\s*\$",
+        # Pattern 2: "$10M" or "$ 10M" ($ + number + unit)
+        r"\$\s*(\d+(?:\.\d+)?)\s*([MmKk])",
+        # Pattern 3: "10 million $" (number + word + $)
+        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*\$",
+        # Pattern 4: "$10 million" ($ + number + word)
+        r"\$\s*(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)",
+        # Pattern 5: "budget 10M" or "around 10M" (no currency)
+        r"(?:budget|price|afford|spend|around|approximately|about)\s+(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
+        # Pattern 6: Plain number with currency mention
+        r"(\d+(?:\.\d+)?)\s*(million|m|k|thousand|lakh|crore)?\s*(?:aed|usd|pkr|rs|dollars?)",
     ]
     
-    for pattern in budget_patterns:
+    for i, pattern in enumerate(budget_patterns):
         budget_match = re.search(pattern, full_conversation, re.IGNORECASE)
         if budget_match:
             amount = budget_match.group(1)
             unit = budget_match.group(2) if len(budget_match.groups()) > 1 and budget_match.group(2) else ''
             
-            # Check if there's a currency symbol
+            # Normalize unit
+            if unit:
+                unit_lower = unit.lower()
+                if unit_lower in ['m', 'million']:
+                    unit = 'million'
+                elif unit_lower in ['k', 'thousand']:
+                    unit = 'thousand'
+                else:
+                    unit = unit_lower
+            
+            # Detect currency
             currency = ''
-            if '$' in full_conversation:
+            if '$' in full_conversation or 'dollar' in full_conversation.lower() or 'usd' in full_conversation.lower():
                 currency = 'USD'
             elif 'aed' in full_conversation.lower():
                 currency = 'AED'
-            elif 'pkr' in full_conversation.lower() or 'rs' in full_conversation.lower():
+            elif 'pkr' in full_conversation.lower() or 'rs' in full_conversation.lower() or 'rupee' in full_conversation.lower():
                 currency = 'PKR'
             
-            # Format the budget nicely
+            # Format
             if unit:
                 lead_data['budget'] = f"{amount} {unit} {currency}".strip()
             else:
                 lead_data['budget'] = f"{amount} {currency}".strip()
             
-            print(f"✅ Budget extracted: {lead_data['budget']}")
+            print(f"✅ Budget extracted (pattern {i+1}): {lead_data['budget']}")
             break
     
     return lead_data
@@ -292,20 +308,19 @@ def extract_lead_data(conversation_history):
 
 def analyze_lead_quality(lead_data, conversation_history):
     """
-    FIXED QUALITY SCORING:
+    PRODUCTION QUALITY SCORING:
     5 stars: Name + Email + Phone + Budget + Timeline/Urgency
     4 stars: Name + Email + Phone + Budget
     3 stars: Name + Email + Budget (no phone)
     2 stars: Email + (Name OR Budget)
     1 star: Email only
     """
-    score = 1  # Base score for having email
+    score = 1
     
     has_name = bool(lead_data.get('name'))
     has_phone = bool(lead_data.get('phone'))
     has_budget = bool(lead_data.get('budget'))
     
-    # Score calculation
     if has_name:
         score += 1
     
@@ -315,34 +330,46 @@ def analyze_lead_quality(lead_data, conversation_history):
     if has_phone:
         score += 1
     
-    # Check for urgency/timeline
+    # Check urgency
     full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
     urgency_keywords = ['asap', 'urgent', 'soon', 'this week', 'this month', 'immediately', 'now', 'quickly', 'move soon', 'moving soon']
     
-    if any(keyword in full_text for keyword in urgency_keywords):
+    has_urgency = any(keyword in full_text for keyword in urgency_keywords)
+    if has_urgency:
         score = min(score + 1, 5)
     
-    print(f"📊 Quality Score Breakdown: Name={has_name}, Phone={has_phone}, Budget={has_budget}, Urgency=detected, Score={score}/5")
+    print(f"📊 Quality Score: Name={has_name}, Phone={has_phone}, Budget={has_budget}, Urgency={has_urgency} → {score}/5")
     
     return min(score, 5)
 
 
-def is_lead_qualified(lead_data):
+def is_lead_qualified(lead_data, conversation_history):
     """
-    STRICT QUALIFICATION CRITERIA:
-    Minimum required: Email + (Name OR Budget)
+    STRICTER QUALIFICATION:
+    Must have: Email + Name + (Budget OR Phone) + at least 5 messages
+    
+    This ensures we wait for more complete data before saving
     """
     has_email = bool(lead_data.get('email'))
     has_name = bool(lead_data.get('name'))
     has_budget = bool(lead_data.get('budget'))
+    has_phone = bool(lead_data.get('phone'))
     
-    # Minimum: Email + either Name or Budget
-    is_qualified = has_email and (has_name or has_budget)
+    # Count user messages (indicates conversation depth)
+    message_count = len([msg for msg in conversation_history if msg['role'] == 'user'])
+    
+    # STRICTER: Need email + name + (budget OR phone) + at least 5 exchanges
+    is_qualified = (
+        has_email and 
+        has_name and 
+        (has_budget or has_phone) and
+        message_count >= 5
+    )
     
     if is_qualified:
-        print(f"✅ Lead QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}")
+        print(f"✅ Lead QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Phone={has_phone}, Messages={message_count}")
     else:
-        print(f"⚠️ Lead NOT qualified: Email={has_email}, Name={has_name}, Budget={has_budget}")
+        print(f"⚠️ NOT qualified yet: Email={has_email}, Name={has_name}, Budget={has_budget}, Phone={has_phone}, Messages={message_count}/5")
     
     return is_qualified
 
@@ -352,20 +379,15 @@ def is_lead_qualified(lead_data):
 # -------------------------
 class Agency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-
     name = db.Column(db.String(100), nullable=False)
     prompt = db.Column(db.Text)
     assistant_name = db.Column(db.String(100), default="AI Assistant")
-
     owner_name = db.Column(db.String(100))
     email = db.Column(db.String(150), nullable=False)
     whatsapp = db.Column(db.String(50))
-
     password_hash = db.Column(db.String(200))
-
     subscription_type = db.Column(db.String(50))
     status = db.Column(db.String(50), default="Active")
-
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -378,15 +400,12 @@ class Agency(db.Model):
 class Lead(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agency_id = db.Column(db.Integer, nullable=False)
-
     name = db.Column(db.String(100))
     email = db.Column(db.String(100))
     phone = db.Column(db.String(50))
     budget = db.Column(db.String(50))
-    message = db.Column(db.Text)  # AI-generated summary
-    
-    intent_score = db.Column(db.Integer, default=1)  # Lead quality 1-5
-    
+    message = db.Column(db.Text)
+    intent_score = db.Column(db.Integer, default=1)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -398,11 +417,9 @@ class Lead(db.Model):
 def home():
     return render_template("index.html")
 
-
 @app.route("/signup")
 def signup():
     return render_template("signup.html")
-
 
 @app.route("/owner-login", methods=["GET", "POST"])
 def owner_login():
@@ -429,7 +446,6 @@ def owner_login():
     else:
         return redirect("/owner-login?error=Invalid+password")
 
-
 @app.route("/admin")
 def admin():
     agency_id = request.args.get("agency_id")
@@ -452,7 +468,6 @@ def admin():
         print(f"❌ ADMIN ERROR: {e}")
         return redirect("/owner-login?error=Something+went+wrong")
 
-
 @app.route("/owner")
 def owner():
     return render_template("owner.html")
@@ -465,7 +480,6 @@ def owner():
 @app.route("/ping")
 def ping():
     return jsonify({"status": "ok", "message": "pong", "timestamp": datetime.utcnow().isoformat()})
-
 
 @app.route("/create-agency", methods=["POST", "OPTIONS"])
 def create_agency():
@@ -489,7 +503,6 @@ def create_agency():
     )
 
     agency.set_password("admin123")
-
     db.session.add(agency)
     db.session.commit()
 
@@ -498,11 +511,9 @@ def create_agency():
         "message": "Agency created successfully"
     })
 
-
 @app.route("/agencies")
 def get_agencies():
     agencies = Agency.query.all()
-
     return jsonify([{
         "id": a.id,
         "name": a.name,
@@ -513,25 +524,20 @@ def get_agencies():
         "created_at": a.created_at.isoformat()
     } for a in agencies])
 
-
 @app.route("/delete-agency/<int:agency_id>", methods=["DELETE"])
 def delete_agency(agency_id):
     agency = db.session.get(Agency, agency_id)
-
     if not agency:
         return jsonify({"error": "Agency not found"}), 404
 
     Lead.query.filter_by(agency_id=agency_id).delete()
     db.session.delete(agency)
     db.session.commit()
-
     return jsonify({"message": "Agency deleted"})
-
 
 @app.route("/agency/<int:agency_id>")
 def agency_info(agency_id):
     agency = db.session.get(Agency, agency_id)
-
     if not agency:
         return jsonify({"error": "Invalid agency ID"}), 404
 
@@ -540,26 +546,17 @@ def agency_info(agency_id):
         "assistant": agency.assistant_name or "AI Assistant"
     })
 
-
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
-    """
-    PRODUCTION-GRADE CHAT ENDPOINT
-    - Strict lead qualification
-    - No duplicate leads per email
-    - Proper data extraction
-    - Quality-based scoring
-    """
+    """PRODUCTION CHAT with FIXED timing and extraction"""
     if request.method == "OPTIONS":
         return "", 200
 
     try:
         data = request.get_json(force=True)
-
         user_message = data.get("message", "").strip()
         agency_id = int(data.get("agency_id"))
         
-        # Session tracking per visitor
         visitor_ip = request.remote_addr or "unknown"
         user_agent = request.headers.get('User-Agent', '')
         session_hash = hashlib.md5(f"{visitor_ip}{user_agent}".encode()).hexdigest()[:12]
@@ -572,9 +569,6 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
-        # -------------------------
-        # ENHANCED SYSTEM PROMPT - ASKS FOR NAME
-        # -------------------------
         system_prompt = f"""You are {agency.assistant_name}, a professional real estate consultant at {agency.name}.
 
 🎯 YOUR PERSONALITY:
@@ -618,21 +612,14 @@ QUALIFYING:
 
 Now respond to the user naturally:"""
 
-        # -------------------------
-        # CONVERSATION MEMORY
-        # -------------------------
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
 
         history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
 
-        # Build messages with context
         messages = [{"role": "system", "content": system_prompt}] + history[-20:]
 
-        # -------------------------
-        # CALL OPENAI
-        # -------------------------
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
@@ -650,30 +637,22 @@ Now respond to the user naturally:"""
             "name": agency.assistant_name
         })
 
-        # -------------------------
-        # INTELLIGENT LEAD EXTRACTION & QUALIFICATION
-        # -------------------------
+        # Extract data
         lead_data = extract_lead_data(history)
         
-        # Check if lead is qualified
-        if is_lead_qualified(lead_data):
-            # FIXED: Check for duplicate email
+        # Check qualification (STRICTER now)
+        if is_lead_qualified(lead_data, history):
             existing_lead = Lead.query.filter_by(
                 agency_id=agency_id,
                 email=lead_data['email']
             ).first()
             
             if existing_lead:
-                print(f"⚠️ Duplicate lead prevented: {lead_data['email']} already exists (Lead ID: {existing_lead.id})")
-                print(f"   User can continue chatting, but no new lead will be created.")
+                print(f"⚠️ Duplicate prevented: {lead_data['email']} (Lead ID: {existing_lead.id})")
             else:
-                # Generate AI summary
                 ai_summary = generate_lead_summary(history, agency.name)
-                
-                # Calculate quality score
                 quality_score = analyze_lead_quality(lead_data, history)
 
-                # Create new lead
                 lead = Lead(
                     agency_id=agency_id,
                     name=lead_data['name'],
@@ -687,16 +666,13 @@ Now respond to the user naturally:"""
                 db.session.add(lead)
                 db.session.commit()
 
-                print(f"✅ QUALIFIED Lead saved: ID {lead.id} | Score: {quality_score}/5 | Email: {lead_data['email']}")
+                print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
                 
-                # Send email notification ONLY for qualified leads
                 email_sent = send_lead_email(agency, lead)
                 if email_sent:
-                    print(f"   📧 Email notification sent to {agency.email}")
+                    print(f"   📧 Email sent")
                 else:
-                    print(f"   ⚠️ Email notification failed")
-        else:
-            print(f"⚠️ Lead not qualified yet - continuing conversation")
+                    print(f"   ⚠️ Email failed")
 
         return jsonify({"reply": ai_reply})
 
@@ -709,41 +685,31 @@ Now respond to the user naturally:"""
             "details": str(e) if os.getenv('ENV') == 'DEV' else None
         }), 500
 
-
 @app.route("/delete-lead/<int:lead_id>", methods=["DELETE"])
 def delete_lead(lead_id):
-    """Delete a single lead"""
     try:
         lead = db.session.get(Lead, lead_id)
-        
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
         
         db.session.delete(lead)
         db.session.commit()
-        
         print(f"🗑️ Lead deleted: ID {lead_id}")
         return jsonify({"message": "Lead deleted successfully"})
-        
     except Exception as e:
         print(f"❌ DELETE ERROR: {e}")
         return jsonify({"error": "Failed to delete lead"}), 500
 
-
 @app.route("/clear-all-leads/<int:agency_id>", methods=["DELETE"])
 def clear_all_leads(agency_id):
-    """Delete all leads for an agency"""
     try:
         deleted_count = Lead.query.filter_by(agency_id=agency_id).delete()
         db.session.commit()
-        
         print(f"🗑️ Cleared {deleted_count} leads for agency {agency_id}")
         return jsonify({"message": f"{deleted_count} leads deleted successfully"})
-        
     except Exception as e:
         print(f"❌ CLEAR ALL ERROR: {e}")
         return jsonify({"error": "Failed to clear leads"}), 500
-
 
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
@@ -810,7 +776,6 @@ with app.app_context():
     db.create_all()
     print("✅ Database tables created/verified")
     
-    # Auto-migration: Add intent_score column if missing
     try:
         from sqlalchemy import text, inspect
         
