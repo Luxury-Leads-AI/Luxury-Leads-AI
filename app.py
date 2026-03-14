@@ -98,75 +98,58 @@ Agency ID: {agency.id}
 Default Password: admin123
 """
     
-    # Try SendGrid first (works on Render free tier)
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     
     if SENDGRID_API_KEY:
         try:
             print(f"📧 Sending via SendGrid to: {agency.email}")
-            
             message = Mail(
                 from_email=SMTP_EMAIL,
                 to_emails=agency.email,
                 subject=subject,
                 plain_text_content=body
             )
-            
             sg = SendGridAPIClient(SENDGRID_API_KEY)
             response = sg.send(message)
-            
             print(f"✅ EMAIL SENT via SendGrid (Status: {response.status_code})")
             return True
-            
         except Exception as e:
             print(f"⚠️ SendGrid failed: {e}")
-            print("   Trying Gmail SMTP as backup...")
     
-    # Fallback to Gmail SMTP (may be blocked on Render)
     if not SMTP_EMAIL or not SMTP_PASSWORD:
         print("⚠️ SMTP credentials not configured")
         return False
 
     try:
         print(f"📧 Attempting Gmail SMTP to: {agency.email}")
-        
         msg = MIMEText(body)
         msg['Subject'] = subject
         msg['From'] = SMTP_EMAIL
         msg['To'] = agency.email
-
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
-
         print(f"✅ EMAIL SENT via Gmail SMTP")
         return True
-
     except OSError as e:
         if e.errno == 101:
-            print(f"❌ Network Error: Render is blocking Gmail SMTP (port 465)")
-            print(f"   Solution: Set up SendGrid API key in environment variables")
-            print(f"   Sign up at: https://signup.sendgrid.com/")
-        else:
-            print(f"❌ Network Error: {e}")
+            print(f"❌ Network Error: Render blocking Gmail SMTP")
         return False
-        
     except Exception as e:
         print(f"❌ EMAIL ERROR: {type(e).__name__}: {e}")
         return False
 
 
 def generate_lead_summary(conversation_history, agency_name):
-    """AI-powered conversation summary with ENHANCED business intelligence"""
+    """AI-powered conversation summary"""
     try:
         conversation_text = "\n".join([
             f"{'Customer' if msg['role'] == 'user' else msg.get('name', 'Assistant')}: {msg['content']}"
             for msg in conversation_history
         ])
 
-        analysis_prompt = f"""
-Analyze this real estate conversation and create a BUSINESS-FOCUSED summary (2-3 sentences max).
+        analysis_prompt = f"""Analyze this real estate conversation and create a BUSINESS-FOCUSED summary (2-3 sentences max).
 
 You are summarizing for a real estate agent at {agency_name}. Focus on ACTION and INTENT.
 
@@ -175,15 +158,15 @@ PRIORITIZE:
 2. Property type and specific requirements
 3. Budget/price range
 4. Location preferences
-5. Urgency signals ("looking now", "need to move by", etc.)
-6. Hot buttons (schools, commute, specific amenities)
+5. Urgency signals
+6. Hot buttons
 
 Conversation:
 {conversation_text}
 
 Format: "[INTENT] + [REQUIREMENTS] + [NEXT ACTION]"
 
-Example: "Buyer looking for 3-bed villa in Dubai Marina, budget 2-3M AED, wants to move within 3 months. Prioritizes sea view and proximity to metro. Ready for property tour."
+Example: "Buyer looking for 3-bed villa in Dubai Marina, budget 2-3M AED, wants to move within 3 months. Ready for property tour."
 
 Write summary now:"""
 
@@ -193,80 +176,74 @@ Write summary now:"""
             temperature=0.3,
             max_tokens=120
         )
-
         summary = response.choices[0].message.content.strip()
         print(f"✅ AI Summary generated")
         return summary
-
     except Exception as e:
         print(f"❌ Summary error: {e}")
-        return "Customer engaged in property conversation. Review chat history for details."
+        return "Customer engaged in property conversation."
 
 
 def extract_lead_data(conversation_history):
-    """
-    PRODUCTION FIX: Extract lead information with ALL budget formats
-    """
+    """ULTRA PRO MAX: Handles ALL writing styles and formats"""
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
-    lead_data = {
-        'name': None,
-        'email': None,
-        'phone': None,
-        'budget': None
-    }
+    lead_data = {'name': None, 'email': None, 'phone': None, 'budget': None}
     
-    # Extract email (most reliable)
-    email_match = re.search(
-        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-        full_conversation
-    )
+    # EMAIL - Ultra reliable
+    email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", full_conversation)
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # Extract name - IMPROVED
+    # NAME - Multiple patterns for different writing styles
     name_patterns = [
-        r"(?:my name is|name is|i'm|i am|call me|this is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
-        r"(?:^|\s)([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})(?:\s|$)",
+        r"(?:my name is|name is|i'm|i am|call me|this is|i'm called)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
+        r"(?:^|,|\.)(?:\s*)([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})(?:\s|,|\.|$)",  # Standalone full name
+        r"(?:name[:\s]+)([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",  # "name: John"
     ]
     
     for pattern in name_patterns:
         name_match = re.search(pattern, full_conversation, re.IGNORECASE | re.MULTILINE)
         if name_match:
             potential_name = name_match.group(1).strip()
-            false_positives = ['looking for', 'interested in', 'searching for', 'want to', 'need to', 'like to', 'going to']
-            if not any(fp in potential_name.lower() for fp in false_positives):
+            false_positives = ['looking for', 'interested in', 'searching for', 'want to', 'need to', 'like to', 'going to', 'trying to']
+            if not any(fp in potential_name.lower() for fp in false_positives) and len(potential_name) > 2:
                 lead_data['name'] = potential_name
                 print(f"✅ Name extracted: {potential_name}")
                 break
     
-    # Extract phone - IMPROVED
+    # PHONE - International formats, casual writing
     phone_patterns = [
-        r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{3,4}",
-        r"\+?\d[\d\s\-\(\)]{9,}",
+        r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{3,4}",  # +1 555 123 4567
+        r"\+?\d{10,15}",  # 9151234567890
+        r"\d{3}[\s\-]?\d{3}[\s\-]?\d{4}",  # 555-123-4567
     ]
     
     for pattern in phone_patterns:
         phone_match = re.search(pattern, full_conversation)
         if phone_match:
-            lead_data['phone'] = phone_match.group(0).strip()
-            print(f"✅ Phone extracted: {lead_data['phone']}")
-            break
+            phone = phone_match.group(0).strip()
+            if len(phone.replace('+', '').replace('-', '').replace(' ', '')) >= 10:
+                lead_data['phone'] = phone
+                print(f"✅ Phone extracted: {phone}")
+                break
     
-    # Extract budget - COMPREHENSIVE FIX for ALL formats
+    # BUDGET - ULTRA COMPREHENSIVE for all writing styles
     budget_patterns = [
-        # Pattern 1: "10M $" or "10M$" (number + unit + $)
-        r"(\d+(?:\.\d+)?)\s*([MmKk])\s*\$",
-        # Pattern 2: "$10M" or "$ 10M" ($ + number + unit)
-        r"\$\s*(\d+(?:\.\d+)?)\s*([MmKk])",
-        # Pattern 3: "10 million $" (number + word + $)
-        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*\$",
-        # Pattern 4: "$10 million" ($ + number + word)
-        r"\$\s*(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)",
-        # Pattern 5: "budget 10M" or "around 10M" (no currency)
-        r"(?:budget|price|afford|spend|around|approximately|about)\s+(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
-        # Pattern 6: Plain number with currency mention
-        r"(\d+(?:\.\d+)?)\s*(million|m|k|thousand|lakh|crore)?\s*(?:aed|usd|pkr|rs|dollars?)",
+        # "5M$", "10M $", "5M dollars"
+        r"(\d+(?:\.\d+)?)\s*([MmKk])\s*(?:\$|dollars?|usd)?",
+        # "$5M", "$ 5M", "$5 million"
+        r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
+        # "5 million $", "5 million dollars"
+        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*(?:\$|dollars?|usd|aed|pkr|rs)?",
+        # "budget 5M", "around 5M", "approximately 5 million"
+        r"(?:budget|price|afford|spend|around|approx|approximately|about|near|close to)\s*(?:of|is|:)?\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
+        # "5M range", "5M budget", "5M at least"
+        r"(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?\s*(?:range|budget|at least|minimum|max|maximum)",
+        # "looking at 5M", "thinking 5M"
+        r"(?:looking at|thinking|considering)\s+[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
+        # Just number with currency context
+        r"(\d+(?:\.\d+)?)\s*(million|m|k|thousand)?\s*(?:aed|usd|pkr|rs|rupees?|dollars?)",
     ]
     
     for i, pattern in enumerate(budget_patterns):
@@ -275,7 +252,7 @@ def extract_lead_data(conversation_history):
             amount = budget_match.group(1)
             unit = budget_match.group(2) if len(budget_match.groups()) > 1 and budget_match.group(2) else ''
             
-            # Normalize unit
+            # Normalize
             if unit:
                 unit_lower = unit.lower()
                 if unit_lower in ['m', 'million']:
@@ -285,21 +262,17 @@ def extract_lead_data(conversation_history):
                 else:
                     unit = unit_lower
             
-            # Detect currency
+            # Currency detection
             currency = ''
-            if '$' in full_conversation or 'dollar' in full_conversation.lower() or 'usd' in full_conversation.lower():
+            conv_lower = full_conversation.lower()
+            if '$' in full_conversation or 'dollar' in conv_lower or 'usd' in conv_lower:
                 currency = 'USD'
-            elif 'aed' in full_conversation.lower():
+            elif 'aed' in conv_lower:
                 currency = 'AED'
-            elif 'pkr' in full_conversation.lower() or 'rs' in full_conversation.lower() or 'rupee' in full_conversation.lower():
+            elif 'pkr' in conv_lower or ' rs' in conv_lower or 'rupee' in conv_lower:
                 currency = 'PKR'
             
-            # Format
-            if unit:
-                lead_data['budget'] = f"{amount} {unit} {currency}".strip()
-            else:
-                lead_data['budget'] = f"{amount} {currency}".strip()
-            
+            lead_data['budget'] = f"{amount} {unit} {currency}".strip() if unit else f"{amount} {currency}".strip()
             print(f"✅ Budget extracted (pattern {i+1}): {lead_data['budget']}")
             break
     
@@ -307,14 +280,7 @@ def extract_lead_data(conversation_history):
 
 
 def analyze_lead_quality(lead_data, conversation_history):
-    """
-    PRODUCTION QUALITY SCORING:
-    5 stars: Name + Email + Phone + Budget + Timeline/Urgency
-    4 stars: Name + Email + Phone + Budget
-    3 stars: Name + Email + Budget (no phone)
-    2 stars: Email + (Name OR Budget)
-    1 star: Email only
-    """
+    """ENHANCED: Timeline-aware quality scoring"""
     score = 1
     
     has_name = bool(lead_data.get('name'))
@@ -323,53 +289,53 @@ def analyze_lead_quality(lead_data, conversation_history):
     
     if has_name:
         score += 1
-    
     if has_budget:
         score += 1
-    
     if has_phone:
         score += 1
     
-    # Check urgency
+    # Timeline/Urgency detection - EXPANDED
     full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
-    urgency_keywords = ['asap', 'urgent', 'soon', 'this week', 'this month', 'immediately', 'now', 'quickly', 'move soon', 'moving soon']
+    urgency_keywords = [
+        'asap', 'urgent', 'soon', 'quickly', 'immediately', 'now',
+        'this week', 'this month', 'next week', 'next month',
+        'within', 'by', 'before', 'deadline',
+        'move soon', 'moving soon', 'relocating', 'need to move'
+    ]
     
     has_urgency = any(keyword in full_text for keyword in urgency_keywords)
     if has_urgency:
         score = min(score + 1, 5)
     
-    print(f"📊 Quality Score: Name={has_name}, Phone={has_phone}, Budget={has_budget}, Urgency={has_urgency} → {score}/5")
-    
+    print(f"📊 Quality: Name={has_name}, Phone={has_phone}, Budget={has_budget}, Timeline={has_urgency} → {score}/5")
     return min(score, 5)
 
 
 def is_lead_qualified(lead_data, conversation_history):
     """
-    STRICTER QUALIFICATION:
-    Must have: Email + Name + (Budget OR Phone) + at least 5 messages
-    
-    This ensures we wait for more complete data before saving
+    FIXED QUALIFICATION: Waits for phone extraction
+    Must have: Email + Name + Budget + at least 6 messages
+    Phone is optional but improves quality score
     """
     has_email = bool(lead_data.get('email'))
     has_name = bool(lead_data.get('name'))
     has_budget = bool(lead_data.get('budget'))
-    has_phone = bool(lead_data.get('phone'))
     
-    # Count user messages (indicates conversation depth)
     message_count = len([msg for msg in conversation_history if msg['role'] == 'user'])
     
-    # STRICTER: Need email + name + (budget OR phone) + at least 5 exchanges
+    # NEW: Email + Name + Budget + 6+ messages
+    # Phone is now optional (extracted if present, but not required for qualification)
     is_qualified = (
         has_email and 
         has_name and 
-        (has_budget or has_phone) and
-        message_count >= 5
+        has_budget and
+        message_count >= 6  # Increased to wait for phone message
     )
     
     if is_qualified:
-        print(f"✅ Lead QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Phone={has_phone}, Messages={message_count}")
+        print(f"✅ QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Messages={message_count}")
     else:
-        print(f"⚠️ NOT qualified yet: Email={has_email}, Name={has_name}, Budget={has_budget}, Phone={has_phone}, Messages={message_count}/5")
+        print(f"⚠️ Not yet: Email={has_email}, Name={has_name}, Budget={has_budget}, Messages={message_count}/6")
     
     return is_qualified
 
@@ -548,7 +514,7 @@ def agency_info(agency_id):
 
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
-    """PRODUCTION CHAT with FIXED timing and extraction"""
+    """ULTRA PRO MAX: Timeline-aware, flexible extraction"""
     if request.method == "OPTIONS":
         return "", 200
 
@@ -569,10 +535,11 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
+        # ENHANCED PROMPT with TIMELINE question
         system_prompt = f"""You are {agency.assistant_name}, a professional real estate consultant at {agency.name}.
 
 🎯 YOUR PERSONALITY:
-- Warm, conversational, and helpful
+- Warm, conversational, helpful
 - Natural language (use "I'm", "you're", occasional 👋)
 - Short responses (1-2 sentences max)
 - Ask ONE question at a time
@@ -582,35 +549,31 @@ def chat():
 1. What they're looking for (property type)
 2. Location preference
 3. Budget range
-4. Their NAME (always ask: "And what's your name?")
-5. Email (to send listings)
-6. Phone (optional - "What's the best number to reach you?")
+4. TIMELINE (CRITICAL): "When are you looking to buy/move?" or "Is this urgent or just exploring?"
+5. Their NAME: "And what's your name?"
+6. Email: "What's your email so I can send you listings?"
+7. Phone (optional): "What's the best number to reach you?"
 
 📋 CONVERSATION FLOW:
 OPENING:
 "Hi! 👋 What brings you here today?"
 
 QUALIFYING:
-- Ask about property type first
-- Then location
-- Then budget
-- THEN ask for their name: "Great! And what's your name?"
-- Then email: "Perfect! What's your email so I can send you some listings?"
-- Then phone: "And what's the best number to reach you?"
+- Property type → Location → Budget
+- THEN ask timeline: "When are you looking to move in?" or "Is this something you need soon?"
+- THEN name → email → phone
 
 🚫 NEVER:
-- Skip asking for name
+- Skip timeline question
 - Ask for contact info in first 2 messages
 - Sound like a form
-- Give long responses
 
 ✅ ALWAYS:
-- Ask for name after budget discussion
+- Ask about timeline after budget
 - Keep it conversational
-- Reference previous answers
-- Sound human and helpful
+- Sound human
 
-Now respond to the user naturally:"""
+Now respond naturally:"""
 
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
@@ -640,7 +603,7 @@ Now respond to the user naturally:"""
         # Extract data
         lead_data = extract_lead_data(history)
         
-        # Check qualification (STRICTER now)
+        # Check qualification
         if is_lead_qualified(lead_data, history):
             existing_lead = Lead.query.filter_by(
                 agency_id=agency_id,
@@ -648,7 +611,7 @@ Now respond to the user naturally:"""
             ).first()
             
             if existing_lead:
-                print(f"⚠️ Duplicate prevented: {lead_data['email']} (Lead ID: {existing_lead.id})")
+                print(f"⚠️ Duplicate prevented: {lead_data['email']} (ID: {existing_lead.id})")
             else:
                 ai_summary = generate_lead_summary(history, agency.name)
                 quality_score = analyze_lead_quality(lead_data, history)
@@ -784,23 +747,12 @@ with app.app_context():
         
         if 'intent_score' not in columns:
             print("🔄 Running migration: Adding intent_score column...")
-            
-            db.session.execute(text("""
-                ALTER TABLE lead 
-                ADD COLUMN intent_score INTEGER DEFAULT 1;
-            """))
-            
-            db.session.execute(text("""
-                UPDATE lead 
-                SET intent_score = 3 
-                WHERE intent_score IS NULL;
-            """))
-            
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN intent_score INTEGER DEFAULT 1;"))
+            db.session.execute(text("UPDATE lead SET intent_score = 3 WHERE intent_score IS NULL;"))
             db.session.commit()
-            print("✅ Migration complete: intent_score column added")
+            print("✅ Migration complete")
         else:
-            print("✅ intent_score column already exists")
-            
+            print("✅ intent_score column exists")
     except Exception as e:
         print(f"⚠️ Migration check: {e}")
         pass
