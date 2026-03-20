@@ -180,22 +180,33 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # NAME - Clean extraction (avoid "Its Zubair")
-    name_patterns = [
-        r"(?:my name is|name is|i'm|i am|call me|this is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
-        r"\b([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})\b",  # Standalone
-    ]
-    
-    for pattern in name_patterns:
-        name_match = re.search(pattern, full_conversation, re.IGNORECASE)
-        if name_match:
-            potential_name = name_match.group(1).strip()
-            # FIXED: Filter out garbage like "Its", "Am", "Are"
-            false_positives = ['looking for', 'interested in', 'its', 'am', 'are', 'want to', 'need to', 'like to']
-            if not any(fp in potential_name.lower() for fp in false_positives) and len(potential_name) > 2:
-                lead_data['name'] = potential_name
-                print(f"✅ Name: {potential_name}")
-                break
+    # NAME - PRODUCTION FIX: Handles all cases
+name_patterns = [
+    # Pattern 1: "I am Wajid", "I'm John", "my name is Sarah"
+    r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
+    # Pattern 2: Standalone capitalized name
+    r"\b([A-Z][a-z]{2,})\b",
+]
+
+for pattern in name_patterns:
+    name_match = re.search(pattern, full_conversation, re.IGNORECASE)
+    if name_match:
+        potential_name = name_match.group(1).strip().title()  # Capitalize properly
+        
+        # Filter false positives
+        false_positives = [
+            'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
+            'its', 'it', 'am', 'is', 'are', 'was', 'were', 'have', 'has',
+            'beach', 'villa', 'property', 'house', 'apartment', 'usa', 'miami'
+        ]
+        
+        # Must be at least 3 chars and not a false positive
+        if (len(potential_name) >= 3 and 
+            potential_name.lower() not in false_positives and
+            not any(fp in potential_name.lower() for fp in ['looking for', 'interested in'])):
+            lead_data['name'] = potential_name
+            print(f"✅ Name: {potential_name}")
+            break
     
     # PHONE - FIXED: Accept 9+ digits (was 10+)
     phone_patterns = [
