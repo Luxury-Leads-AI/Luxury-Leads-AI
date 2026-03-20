@@ -181,37 +181,33 @@ def extract_lead_data(conversation_history):
         lead_data['email'] = email_match.group(0)
     
     # NAME - PRODUCTION FIX: Handles all cases
-name_patterns = [
-    # Pattern 1: "I am Wajid", "I'm John", "my name is Sarah"
-    r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
-    # Pattern 2: Standalone capitalized name
-    r"\b([A-Z][a-z]{2,})\b",
-]
-
-for pattern in name_patterns:
-    name_match = re.search(pattern, full_conversation, re.IGNORECASE)
-    if name_match:
-        potential_name = name_match.group(1).strip().title()  # Capitalize properly
-        
-        # Filter false positives
-        false_positives = [
-            'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
-            'its', 'it', 'am', 'is', 'are', 'was', 'were', 'have', 'has',
-            'beach', 'villa', 'property', 'house', 'apartment', 'usa', 'miami'
-        ]
-        
-        # Must be at least 3 chars and not a false positive
-        if (len(potential_name) >= 3 and 
-            potential_name.lower() not in false_positives and
-            not any(fp in potential_name.lower() for fp in ['looking for', 'interested in'])):
-            lead_data['name'] = potential_name
-            print(f"✅ Name: {potential_name}")
-            break
+    name_patterns = [
+        r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
+        r"\b([A-Z][a-z]{2,})\b",
+    ]
     
-    # PHONE - FIXED: Accept 9+ digits (was 10+)
+    for pattern in name_patterns:
+        name_match = re.search(pattern, full_conversation, re.IGNORECASE)
+        if name_match:
+            potential_name = name_match.group(1).strip().title()
+            
+            false_positives = [
+                'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
+                'its', 'it', 'am', 'is', 'are', 'was', 'were', 'have', 'has',
+                'beach', 'villa', 'property', 'house', 'apartment', 'usa', 'miami'
+            ]
+            
+            if (len(potential_name) >= 3 and 
+                potential_name.lower() not in false_positives and
+                not any(fp in potential_name.lower() for fp in ['looking for', 'interested in'])):
+                lead_data['name'] = potential_name
+                print(f"✅ Name: {potential_name}")
+                break
+    
+    # PHONE - FIXED: Accept 9+ digits
     phone_patterns = [
         r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{2,4}",
-        r"\+?\d{9,15}",  # FIXED: 9+ instead of 10+
+        r"\+?\d{9,15}",
         r"\d{3}[\s\-]?\d{3}[\s\-]?\d{3,4}",
     ]
     
@@ -220,7 +216,7 @@ for pattern in name_patterns:
         if phone_match:
             phone = phone_match.group(0).strip()
             clean = phone.replace('+', '').replace('-', '').replace(' ', '')
-            if len(clean) >= 9:  # FIXED: 9+ digits
+            if len(clean) >= 9:
                 lead_data['phone'] = phone
                 print(f"✅ Phone: {phone}")
                 break
@@ -274,7 +270,6 @@ def analyze_lead_quality(lead_data, conversation_history):
     if has_phone:
         score += 1
     
-    # Timeline detection
     full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
     urgency = ['asap', 'urgent', 'soon', 'quickly', 'this week', 'this month', 'within', 'month', 'week']
     
@@ -287,17 +282,13 @@ def analyze_lead_quality(lead_data, conversation_history):
 
 
 def is_lead_qualified(lead_data, conversation_history):
-    """
-    PRODUCTION: Email + Name + Budget + 7+ messages
-    Phone optional (improves score if present)
-    """
+    """PRODUCTION: Email + Name + Budget + 7+ messages"""
     has_email = bool(lead_data.get('email'))
     has_name = bool(lead_data.get('name'))
     has_budget = bool(lead_data.get('budget'))
     
     message_count = len([msg for msg in conversation_history if msg['role'] == 'user'])
     
-    # FIXED: 7 messages (phone comes on message 7)
     is_qualified = (
         has_email and 
         has_name and 
@@ -345,7 +336,7 @@ class Lead(db.Model):
     budget = db.Column(db.String(50))
     message = db.Column(db.Text)
     intent_score = db.Column(db.Integer, default=1)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))  # FIXED: Local time
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
 
 
 # -------------------------
@@ -500,7 +491,6 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
-        # IMPROVED PROMPT - Less repetitive
         system_prompt = f"""You are {agency.assistant_name}, a professional real estate consultant at {agency.name}.
 
 PERSONALITY:
@@ -526,7 +516,6 @@ CONVERSATION TIPS:
 
 Respond naturally:"""
 
-        # FIXED: Clear memory when starting new conversation
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
 
@@ -538,10 +527,10 @@ Respond naturally:"""
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
-            temperature=0.7,  # Reduced for less repetition
+            temperature=0.7,
             max_tokens=150,
-            presence_penalty=0.8,  # Increased to avoid repetition
-            frequency_penalty=0.5  # Increased to avoid repetition
+            presence_penalty=0.8,
+            frequency_penalty=0.5
         )
 
         ai_reply = response.choices[0].message.content.strip()
@@ -552,7 +541,6 @@ Respond naturally:"""
             "name": agency.assistant_name
         })
 
-        # Extract and qualify
         lead_data = extract_lead_data(history)
         
         if is_lead_qualified(lead_data, history):
@@ -592,13 +580,11 @@ Respond naturally:"""
 
 @app.route("/delete-lead/<int:lead_id>", methods=["DELETE"])
 def delete_lead(lead_id):
-    """FIXED: Clear memory when lead deleted"""
     try:
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
         
-        # FIXED: Clear conversation memory for this lead's email
         for key in list(conversation_memory.keys()):
             if key.startswith(f"{lead.agency_id}_"):
                 del conversation_memory[key]
@@ -613,9 +599,7 @@ def delete_lead(lead_id):
 
 @app.route("/clear-all-leads/<int:agency_id>", methods=["DELETE"])
 def clear_all_leads(agency_id):
-    """FIXED: Clear memory when all leads cleared"""
     try:
-        # FIXED: Clear all conversation memory for this agency
         keys_to_delete = [k for k in conversation_memory.keys() if k.startswith(f"{agency_id}_")]
         for key in keys_to_delete:
             del conversation_memory[key]
