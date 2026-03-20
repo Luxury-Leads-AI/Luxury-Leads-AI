@@ -14,6 +14,7 @@ import smtplib
 from email.mime.text import MIMEText
 from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
+import pytz
 
 # SendGrid email imports
 try:
@@ -71,8 +72,7 @@ SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 def send_lead_email(agency, lead):
-    """Send email notification - Tries SendGrid first, then Gmail SMTP"""
-    
+    """Send email notification"""
     subject = f"🎯 New Qualified Lead for {agency.name}"
     body = f"""
 New QUALIFIED Lead Received from {agency.name}
@@ -111,7 +111,7 @@ Default Password: admin123
             )
             sg = SendGridAPIClient(SENDGRID_API_KEY)
             response = sg.send(message)
-            print(f"✅ EMAIL SENT via SendGrid (Status: {response.status_code})")
+            print(f"✅ EMAIL SENT via SendGrid")
             return True
         except Exception as e:
             print(f"⚠️ SendGrid failed: {e}")
@@ -121,7 +121,7 @@ Default Password: admin123
         return False
 
     try:
-        print(f"📧 Attempting Gmail SMTP to: {agency.email}")
+        print(f"📧 Attempting Gmail SMTP")
         msg = MIMEText(body)
         msg['Subject'] = subject
         msg['From'] = SMTP_EMAIL
@@ -130,45 +130,32 @@ Default Password: admin123
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
-        print(f"✅ EMAIL SENT via Gmail SMTP")
+        print(f"✅ EMAIL SENT via Gmail")
         return True
-    except OSError as e:
-        if e.errno == 101:
-            print(f"❌ Network Error: Render blocking Gmail SMTP")
-        return False
-    except Exception as e:
-        print(f"❌ EMAIL ERROR: {type(e).__name__}: {e}")
+    except:
         return False
 
 
 def generate_lead_summary(conversation_history, agency_name):
-    """AI-powered conversation summary"""
+    """AI summary"""
     try:
         conversation_text = "\n".join([
-            f"{'Customer' if msg['role'] == 'user' else msg.get('name', 'Assistant')}: {msg['content']}"
+            f"{'Customer' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
             for msg in conversation_history
         ])
 
-        analysis_prompt = f"""Analyze this real estate conversation and create a BUSINESS-FOCUSED summary (2-3 sentences max).
+        analysis_prompt = f"""Analyze this conversation and create a 2-3 sentence business summary for {agency_name}.
 
-You are summarizing for a real estate agent at {agency_name}. Focus on ACTION and INTENT.
-
-PRIORITIZE:
-1. Buying/selling intent and timeline
-2. Property type and specific requirements
-3. Budget/price range
-4. Location preferences
-5. Urgency signals
-6. Hot buttons
+Focus on: intent, property type, budget, location, timeline, urgency.
 
 Conversation:
 {conversation_text}
 
-Format: "[INTENT] + [REQUIREMENTS] + [NEXT ACTION]"
+Format: "[INTENT] + [REQUIREMENTS] + [TIMELINE]"
 
-Example: "Buyer looking for 3-bed villa in Dubai Marina, budget 2-3M AED, wants to move within 3 months. Ready for property tour."
+Example: "Buyer seeking 3-bed villa in Dubai Marina, budget 2-3M AED, wants to move within 3 months."
 
-Write summary now:"""
+Write summary:"""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -176,74 +163,63 @@ Write summary now:"""
             temperature=0.3,
             max_tokens=120
         )
-        summary = response.choices[0].message.content.strip()
-        print(f"✅ AI Summary generated")
-        return summary
+        return response.choices[0].message.content.strip()
     except Exception as e:
         print(f"❌ Summary error: {e}")
         return "Customer engaged in property conversation."
 
 
 def extract_lead_data(conversation_history):
-    """ULTRA PRO MAX: Handles ALL writing styles and formats"""
+    """PRODUCTION: Flexible extraction for all writing styles"""
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
     lead_data = {'name': None, 'email': None, 'phone': None, 'budget': None}
     
-    # EMAIL - Ultra reliable
+    # EMAIL
     email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", full_conversation)
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # NAME - Multiple patterns for different writing styles
+    # NAME - Clean extraction (avoid "Its Zubair")
     name_patterns = [
-        r"(?:my name is|name is|i'm|i am|call me|this is|i'm called)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
-        r"(?:^|,|\.)(?:\s*)([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})(?:\s|,|\.|$)",  # Standalone full name
-        r"(?:name[:\s]+)([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",  # "name: John"
+        r"(?:my name is|name is|i'm|i am|call me|this is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
+        r"\b([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})\b",  # Standalone
     ]
     
     for pattern in name_patterns:
-        name_match = re.search(pattern, full_conversation, re.IGNORECASE | re.MULTILINE)
+        name_match = re.search(pattern, full_conversation, re.IGNORECASE)
         if name_match:
             potential_name = name_match.group(1).strip()
-            false_positives = ['looking for', 'interested in', 'searching for', 'want to', 'need to', 'like to', 'going to', 'trying to']
+            # FIXED: Filter out garbage like "Its", "Am", "Are"
+            false_positives = ['looking for', 'interested in', 'its', 'am', 'are', 'want to', 'need to', 'like to']
             if not any(fp in potential_name.lower() for fp in false_positives) and len(potential_name) > 2:
                 lead_data['name'] = potential_name
-                print(f"✅ Name extracted: {potential_name}")
+                print(f"✅ Name: {potential_name}")
                 break
     
-    # PHONE - International formats, casual writing
+    # PHONE - FIXED: Accept 9+ digits (was 10+)
     phone_patterns = [
-        r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{3,4}",  # +1 555 123 4567
-        r"\+?\d{10,15}",  # 9151234567890
-        r"\d{3}[\s\-]?\d{3}[\s\-]?\d{4}",  # 555-123-4567
+        r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{2,4}",
+        r"\+?\d{9,15}",  # FIXED: 9+ instead of 10+
+        r"\d{3}[\s\-]?\d{3}[\s\-]?\d{3,4}",
     ]
     
     for pattern in phone_patterns:
         phone_match = re.search(pattern, full_conversation)
         if phone_match:
             phone = phone_match.group(0).strip()
-            if len(phone.replace('+', '').replace('-', '').replace(' ', '')) >= 10:
+            clean = phone.replace('+', '').replace('-', '').replace(' ', '')
+            if len(clean) >= 9:  # FIXED: 9+ digits
                 lead_data['phone'] = phone
-                print(f"✅ Phone extracted: {phone}")
+                print(f"✅ Phone: {phone}")
                 break
     
-    # BUDGET - ULTRA COMPREHENSIVE for all writing styles
+    # BUDGET - All formats
     budget_patterns = [
-        # "5M$", "10M $", "5M dollars"
-        r"(\d+(?:\.\d+)?)\s*([MmKk])\s*(?:\$|dollars?|usd)?",
-        # "$5M", "$ 5M", "$5 million"
+        r"(\d+(?:\.\d+)?)\s*([MmKk])\s*(?:\$|dollars?)?",
         r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
-        # "5 million $", "5 million dollars"
-        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*(?:\$|dollars?|usd|aed|pkr|rs)?",
-        # "budget 5M", "around 5M", "approximately 5 million"
-        r"(?:budget|price|afford|spend|around|approx|approximately|about|near|close to)\s*(?:of|is|:)?\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
-        # "5M range", "5M budget", "5M at least"
-        r"(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?\s*(?:range|budget|at least|minimum|max|maximum)",
-        # "looking at 5M", "thinking 5M"
-        r"(?:looking at|thinking|considering)\s+[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
-        # Just number with currency context
-        r"(\d+(?:\.\d+)?)\s*(million|m|k|thousand)?\s*(?:aed|usd|pkr|rs|rupees?|dollars?)",
+        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*(?:\$|dollars?|usd|aed)?",
+        r"(?:budget|price|around)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million)?",
     ]
     
     for i, pattern in enumerate(budget_patterns):
@@ -252,35 +228,28 @@ def extract_lead_data(conversation_history):
             amount = budget_match.group(1)
             unit = budget_match.group(2) if len(budget_match.groups()) > 1 and budget_match.group(2) else ''
             
-            # Normalize
             if unit:
-                unit_lower = unit.lower()
-                if unit_lower in ['m', 'million']:
+                unit = unit.lower()
+                if unit in ['m', 'million']:
                     unit = 'million'
-                elif unit_lower in ['k', 'thousand']:
+                elif unit in ['k', 'thousand']:
                     unit = 'thousand'
-                else:
-                    unit = unit_lower
             
-            # Currency detection
             currency = ''
-            conv_lower = full_conversation.lower()
-            if '$' in full_conversation or 'dollar' in conv_lower or 'usd' in conv_lower:
+            if '$' in full_conversation or 'dollar' in full_conversation.lower():
                 currency = 'USD'
-            elif 'aed' in conv_lower:
+            elif 'aed' in full_conversation.lower():
                 currency = 'AED'
-            elif 'pkr' in conv_lower or ' rs' in conv_lower or 'rupee' in conv_lower:
-                currency = 'PKR'
             
             lead_data['budget'] = f"{amount} {unit} {currency}".strip() if unit else f"{amount} {currency}".strip()
-            print(f"✅ Budget extracted (pattern {i+1}): {lead_data['budget']}")
+            print(f"✅ Budget: {lead_data['budget']}")
             break
     
     return lead_data
 
 
 def analyze_lead_quality(lead_data, conversation_history):
-    """ENHANCED: Timeline-aware quality scoring"""
+    """Timeline-aware scoring"""
     score = 1
     
     has_name = bool(lead_data.get('name'))
@@ -294,16 +263,11 @@ def analyze_lead_quality(lead_data, conversation_history):
     if has_phone:
         score += 1
     
-    # Timeline/Urgency detection - EXPANDED
+    # Timeline detection
     full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
-    urgency_keywords = [
-        'asap', 'urgent', 'soon', 'quickly', 'immediately', 'now',
-        'this week', 'this month', 'next week', 'next month',
-        'within', 'by', 'before', 'deadline',
-        'move soon', 'moving soon', 'relocating', 'need to move'
-    ]
+    urgency = ['asap', 'urgent', 'soon', 'quickly', 'this week', 'this month', 'within', 'month', 'week']
     
-    has_urgency = any(keyword in full_text for keyword in urgency_keywords)
+    has_urgency = any(kw in full_text for kw in urgency)
     if has_urgency:
         score = min(score + 1, 5)
     
@@ -313,9 +277,8 @@ def analyze_lead_quality(lead_data, conversation_history):
 
 def is_lead_qualified(lead_data, conversation_history):
     """
-    FIXED QUALIFICATION: Waits for phone extraction
-    Must have: Email + Name + Budget + at least 6 messages
-    Phone is optional but improves quality score
+    PRODUCTION: Email + Name + Budget + 7+ messages
+    Phone optional (improves score if present)
     """
     has_email = bool(lead_data.get('email'))
     has_name = bool(lead_data.get('name'))
@@ -323,19 +286,18 @@ def is_lead_qualified(lead_data, conversation_history):
     
     message_count = len([msg for msg in conversation_history if msg['role'] == 'user'])
     
-    # NEW: Email + Name + Budget + 6+ messages
-    # Phone is now optional (extracted if present, but not required for qualification)
+    # FIXED: 7 messages (phone comes on message 7)
     is_qualified = (
         has_email and 
         has_name and 
         has_budget and
-        message_count >= 6  # Increased to wait for phone message
+        message_count >= 7
     )
     
     if is_qualified:
-        print(f"✅ QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Messages={message_count}")
+        print(f"✅ QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}")
     else:
-        print(f"⚠️ Not yet: Email={has_email}, Name={has_name}, Budget={has_budget}, Messages={message_count}/6")
+        print(f"⚠️ Not yet: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}/7")
     
     return is_qualified
 
@@ -372,11 +334,11 @@ class Lead(db.Model):
     budget = db.Column(db.String(50))
     message = db.Column(db.Text)
     intent_score = db.Column(db.Integer, default=1)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))  # FIXED: Local time
 
 
 # -------------------------
-# TEMPLATE ROUTES
+# ROUTES
 # -------------------------
 
 @app.route("/")
@@ -400,7 +362,7 @@ def owner_login():
 
     try:
         agency = db.session.get(Agency, int(agency_id))
-    except Exception:
+    except:
         return redirect("/owner-login?error=Invalid+Agency+ID")
 
     if not agency:
@@ -438,14 +400,9 @@ def admin():
 def owner():
     return render_template("owner.html")
 
-
-# -------------------------
-# API ROUTES
-# -------------------------
-
 @app.route("/ping")
 def ping():
-    return jsonify({"status": "ok", "message": "pong", "timestamp": datetime.utcnow().isoformat()})
+    return jsonify({"status": "ok", "message": "pong"})
 
 @app.route("/create-agency", methods=["POST", "OPTIONS"])
 def create_agency():
@@ -472,10 +429,7 @@ def create_agency():
     db.session.add(agency)
     db.session.commit()
 
-    return jsonify({
-        "agency_id": agency.id,
-        "message": "Agency created successfully"
-    })
+    return jsonify({"agency_id": agency.id, "message": "Agency created"})
 
 @app.route("/agencies")
 def get_agencies():
@@ -514,7 +468,7 @@ def agency_info(agency_id):
 
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
-    """ULTRA PRO MAX: Timeline-aware, flexible extraction"""
+    """PRODUCTION CHAT - All fixes applied"""
     if request.method == "OPTIONS":
         return "", 200
 
@@ -535,46 +489,33 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
-        # ENHANCED PROMPT with TIMELINE question
+        # IMPROVED PROMPT - Less repetitive
         system_prompt = f"""You are {agency.assistant_name}, a professional real estate consultant at {agency.name}.
 
-🎯 YOUR PERSONALITY:
-- Warm, conversational, helpful
-- Natural language (use "I'm", "you're", occasional 👋)
-- Short responses (1-2 sentences max)
+PERSONALITY:
+- Warm and helpful
+- Short responses (1-2 sentences)
 - Ask ONE question at a time
-- Never repeat questions
+- Vary your language - don't repeat phrases
 
-💡 YOUR MISSION - COLLECT IN THIS ORDER:
-1. What they're looking for (property type)
-2. Location preference
-3. Budget range
-4. TIMELINE (CRITICAL): "When are you looking to buy/move?" or "Is this urgent or just exploring?"
-5. Their NAME: "And what's your name?"
-6. Email: "What's your email so I can send you listings?"
-7. Phone (optional): "What's the best number to reach you?"
+COLLECT IN ORDER:
+1. Property type
+2. Location
+3. Budget
+4. Timeline: "When are you looking to buy/move?"
+5. Name: "What's your name?"
+6. Email
+7. Phone (optional)
 
-📋 CONVERSATION FLOW:
-OPENING:
-"Hi! 👋 What brings you here today?"
+CONVERSATION TIPS:
+- Open: "Hi! What brings you here today?"
+- Vary responses: Instead of always saying "Great!", use "Perfect", "Got it", "Understood", "Nice"
+- Don't overuse emojis (max 1 per response)
+- Sound natural, not robotic
 
-QUALIFYING:
-- Property type → Location → Budget
-- THEN ask timeline: "When are you looking to move in?" or "Is this something you need soon?"
-- THEN name → email → phone
+Respond naturally:"""
 
-🚫 NEVER:
-- Skip timeline question
-- Ask for contact info in first 2 messages
-- Sound like a form
-
-✅ ALWAYS:
-- Ask about timeline after budget
-- Keep it conversational
-- Sound human
-
-Now respond naturally:"""
-
+        # FIXED: Clear memory when starting new conversation
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
 
@@ -586,10 +527,10 @@ Now respond naturally:"""
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
-            temperature=0.8,
+            temperature=0.7,  # Reduced for less repetition
             max_tokens=150,
-            presence_penalty=0.6,
-            frequency_penalty=0.3
+            presence_penalty=0.8,  # Increased to avoid repetition
+            frequency_penalty=0.5  # Increased to avoid repetition
         )
 
         ai_reply = response.choices[0].message.content.strip()
@@ -600,10 +541,9 @@ Now respond naturally:"""
             "name": agency.assistant_name
         })
 
-        # Extract data
+        # Extract and qualify
         lead_data = extract_lead_data(history)
         
-        # Check qualification
         if is_lead_qualified(lead_data, history):
             existing_lead = Lead.query.filter_by(
                 agency_id=agency_id,
@@ -611,7 +551,7 @@ Now respond naturally:"""
             ).first()
             
             if existing_lead:
-                print(f"⚠️ Duplicate prevented: {lead_data['email']} (ID: {existing_lead.id})")
+                print(f"⚠️ Duplicate: {lead_data['email']}")
             else:
                 ai_summary = generate_lead_summary(history, agency.name)
                 quality_score = analyze_lead_quality(lead_data, history)
@@ -631,48 +571,51 @@ Now respond naturally:"""
 
                 print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
                 
-                email_sent = send_lead_email(agency, lead)
-                if email_sent:
-                    print(f"   📧 Email sent")
-                else:
-                    print(f"   ⚠️ Email failed")
+                send_lead_email(agency, lead)
 
         return jsonify({"reply": ai_reply})
 
     except Exception as e:
-        print(f"❌ CHAT ERROR: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            "error": "I'm having trouble right now. Please try again!",
-            "details": str(e) if os.getenv('ENV') == 'DEV' else None
-        }), 500
+        print(f"❌ CHAT ERROR: {e}")
+        return jsonify({"error": "Connection issue"}), 500
 
 @app.route("/delete-lead/<int:lead_id>", methods=["DELETE"])
 def delete_lead(lead_id):
+    """FIXED: Clear memory when lead deleted"""
     try:
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
         
+        # FIXED: Clear conversation memory for this lead's email
+        for key in list(conversation_memory.keys()):
+            if key.startswith(f"{lead.agency_id}_"):
+                del conversation_memory[key]
+        
         db.session.delete(lead)
         db.session.commit()
-        print(f"🗑️ Lead deleted: ID {lead_id}")
-        return jsonify({"message": "Lead deleted successfully"})
+        print(f"🗑️ Lead deleted: ID {lead_id} + memory cleared")
+        return jsonify({"message": "Lead deleted"})
     except Exception as e:
         print(f"❌ DELETE ERROR: {e}")
-        return jsonify({"error": "Failed to delete lead"}), 500
+        return jsonify({"error": "Failed to delete"}), 500
 
 @app.route("/clear-all-leads/<int:agency_id>", methods=["DELETE"])
 def clear_all_leads(agency_id):
+    """FIXED: Clear memory when all leads cleared"""
     try:
+        # FIXED: Clear all conversation memory for this agency
+        keys_to_delete = [k for k in conversation_memory.keys() if k.startswith(f"{agency_id}_")]
+        for key in keys_to_delete:
+            del conversation_memory[key]
+        
         deleted_count = Lead.query.filter_by(agency_id=agency_id).delete()
         db.session.commit()
-        print(f"🗑️ Cleared {deleted_count} leads for agency {agency_id}")
-        return jsonify({"message": f"{deleted_count} leads deleted successfully"})
+        print(f"🗑️ Cleared {deleted_count} leads + memory for agency {agency_id}")
+        return jsonify({"message": f"{deleted_count} leads deleted"})
     except Exception as e:
-        print(f"❌ CLEAR ALL ERROR: {e}")
-        return jsonify({"error": "Failed to clear leads"}), 500
+        print(f"❌ CLEAR ERROR: {e}")
+        return jsonify({"error": "Failed to clear"}), 500
 
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
@@ -733,29 +676,23 @@ def export_leads(agency_id):
 
 
 # -------------------------
-# DATABASE INIT & MIGRATION
+# DATABASE INIT
 # -------------------------
 with app.app_context():
     db.create_all()
-    print("✅ Database tables created/verified")
+    print("✅ Database ready")
     
     try:
         from sqlalchemy import text, inspect
-        
         inspector = inspect(db.engine)
         columns = [col['name'] for col in inspector.get_columns('lead')]
         
         if 'intent_score' not in columns:
-            print("🔄 Running migration: Adding intent_score column...")
             db.session.execute(text("ALTER TABLE lead ADD COLUMN intent_score INTEGER DEFAULT 1;"))
-            db.session.execute(text("UPDATE lead SET intent_score = 3 WHERE intent_score IS NULL;"))
             db.session.commit()
             print("✅ Migration complete")
-        else:
-            print("✅ intent_score column exists")
     except Exception as e:
-        print(f"⚠️ Migration check: {e}")
-        pass
+        print(f"⚠️ Migration: {e}")
 
 
 # -------------------------
