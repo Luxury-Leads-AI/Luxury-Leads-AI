@@ -61,9 +61,10 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 
 # -------------------------
-# MEMORY STORE - PER VISITOR
+# MEMORY STORE - PER VISITOR WITH EXPIRATION
 # -------------------------
 conversation_memory = {}
+session_timestamps = {}  # Track last activity per session
 
 # -------------------------
 # EMAIL CONFIG
@@ -134,6 +135,31 @@ Default Password: admin123
         return True
     except:
         return False
+
+
+def clean_expired_sessions():
+    """Remove conversation sessions older than 30 minutes"""
+    try:
+        current_time = datetime.utcnow()
+        expired_keys = []
+        
+        for key in list(session_timestamps.keys()):
+            last_activity = session_timestamps[key]
+            time_diff = (current_time - last_activity).total_seconds()
+            
+            # Expire after 30 minutes (1800 seconds)
+            if time_diff > 1800:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            if key in conversation_memory:
+                del conversation_memory[key]
+                print(f"🧹 Expired session cleared: {key}")
+            if key in session_timestamps:
+                del session_timestamps[key]
+                
+    except Exception as e:
+        print(f"⚠️ Session cleanup error: {e}")
 
 
 def generate_lead_summary(conversation_history, agency_name):
@@ -470,9 +496,12 @@ def agency_info(agency_id):
 
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
-    """PRODUCTION CHAT - All fixes applied"""
+    """PRODUCTION CHAT WITH SESSION EXPIRATION"""
     if request.method == "OPTIONS":
         return "", 200
+
+    # CLEANUP: Remove expired sessions (30 minutes old)
+    clean_expired_sessions()
 
     try:
         data = request.get_json(force=True)
@@ -518,6 +547,10 @@ Respond naturally:"""
 
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
+            print(f"🆕 New session started: {session_key}")
+
+        # Update session timestamp
+        session_timestamps[session_key] = datetime.utcnow()
 
         history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
@@ -588,6 +621,8 @@ def delete_lead(lead_id):
         for key in list(conversation_memory.keys()):
             if key.startswith(f"{lead.agency_id}_"):
                 del conversation_memory[key]
+                if key in session_timestamps:
+                    del session_timestamps[key]
         
         db.session.delete(lead)
         db.session.commit()
@@ -603,6 +638,8 @@ def clear_all_leads(agency_id):
         keys_to_delete = [k for k in conversation_memory.keys() if k.startswith(f"{agency_id}_")]
         for key in keys_to_delete:
             del conversation_memory[key]
+            if key in session_timestamps:
+                del session_timestamps[key]
         
         deleted_count = Lead.query.filter_by(agency_id=agency_id).delete()
         db.session.commit()
