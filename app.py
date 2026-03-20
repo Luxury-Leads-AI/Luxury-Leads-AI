@@ -206,21 +206,22 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # NAME - PRODUCTION FIX: Handles all cases
+# NAME - PRODUCTION FIX: Case-insensitive extraction
     name_patterns = [
-        r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)",
-        r"\b([A-Z][a-z]{2,})\b",
+        r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,}(?:\s+[a-zA-Z]{3,})?)",
+        r"\b([A-Z][a-z]{2,})\b",  # Keep for already capitalized names
     ]
     
     for pattern in name_patterns:
         name_match = re.search(pattern, full_conversation, re.IGNORECASE)
         if name_match:
-            potential_name = name_match.group(1).strip().title()
+            potential_name = name_match.group(1).strip().title()  # .title() capitalizes it
             
             false_positives = [
                 'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
                 'its', 'it', 'am', 'is', 'are', 'was', 'were', 'have', 'has',
-                'beach', 'villa', 'property', 'house', 'apartment', 'usa', 'miami'
+                'beach', 'villa', 'property', 'house', 'apartment', 'usa', 'miami',
+                'malibu', 'york', 'angeles', 'miami', 'florida', 'california'
             ]
             
             if (len(potential_name) >= 3 and 
@@ -228,8 +229,7 @@ def extract_lead_data(conversation_history):
                 not any(fp in potential_name.lower() for fp in ['looking for', 'interested in'])):
                 lead_data['name'] = potential_name
                 print(f"✅ Name: {potential_name}")
-                break
-    
+                break    
     # PHONE - FIXED: Accept 9+ digits
     phone_patterns = [
         r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{2,4}",
