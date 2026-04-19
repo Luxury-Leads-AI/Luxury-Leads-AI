@@ -195,7 +195,7 @@ Write summary:"""
 
 
 def extract_lead_data(conversation_history):
-    """PRODUCTION: Flexible extraction - PRIORITY-BASED"""
+    """PRODUCTION: Smart name extraction with strict filtering"""
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
     lead_data = {'name': None, 'email': None, 'phone': None, 'budget': None}
@@ -205,53 +205,49 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # NAME - PRIORITY: Check explicit patterns FIRST, then fallback
-    name_found = False
-    
-    # PRIORITY 1: Explicit name introductions (most reliable)
-    explicit_patterns = [
-        r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,}(?:\s+[a-zA-Z]{3,})?)",
+    # NAME - STRICT EXTRACTION (prevents "looking for" etc.)
+    # Comprehensive false positives list
+    name_false_positives = [
+        # Common verbs
+        'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
+        'searching', 'seeking', 'finding', 'buying', 'renting', 'moving',
+        # State verbs
+        'am', 'is', 'are', 'was', 'were', 'have', 'has', 'been', 'being',
+        # Property words
+        'villa', 'house', 'apartment', 'property', 'condo', 'flat', 'home',
+        'bedroom', 'bathroom', 'kitchen', 'garage', 'living', 'drawing',
+        # Locations
+        'beach', 'side', 'miami', 'york', 'washington', 'angeles', 'newyork',
+        'malibu', 'florida', 'california', 'usa', 'location',
+        # Actions
+        'buy', 'rent', 'purchase', 'move', 'find', 'search', 'prefer',
+        # Adjectives
+        'perfect', 'great', 'nice', 'good', 'suitable', 'new', 'old',
+        # Phrases (check these as single words too)
+        'for', 'to', 'in', 'at', 'on', 'with', 'from', 'by', 'an', 'a', 'the'
     ]
     
-    for pattern in explicit_patterns:
-        name_match = re.search(pattern, full_conversation, re.IGNORECASE)
-        if name_match:
-            potential_name = name_match.group(1).strip().title()
-            
-            # Strict false positive list for explicit patterns
-            explicit_false_positives = [
-                'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
-                'its', 'it', 'am', 'is', 'are', 'was', 'were', 'have', 'has', 'been',
-                'beach', 'villa', 'property', 'house', 'apartment', 'condo', 'flat',
-                'usa', 'miami', 'malibu', 'york', 'angeles', 'florida', 'california',
-                'buy', 'rent', 'purchase', 'move', 'find', 'search'
-            ]
-            
-            if (len(potential_name) >= 3 and 
-                potential_name.lower() not in explicit_false_positives):
-                lead_data['name'] = potential_name
-                print(f"✅ Name: {potential_name}")
-                name_found = True
-                break
+    # Pattern 1: Explicit introductions - SINGLE WORD ONLY
+    explicit_pattern = r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,})(?:\s|\.|\,|$)"
     
-    # PRIORITY 2: If no explicit name, try standalone capitalized words (less reliable)
-    if not name_found:
-        standalone_pattern = r"\b([A-Z][a-z]{2,})\b"
-        standalone_matches = re.findall(standalone_pattern, full_conversation)
+    name_match = re.search(explicit_pattern, full_conversation, re.IGNORECASE)
+    if name_match:
+        potential_name = name_match.group(1).strip()
         
-        # Extended false positives for standalone matching
-        standalone_false_positives = [
-            'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
-            'beach', 'villa', 'property', 'house', 'apartment', 'condo', 'perfect',
-            'usa', 'miami', 'malibu', 'york', 'angeles', 'florida', 'california',
-            'great', 'nice', 'good', 'thanks', 'thank', 'please', 'hello', 'hi',
-            'within', 'months', 'weeks', 'days', 'year', 'time', 'budget', 'price'
-        ]
+        # Check if it's a false positive BEFORE title-casing
+        if potential_name.lower() not in name_false_positives and len(potential_name) >= 3:
+            lead_data['name'] = potential_name.title()
+            print(f"✅ Name: {potential_name.title()}")
+    
+    # Pattern 2: If no explicit name, try standalone capitalized words (less reliable)
+    if not lead_data['name']:
+        # Find all capitalized words
+        standalone_matches = re.findall(r"\b([A-Z][a-z]{2,})\b", full_conversation)
         
         for match in standalone_matches:
-            if match.lower() not in standalone_false_positives and len(match) >= 3:
+            if match.lower() not in name_false_positives and len(match) >= 3:
                 lead_data['name'] = match.title()
-                print(f"✅ Name: {match.title()}")
+                print(f"✅ Name: {match.title()} (standalone)")
                 break
     
     # PHONE - Accept 9+ digits
@@ -276,7 +272,7 @@ def extract_lead_data(conversation_history):
         r"(\d+(?:\.\d+)?)\s*([MmKk])\s*(?:\$|dollars?)?",
         r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
         r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*(?:\$|dollars?|usd|aed)?",
-        r"(?:budget|price|around)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million)?",
+        r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
     ]
     
     for i, pattern in enumerate(budget_patterns):
