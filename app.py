@@ -64,7 +64,7 @@ client = OpenAI(api_key=api_key)
 # MEMORY STORE - PER VISITOR WITH EXPIRATION
 # -------------------------
 conversation_memory = {}
-session_timestamps = {}  # Track last activity per session
+session_timestamps = {}
 
 # -------------------------
 # EMAIL CONFIG
@@ -147,7 +147,6 @@ def clean_expired_sessions():
             last_activity = session_timestamps[key]
             time_diff = (current_time - last_activity).total_seconds()
             
-            # Expire after 30 minutes (1800 seconds)
             if time_diff > 1800:
                 expired_keys.append(key)
         
@@ -196,7 +195,7 @@ Write summary:"""
 
 
 def extract_lead_data(conversation_history):
-    """PRODUCTION: Flexible extraction for all writing styles"""
+    """PRODUCTION: Flexible extraction - PRIORITY-BASED"""
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
     lead_data = {'name': None, 'email': None, 'phone': None, 'budget': None}
@@ -206,31 +205,56 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-# NAME - PRODUCTION FIX: Case-insensitive extraction
-    name_patterns = [
+    # NAME - PRIORITY: Check explicit patterns FIRST, then fallback
+    name_found = False
+    
+    # PRIORITY 1: Explicit name introductions (most reliable)
+    explicit_patterns = [
         r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,}(?:\s+[a-zA-Z]{3,})?)",
-        r"\b([A-Z][a-z]{2,})\b",  # Keep for already capitalized names
     ]
     
-    for pattern in name_patterns:
+    for pattern in explicit_patterns:
         name_match = re.search(pattern, full_conversation, re.IGNORECASE)
         if name_match:
-            potential_name = name_match.group(1).strip().title()  # .title() capitalizes it
+            potential_name = name_match.group(1).strip().title()
             
-            false_positives = [
+            # Strict false positive list for explicit patterns
+            explicit_false_positives = [
                 'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
-                'its', 'it', 'am', 'is', 'are', 'was', 'were', 'have', 'has',
-                'beach', 'villa', 'property', 'house', 'apartment', 'usa', 'miami',
-                'malibu', 'york', 'angeles', 'miami', 'florida', 'california'
+                'its', 'it', 'am', 'is', 'are', 'was', 'were', 'have', 'has', 'been',
+                'beach', 'villa', 'property', 'house', 'apartment', 'condo', 'flat',
+                'usa', 'miami', 'malibu', 'york', 'angeles', 'florida', 'california',
+                'buy', 'rent', 'purchase', 'move', 'find', 'search'
             ]
             
             if (len(potential_name) >= 3 and 
-                potential_name.lower() not in false_positives and
-                not any(fp in potential_name.lower() for fp in ['looking for', 'interested in'])):
+                potential_name.lower() not in explicit_false_positives):
                 lead_data['name'] = potential_name
                 print(f"✅ Name: {potential_name}")
-                break    
-    # PHONE - FIXED: Accept 9+ digits
+                name_found = True
+                break
+    
+    # PRIORITY 2: If no explicit name, try standalone capitalized words (less reliable)
+    if not name_found:
+        standalone_pattern = r"\b([A-Z][a-z]{2,})\b"
+        standalone_matches = re.findall(standalone_pattern, full_conversation)
+        
+        # Extended false positives for standalone matching
+        standalone_false_positives = [
+            'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
+            'beach', 'villa', 'property', 'house', 'apartment', 'condo', 'perfect',
+            'usa', 'miami', 'malibu', 'york', 'angeles', 'florida', 'california',
+            'great', 'nice', 'good', 'thanks', 'thank', 'please', 'hello', 'hi',
+            'within', 'months', 'weeks', 'days', 'year', 'time', 'budget', 'price'
+        ]
+        
+        for match in standalone_matches:
+            if match.lower() not in standalone_false_positives and len(match) >= 3:
+                lead_data['name'] = match.title()
+                print(f"✅ Name: {match.title()}")
+                break
+    
+    # PHONE - Accept 9+ digits
     phone_patterns = [
         r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{2,4}",
         r"\+?\d{9,15}",
@@ -500,7 +524,6 @@ def chat():
     if request.method == "OPTIONS":
         return "", 200
 
-    # CLEANUP: Remove expired sessions (30 minutes old)
     clean_expired_sessions()
 
     try:
@@ -549,7 +572,6 @@ Respond naturally:"""
             conversation_memory[session_key] = []
             print(f"🆕 New session started: {session_key}")
 
-        # Update session timestamp
         session_timestamps[session_key] = datetime.utcnow()
 
         history = conversation_memory[session_key]
