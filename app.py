@@ -73,7 +73,7 @@ SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 def send_lead_email(agency, lead):
-    """Send email notification"""
+    """Send email notification with improved formatting"""
     subject = f"🎯 New Qualified Lead for {agency.name}"
     body = f"""
 New QUALIFIED Lead Received from {agency.name}
@@ -101,7 +101,7 @@ Default Password: admin123
     
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     
-    if SENDGRID_API_KEY:
+    if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
         try:
             print(f"📧 Sending via SendGrid to: {agency.email}")
             message = Mail(
@@ -116,24 +116,27 @@ Default Password: admin123
             return True
         except Exception as e:
             print(f"⚠️ SendGrid failed: {e}")
+            print("⚠️ Falling back to Gmail SMTP...")
     
     if not SMTP_EMAIL or not SMTP_PASSWORD:
         print("⚠️ SMTP credentials not configured")
         return False
 
     try:
-        print(f"📧 Attempting Gmail SMTP")
+        print(f"📧 Attempting Gmail SMTP to: {agency.email}")
         msg = MIMEText(body)
         msg['Subject'] = subject
         msg['From'] = SMTP_EMAIL
         msg['To'] = agency.email
+        
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
         print(f"✅ EMAIL SENT via Gmail")
         return True
-    except:
+    except Exception as e:
+        print(f"❌ Email failed: {e}")
         return False
 
 
@@ -195,7 +198,7 @@ Write summary:"""
 
 
 def extract_lead_data(conversation_history):
-    """PRODUCTION: Smart name extraction with strict filtering"""
+    """PRODUCTION: Ultra-strict name extraction to prevent false positives"""
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
     lead_data = {'name': None, 'email': None, 'phone': None, 'budget': None}
@@ -205,9 +208,9 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # NAME - STRICT EXTRACTION (prevents "looking for" etc.)
-    # Comprehensive false positives list
-    name_false_positives = [
+    # NAME - ULTRA-STRICT EXTRACTION
+    # Comprehensive blocklist to prevent capturing common words
+    name_blocklist = {
         # Common verbs
         'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
         'searching', 'seeking', 'finding', 'buying', 'renting', 'moving',
@@ -223,29 +226,30 @@ def extract_lead_data(conversation_history):
         'buy', 'rent', 'purchase', 'move', 'find', 'search', 'prefer',
         # Adjectives
         'perfect', 'great', 'nice', 'good', 'suitable', 'new', 'old',
-        # Phrases (check these as single words too)
+        # Common prepositions/articles
         'for', 'to', 'in', 'at', 'on', 'with', 'from', 'by', 'an', 'a', 'the'
-    ]
+    }
     
-    # Pattern 1: Explicit introductions - SINGLE WORD ONLY
-    explicit_pattern = r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,})(?:\s|\.|\,|$)"
+    # Pattern 1: Explicit name introductions - SINGLE WORD ONLY
+    # Matches: "I am Farhan", "My name is Shah", "Call me Mohsin"
+    # Doesn't match: "I am looking for" (stops at "looking", rejects it)
+    explicit_pattern = r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,})(?:\s|\.|\,|!|\?|$)"
     
     name_match = re.search(explicit_pattern, full_conversation, re.IGNORECASE)
     if name_match:
         potential_name = name_match.group(1).strip()
         
-        # Check if it's a false positive BEFORE title-casing
-        if potential_name.lower() not in name_false_positives and len(potential_name) >= 3:
+        # Check blocklist BEFORE title-casing (prevents "Looking" → "looking" mismatch)
+        if potential_name.lower() not in name_blocklist and len(potential_name) >= 3:
             lead_data['name'] = potential_name.title()
             print(f"✅ Name: {potential_name.title()}")
     
-    # Pattern 2: If no explicit name, try standalone capitalized words (less reliable)
+    # Pattern 2: Fallback - Standalone capitalized words (less reliable)
     if not lead_data['name']:
-        # Find all capitalized words
         standalone_matches = re.findall(r"\b([A-Z][a-z]{2,})\b", full_conversation)
         
         for match in standalone_matches:
-            if match.lower() not in name_false_positives and len(match) >= 3:
+            if match.lower() not in name_blocklist and len(match) >= 3:
                 lead_data['name'] = match.title()
                 print(f"✅ Name: {match.title()} (standalone)")
                 break
