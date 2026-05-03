@@ -73,7 +73,7 @@ SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 def send_lead_email(agency, lead):
-    """Send email notification with improved formatting"""
+    """Send email notification - SendGrid primary, Gmail fallback"""
     subject = f"🎯 New Qualified Lead for {agency.name}"
     body = f"""
 New QUALIFIED Lead Received from {agency.name}
@@ -101,6 +101,7 @@ Default Password: admin123
     
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     
+    # TRY SENDGRID FIRST (works on Render)
     if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
         try:
             print(f"📧 Sending via SendGrid to: {agency.email}")
@@ -112,31 +113,15 @@ Default Password: admin123
             )
             sg = SendGridAPIClient(SENDGRID_API_KEY)
             response = sg.send(message)
-            print(f"✅ EMAIL SENT via SendGrid")
+            print(f"✅ EMAIL SENT via SendGrid (Status: {response.status_code})")
             return True
         except Exception as e:
             print(f"⚠️ SendGrid failed: {e}")
-            print("⚠️ Falling back to Gmail SMTP...")
-    
-    if not SMTP_EMAIL or not SMTP_PASSWORD:
-        print("⚠️ SMTP credentials not configured")
-        return False
-
-    try:
-        print(f"📧 Attempting Gmail SMTP to: {agency.email}")
-        msg = MIMEText(body)
-        msg['Subject'] = subject
-        msg['From'] = SMTP_EMAIL
-        msg['To'] = agency.email
-        
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
-        server.login(SMTP_EMAIL, SMTP_PASSWORD)
-        server.send_message(msg)
-        server.quit()
-        print(f"✅ EMAIL SENT via Gmail")
-        return True
-    except Exception as e:
-        print(f"❌ Email failed: {e}")
+            print("⚠️ Gmail SMTP not available on Render free tier")
+            return False
+    else:
+        print("⚠️ SendGrid not configured - email will NOT be sent on Render")
+        print("⚠️ Please set SENDGRID_API_KEY in Render environment variables")
         return False
 
 
@@ -198,7 +183,7 @@ Write summary:"""
 
 
 def extract_lead_data(conversation_history):
-    """PRODUCTION: Ultra-strict name extraction to prevent false positives"""
+    """PRODUCTION: Ultra-strict name extraction"""
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
     lead_data = {'name': None, 'email': None, 'phone': None, 'budget': None}
@@ -208,48 +193,49 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
     
-    # NAME - ULTRA-STRICT EXTRACTION
-    # Comprehensive blocklist to prevent capturing common words
+    # NAME - ULTRA-STRICT BLOCKLIST
     name_blocklist = {
         # Common verbs
         'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
         'searching', 'seeking', 'finding', 'buying', 'renting', 'moving',
         # State verbs
         'am', 'is', 'are', 'was', 'were', 'have', 'has', 'been', 'being',
+        # Modal verbs - CRITICAL FIX
+        'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must',
         # Property words
         'villa', 'house', 'apartment', 'property', 'condo', 'flat', 'home',
         'bedroom', 'bathroom', 'kitchen', 'garage', 'living', 'drawing',
         # Locations
         'beach', 'side', 'miami', 'york', 'washington', 'angeles', 'newyork',
-        'malibu', 'florida', 'california', 'usa', 'location',
+        'malibu', 'florida', 'california', 'usa', 'location', 'cape', 'keys',
         # Actions
-        'buy', 'rent', 'purchase', 'move', 'find', 'search', 'prefer',
+        'buy', 'rent', 'purchase', 'move', 'find', 'search', 'prefer', 'suggest',
         # Adjectives
-        'perfect', 'great', 'nice', 'good', 'suitable', 'new', 'old',
-        # Common prepositions/articles
-        'for', 'to', 'in', 'at', 'on', 'with', 'from', 'by', 'an', 'a', 'the'
+        'perfect', 'great', 'nice', 'good', 'suitable', 'new', 'old', 'popular',
+        # Prepositions/articles
+        'for', 'to', 'in', 'at', 'on', 'with', 'from', 'by', 'an', 'a', 'the',
+        # Question words
+        'what', 'where', 'when', 'why', 'how', 'which', 'who'
     }
     
     # Pattern 1: Explicit name introductions - SINGLE WORD ONLY
-    # Matches: "I am Farhan", "My name is Shah", "Call me Mohsin"
-    # Doesn't match: "I am looking for" (stops at "looking", rejects it)
     explicit_pattern = r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,})(?:\s|\.|\,|!|\?|$)"
     
     name_match = re.search(explicit_pattern, full_conversation, re.IGNORECASE)
     if name_match:
         potential_name = name_match.group(1).strip()
         
-        # Check blocklist BEFORE title-casing (prevents "Looking" → "looking" mismatch)
+        # Check blocklist BEFORE title-casing
         if potential_name.lower() not in name_blocklist and len(potential_name) >= 3:
             lead_data['name'] = potential_name.title()
             print(f"✅ Name: {potential_name.title()}")
     
-    # Pattern 2: Fallback - Standalone capitalized words (less reliable)
+    # Pattern 2: Fallback - Standalone capitalized words (VERY restricted)
     if not lead_data['name']:
-        standalone_matches = re.findall(r"\b([A-Z][a-z]{2,})\b", full_conversation)
+        standalone_matches = re.findall(r"\b([A-Z][a-z]{3,})\b", full_conversation)  # Min 4 chars for standalone
         
         for match in standalone_matches:
-            if match.lower() not in name_blocklist and len(match) >= 3:
+            if match.lower() not in name_blocklist and len(match) >= 4:  # Stricter: 4+ chars
                 lead_data['name'] = match.title()
                 print(f"✅ Name: {match.title()} (standalone)")
                 break
