@@ -714,6 +714,17 @@ def export_leads(agency_id):
         print(f"❌ EXPORT ERROR: {e}")
         return jsonify({"error": "Export failed"}), 500
 
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+@app.route("/privacy-policy")
+def privacy():
+    return render_template("privacy.html")
+
+@app.route("/refund-policy")
+def refund():
+    return render_template("refund.html")
 
 # -------------------------
 # DATABASE INIT
