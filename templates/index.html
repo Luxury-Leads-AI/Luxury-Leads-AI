@@ -1,102 +1,257 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Luxury Leads AI Assistant</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luxury Leads AI - Convert Website Visitors into Qualified Real Estate Leads</title>
+    <meta name="description" content="AI-powered lead generation for real estate agencies. Capture and qualify leads 24/7 with intelligent conversations.">
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         body {
-            font-family: Arial;
-            background-color: #f4f4f4;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
         }
 
-        .chat-box {
-            width: 400px;
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-
-        .messages {
-            height: 300px;
-            overflow-y: auto;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
-            padding: 10px;
-        }
-
-        .input-area {
-            display: flex;
-        }
-
-        input {
-            flex: 1;
-            padding: 10px;
-        }
-
-        button {
-            padding: 10px;
-            background: black;
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            border: none;
-            cursor: pointer;
+            padding: 100px 20px;
+            text-align: center;
         }
 
-        .user {
-            text-align: right;
-            margin: 5px;
+        .hero h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            font-weight: 700;
         }
 
-        .bot {
-            text-align: left;
-            margin: 5px;
-            color: blue;
+        .hero p {
+            font-size: 24px;
+            margin-bottom: 40px;
+            opacity: 0.95;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background: white;
+            color: #667eea;
+            padding: 18px 40px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-size: 18px;
+            font-weight: 600;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        /* Features Section */
+        .features {
+            max-width: 1200px;
+            margin: 80px auto;
+            padding: 0 20px;
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 36px;
+            margin-bottom: 60px;
+            color: #2d3748;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 40px;
+        }
+
+        .feature {
+            text-align: center;
+            padding: 30px;
+        }
+
+        .feature-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .feature h3 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            color: #2d3748;
+        }
+
+        .feature p {
+            color: #718096;
+            font-size: 16px;
+        }
+
+        /* Stats Section */
+        .stats {
+            background: #f7fafc;
+            padding: 60px 20px;
+            text-align: center;
+        }
+
+        .stats-grid {
+            max-width: 1000px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 40px;
+        }
+
+        .stat h3 {
+            font-size: 48px;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .stat p {
+            color: #718096;
+            font-size: 18px;
+        }
+
+        /* CTA Section */
+        .cta-section {
+            background: #2d3748;
+            color: white;
+            padding: 80px 20px;
+            text-align: center;
+        }
+
+        .cta-section h2 {
+            font-size: 36px;
+            margin-bottom: 20px;
+        }
+
+        .cta-section p {
+            font-size: 20px;
+            margin-bottom: 40px;
+            opacity: 0.9;
+        }
+
+        .cta-secondary {
+            background: #667eea;
+            color: white;
+            padding: 18px 40px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-size: 18px;
+            font-weight: 600;
+            display: inline-block;
+            transition: background 0.3s;
+        }
+
+        .cta-secondary:hover {
+            background: #5568d3;
+        }
+
+        /* Footer */
+        footer {
+            background: #1a202c;
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
 <body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <h1>Turn Website Visitors into Qualified Leads</h1>
+        <p>AI-powered conversations that capture real estate leads 24/7</p>
+        <a href="/pricing" class="cta-button">Start Free Trial</a>
+    </section>
 
-<div class="chat-box">
-    <h3>Luxury Leads AI Assistant</h3>
-    <div class="messages" id="messages"></div>
+    <!-- Features Section -->
+    <section class="features">
+        <h2>Why Real Estate Agencies Choose Us</h2>
+        <div class="feature-grid">
+            <div class="feature">
+                <div class="feature-icon">🤖</div>
+                <h3>AI-Powered Conversations</h3>
+                <p>Natural conversations that qualify leads while you sleep. Captures name, email, budget, and timeline automatically.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">⚡</div>
+                <h3>Instant Notifications</h3>
+                <p>Get email alerts the moment a qualified lead is captured. Never miss a hot prospect again.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📊</div>
+                <h3>Quality Scoring</h3>
+                <p>Every lead is scored 1-5 stars based on qualification level. Focus on the hottest prospects first.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🎯</div>
+                <h3>No Setup Required</h3>
+                <p>Add one line of code to your website. We handle everything else. Live in 15 minutes.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">💰</div>
+                <h3>Unlimited Conversations</h3>
+                <p>No per-lead fees. Fixed monthly pricing. Talk to 10 or 10,000 visitors - same price.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🔒</div>
+                <h3>Secure & Compliant</h3>
+                <p>Enterprise-grade security. GDPR compliant. Your data stays safe and private.</p>
+            </div>
+        </div>
+    </section>
 
-    <div class="input-area">
-        <input type="text" id="messageInput" placeholder="Ask about properties...">
-        <button onclick="sendMessage()">Send</button>
-    </div>
-</div>
+    <!-- Stats Section -->
+    <section class="stats">
+        <div class="stats-grid">
+            <div class="stat">
+                <h3>87%</h3>
+                <p>Of visitors captured</p>
+            </div>
+            <div class="stat">
+                <h3>24/7</h3>
+                <p>Always working</p>
+            </div>
+            <div class="stat">
+                <h3>3x</h3>
+                <p>More qualified leads</p>
+            </div>
+            <div class="stat">
+                <h3>15min</h3>
+                <p>Setup time</p>
+            </div>
+        </div>
+    </section>
 
-<script>
-async function sendMessage() {
-    const input = document.getElementById("messageInput");
-    const message = input.value;
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <h2>Ready to 3x Your Qualified Leads?</h2>
+        <p>Join agencies generating 50+ qualified leads per month</p>
+        <a href="/pricing" class="cta-secondary">View Pricing & Start Free Trial</a>
+    </section>
 
-    if (!message) return;
-
-    const messagesDiv = document.getElementById("messages");
-
-    messagesDiv.innerHTML += `<div class="user">${message}</div>`;
-
-    input.value = "";
-
-    const response = await fetch("/chat", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ message: message })
-    });
-
-    const data = await response.json();
-
-    messagesDiv.innerHTML += `<div class="bot">${data.reply}</div>`;
-
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-}
-</script>
-
+    <!-- Footer -->
+    <footer>
+        <p>&copy; 2026 Luxury Leads AI. All rights reserved.</p>
+        <p style="margin-top: 10px;">
+            <a href="/pricing">Pricing</a> | 
+            <a href="mailto:yasar.moaz85@gmail.com">Contact</a>
+        </p>
+    </footer>
 </body>
 </html>
