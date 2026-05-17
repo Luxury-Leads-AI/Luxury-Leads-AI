@@ -899,12 +899,29 @@ with app.app_context():
         inspector = inspect(db.engine)
         columns = [col['name'] for col in inspector.get_columns('lead')]
         
+        # Migration 1: Add intent_score
         if 'intent_score' not in columns:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN intent_score INTEGER DEFAULT 1;"))
             db.session.commit()
-            print("✅ Migration complete")
+            print("✅ Migration: intent_score added")
+        
+        # Migration 2: Add whatsapp_number
+        if 'whatsapp_number' not in columns:
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN whatsapp_number VARCHAR(50);"))
+            db.session.commit()
+            print("✅ Migration: whatsapp_number added")
+        
+        # Migration 3: Add contact_preference
+        if 'contact_preference' not in columns:
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN contact_preference VARCHAR(20) DEFAULT 'email';"))
+            db.session.commit()
+            print("✅ Migration: contact_preference added")
+        
+        print("✅ All migrations complete")
+            
     except Exception as e:
-        print(f"⚠️ Migration: {e}")
+        print(f"⚠️ Migration error: {e}")
+        db.session.rollback()
 
 
 # -------------------------
