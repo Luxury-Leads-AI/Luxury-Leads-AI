@@ -307,6 +307,28 @@
       text-align: center;
     }
 
+    .contact-link {
+      color: #38bdf8;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: color 0.2s;
+    }
+
+    .contact-link:hover {
+      color: #0ea5e9;
+      text-decoration: underline;
+    }
+
+    .whatsapp-link {
+      color: #22c55e;
+    }
+
+    .whatsapp-link:hover {
+      color: #16a34a;
+    }
+
     @media (max-width: 768px) {
       .container {
         padding: 20px;
@@ -394,11 +416,10 @@
         <th>Quality</th>
         <th>Name</th>
         <th>Email</th>
-        <th>Phone</th>
+        <th>Contact</th>
         <th>Budget</th>
         <th>Customer Insights</th>
         <th>Date</th>
-        <th>Time</th>
         <th>Action</th>
       </tr>
     </thead>
@@ -432,13 +453,35 @@
       <strong>{% if lead.name %}{{ lead.name }}{% else %}<span class="no-data">—</span>{% endif %}</strong>
     </td>
     <td>{% if lead.email %}{{ lead.email }}{% else %}<span class="no-data">—</span>{% endif %}</td>
-    <td>{% if lead.phone %}{{ lead.phone }}{% else %}<span class="no-data">—</span>{% endif %}</td>
+    <td>
+      {% if lead.whatsapp_number %}
+        <a href="https://wa.me/{{ lead.whatsapp_number.replace('+', '').replace('-', '').replace(' ', '') }}" 
+           target="_blank" 
+           class="contact-link whatsapp-link"
+           title="Open WhatsApp chat">
+          💬 {{ lead.whatsapp_number }}
+        </a>
+      {% elif lead.phone %}
+        <a href="tel:{{ lead.phone }}" 
+           class="contact-link"
+           title="Call this number">
+          📱 {{ lead.phone }}
+        </a>
+      {% else %}
+        <span class="no-data">—</span>
+      {% endif %}
+    </td>
     <td>{% if lead.budget %}{{ lead.budget }}{% else %}<span class="no-data">—</span>{% endif %}</td>
     <td class="insights-cell">
       {% if lead.message %}{{ lead.message }}{% else %}<span class="no-data">No insights available</span>{% endif %}
     </td>
-    <td>{% if lead.created_at %}{{ lead.created_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
-    <td>{% if lead.created_at %}{{ lead.created_at.strftime('%H:%M') }}{% else %}—{% endif %}</td>
+    <td>
+      {% if lead.created_at %}
+        {{ lead.created_at.strftime('%B %d, %Y') }}
+      {% else %}
+        —
+      {% endif %}
+    </td>
     <td class="actions-cell">
       <button class="btn-delete" onclick="deleteLead({{ lead.id }})">🗑️ Delete</button>
     </td>
@@ -446,7 +489,7 @@
   {% endfor %}
 {% else %}
   <tr>
-    <td colspan="10" class="empty">
+    <td colspan="9" class="empty">
       <div class="empty-icon">📭</div>
       <div style="font-size: 18px; margin-bottom: 8px; font-weight: 600;">No Leads Yet</div>
       <div style="font-size: 14px; color: #64748b;">
@@ -564,7 +607,7 @@ function filterLeads(quality) {
   if (visibleRows.length === 0 && quality !== 'all') {
     const emptyRow = document.createElement('tr');
     emptyRow.innerHTML = `
-      <td colspan="10" class="empty">
+      <td colspan="9" class="empty">
         <div class="empty-icon">🔍</div>
         <div style="font-size: 16px;">No leads found with this quality filter</div>
       </td>

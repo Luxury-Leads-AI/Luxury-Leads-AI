@@ -75,14 +75,25 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 def send_lead_email(agency, lead):
     """Send email notification - SendGrid primary, Gmail fallback"""
     subject = f"🎯 New Qualified Lead for {agency.name}"
+    
+    # Determine contact method
+    contact_info = ""
+    if lead.whatsapp_number:
+        contact_info = f"💬 WhatsApp: {lead.whatsapp_number}"
+    elif lead.phone:
+        contact_info = f"📱 Phone:    {lead.phone}"
+    else:
+        contact_info = "📱 Phone:    Not provided"
+
     body = f"""
 New QUALIFIED Lead Received from {agency.name}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 Name:    {lead.name or 'Not provided'}
 📧 Email:   {lead.email or 'Not provided'}
-📱 Phone:   {lead.phone or 'Not provided'}
+{contact_info}
 💰 Budget:  {lead.budget or 'Not provided'}
+📞 Prefers: {lead.contact_preference.title() if lead.contact_preference else 'Email'}
 
 📝 CUSTOMER INSIGHTS:
 {lead.message or 'No summary available'}
@@ -183,10 +194,17 @@ Write summary:"""
 
 
 def extract_lead_data(conversation_history):
-    """PRODUCTION: Ultra-strict name extraction"""
+    """PRODUCTION: Ultra-strict extraction + WhatsApp support"""
     full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
     
-    lead_data = {'name': None, 'email': None, 'phone': None, 'budget': None}
+    lead_data = {
+        'name': None, 
+        'email': None, 
+        'phone': None, 
+        'whatsapp_number': None,
+        'contact_preference': 'email',
+        'budget': None
+    }
     
     # EMAIL
     email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", full_conversation)
@@ -195,52 +213,44 @@ def extract_lead_data(conversation_history):
     
     # NAME - ULTRA-STRICT BLOCKLIST
     name_blocklist = {
-        # Common verbs
+        'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must',
         'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
         'searching', 'seeking', 'finding', 'buying', 'renting', 'moving',
-        # State verbs
         'am', 'is', 'are', 'was', 'were', 'have', 'has', 'been', 'being',
-        # Modal verbs - CRITICAL FIX
-        'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must',
-        # Property words
         'villa', 'house', 'apartment', 'property', 'condo', 'flat', 'home',
         'bedroom', 'bathroom', 'kitchen', 'garage', 'living', 'drawing',
-        # Locations
         'beach', 'side', 'miami', 'york', 'washington', 'angeles', 'newyork',
         'malibu', 'florida', 'california', 'usa', 'location', 'cape', 'keys',
-        # Actions
         'buy', 'rent', 'purchase', 'move', 'find', 'search', 'prefer', 'suggest',
-        # Adjectives
         'perfect', 'great', 'nice', 'good', 'suitable', 'new', 'old', 'popular',
-        # Prepositions/articles
         'for', 'to', 'in', 'at', 'on', 'with', 'from', 'by', 'an', 'a', 'the',
-        # Question words
         'what', 'where', 'when', 'why', 'how', 'which', 'who'
     }
     
-    # Pattern 1: Explicit name introductions - SINGLE WORD ONLY
+    # Pattern 1: Explicit name introductions
     explicit_pattern = r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,})(?:\s|\.|\,|!|\?|$)"
     
     name_match = re.search(explicit_pattern, full_conversation, re.IGNORECASE)
     if name_match:
         potential_name = name_match.group(1).strip()
-        
-        # Check blocklist BEFORE title-casing
         if potential_name.lower() not in name_blocklist and len(potential_name) >= 3:
             lead_data['name'] = potential_name.title()
             print(f"✅ Name: {potential_name.title()}")
     
-    # Pattern 2: Fallback - Standalone capitalized words (VERY restricted)
+    # Pattern 2: Standalone capitalized words (fallback)
     if not lead_data['name']:
-        standalone_matches = re.findall(r"\b([A-Z][a-z]{3,})\b", full_conversation)  # Min 4 chars for standalone
-        
+        standalone_matches = re.findall(r"\b([A-Z][a-z]{3,})\b", full_conversation)
         for match in standalone_matches:
-            if match.lower() not in name_blocklist and len(match) >= 4:  # Stricter: 4+ chars
+            if match.lower() not in name_blocklist and len(match) >= 4:
                 lead_data['name'] = match.title()
                 print(f"✅ Name: {match.title()} (standalone)")
                 break
     
-    # PHONE - Accept 9+ digits
+    # WHATSAPP vs PHONE DETECTION
+    whatsapp_keywords = ['whatsapp', 'wa', 'whats app']
+    mentions_whatsapp = any(kw in full_conversation.lower() for kw in whatsapp_keywords)
+    
+    # Phone patterns
     phone_patterns = [
         r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{2,4}",
         r"\+?\d{9,15}",
@@ -253,8 +263,14 @@ def extract_lead_data(conversation_history):
             phone = phone_match.group(0).strip()
             clean = phone.replace('+', '').replace('-', '').replace(' ', '')
             if len(clean) >= 9:
-                lead_data['phone'] = phone
-                print(f"✅ Phone: {phone}")
+                if mentions_whatsapp:
+                    lead_data['whatsapp_number'] = phone
+                    lead_data['contact_preference'] = 'whatsapp'
+                    print(f"✅ WhatsApp: {phone}")
+                else:
+                    lead_data['phone'] = phone
+                    lead_data['contact_preference'] = 'phone'
+                    print(f"✅ Phone: {phone}")
                 break
     
     # BUDGET - All formats
@@ -265,7 +281,7 @@ def extract_lead_data(conversation_history):
         r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
     ]
     
-    for i, pattern in enumerate(budget_patterns):
+    for pattern in budget_patterns:
         budget_match = re.search(pattern, full_conversation, re.IGNORECASE)
         if budget_match:
             amount = budget_match.group(1)
@@ -291,12 +307,45 @@ def extract_lead_data(conversation_history):
     return lead_data
 
 
+def detect_objection(user_message):
+    """Detect if user message contains an objection"""
+    user_message_lower = user_message.lower()
+    
+    objections = {
+        'price': ['expensive', 'too much', 'costly', 'afford', 'budget', 'high price', 'over budget'],
+        'timing': ['not ready', 'not sure', 'need time', 'thinking', 'maybe later', 'unsure'],
+        'indecision': ['torn', 'confused', 'cant decide', "can't decide", 'both', 'either'],
+        'trust': ['scam', 'legit', 'real', 'trust', 'safe', 'reliable']
+    }
+    
+    for objection_type, keywords in objections.items():
+        if any(keyword in user_message_lower for keyword in keywords):
+            return objection_type
+    
+    return None
+
+
+def generate_objection_response(objection_type, agency_name):
+    """Generate contextual response to objection"""
+    responses = {
+        'price': "I hear you – budget is key. Even a rough range helps me point you in the right direction. What feels comfortable for you?",
+        
+        'timing': "Totally fair! No pressure at all. What's the main thing making you hesitant right now?",
+        
+        'indecision': "I get that – it's a big decision! Let's try this: if you had to pick just ONE thing that matters most to you, what would it be?",
+        
+        'trust': f"I understand the concern. {agency_name} is a licensed real estate agency. Would you like to know more about us, or would you prefer to just explore properties for now?"
+    }
+    
+    return responses.get(objection_type, None)
+
+
 def analyze_lead_quality(lead_data, conversation_history):
     """Timeline-aware scoring"""
     score = 1
     
     has_name = bool(lead_data.get('name'))
-    has_phone = bool(lead_data.get('phone'))
+    has_phone = bool(lead_data.get('phone') or lead_data.get('whatsapp_number'))
     has_budget = bool(lead_data.get('budget'))
     
     if has_name:
@@ -369,6 +418,8 @@ class Lead(db.Model):
     name = db.Column(db.String(100))
     email = db.Column(db.String(100))
     phone = db.Column(db.String(50))
+    whatsapp_number = db.Column(db.String(50))
+    contact_preference = db.Column(db.String(20), default='email')
     budget = db.Column(db.String(50))
     message = db.Column(db.Text)
     intent_score = db.Column(db.Integer, default=1)
@@ -506,7 +557,7 @@ def agency_info(agency_id):
 
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
-    """PRODUCTION CHAT WITH SESSION EXPIRATION"""
+    """PRODUCTION CHAT WITH SESSION EXPIRATION + OBJECTION HANDLING"""
     if request.method == "OPTIONS":
         return "", 200
 
@@ -529,28 +580,120 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
-        system_prompt = f"""You are {agency.assistant_name}, a professional real estate consultant at {agency.name}.
+        system_prompt = f"""You are {agency.assistant_name}, a warm and empathetic real estate consultant at {agency.name}.
 
-PERSONALITY:
-- Warm and helpful
-- Short responses (1-2 sentences)
-- Ask ONE question at a time
-- Vary your language - don't repeat phrases
+═══════════════════════════════════════════════════
+YOUR CORE IDENTITY
+═══════════════════════════════════════════════════
 
-COLLECT IN ORDER:
-1. Property type
-2. Location
-3. Budget
-4. Timeline: "When are you looking to buy/move?"
-5. Name: "What's your name?"
-6. Email
-7. Phone (optional)
+Role: Trusted guide, not a salesperson. You listen more than you talk.
+Tone: Warm, calm, confident, helpful – like a friend who knows real estate inside out.
+Pacing: Natural, conversational. Use casual language.
+Mindset: Every conversation is about helping the person, not just collecting data.
 
-CONVERSATION TIPS:
-- Open: "Hi! What brings you here today?"
-- Vary responses: Instead of always saying "Great!", use "Perfect", "Got it", "Understood", "Nice"
-- Don't overuse emojis (max 1 per response)
-- Sound natural, not robotic
+═══════════════════════════════════════════════════
+HOW YOU COMMUNICATE
+═══════════════════════════════════════════════════
+
+✅ DO:
+- Sound natural: "Got it!", "Makes sense", "Perfect!", "Nice!"
+- Use contractions: "it's", "that's", "you're", "we'll"
+- Vary your responses – don't repeat the same phrases
+- Show empathy: "I hear you", "I get that", "Totally fair"
+- Keep it short: 1-2 sentences max per response
+- Use light punctuation: "Sounds good!" not "That sounds very good."
+- One emoji max per response (and only when it fits)
+
+❌ DON'T:
+- Sound robotic: "How may I assist you today?"
+- Use formal language: "Please provide your information"
+- Write long paragraphs
+- Repeat phrases like "Great!" every time
+- Over-use emojis
+- Push for information aggressively
+
+═══════════════════════════════════════════════════
+CONVERSATION FLOW (COLLECT IN ORDER)
+═══════════════════════════════════════════════════
+
+1️⃣ OPENING
+"Hey there! 😊 Looking for a place or just exploring?"
+
+2️⃣ PROPERTY TYPE
+Ask naturally: "What kind of property are you thinking about?"
+(If unclear: "Like a villa, condo, apartment...?")
+
+3️⃣ LOCATION
+"Got it! Where are you hoping to find it?"
+(Be specific if they're vague: "Any specific neighborhood or area in mind?")
+
+4️⃣ BUDGET
+Ask gently: "What's your budget range looking like?"
+(If hesitant: "Even a rough range helps – no pressure!")
+
+5️⃣ TIMELINE
+"Perfect! When are you looking to make a move?"
+(Accept any timeline: ASAP, 3 months, just exploring, etc.)
+
+6️⃣ NAME
+"Nice! What's your name?"
+
+7️⃣ EMAIL
+"Great to meet you, [Name]! What's your email?"
+
+8️⃣ CONTACT PREFERENCE
+"Perfect! What's the best way to reach you – WhatsApp, phone, or email works?"
+
+9️⃣ GET NUMBER (if they choose WhatsApp/Phone)
+If WhatsApp: "Awesome! What's your WhatsApp number?"
+If Phone: "Got it! What's your phone number?"
+
+═══════════════════════════════════════════════════
+HANDLING OBJECTIONS & HESITATION
+═══════════════════════════════════════════════════
+
+When they're unsure about price:
+"I hear you – budget is important. Even a rough range helps me point you in the right direction. What feels comfortable?"
+
+When they're not ready to commit:
+"No pressure at all! Just exploring is totally fine. What would you like to know?"
+
+When they say "I need to think about it":
+"Totally fair! What's the main thing you're weighing?"
+
+When they're indecisive between options:
+"Let's try this – if you had to pick just ONE thing that matters most, what would it be?"
+
+═══════════════════════════════════════════════════
+EMOTIONAL INTELLIGENCE (READ BETWEEN THE LINES)
+═══════════════════════════════════════════════════
+
+Short, vague replies = hesitancy
+→ Response: "No rush – what's on your mind right now?"
+
+Exclamation marks / quick replies = engagement
+→ Response: Match their energy!
+
+Asking lots of questions = high interest
+→ Response: Be thorough but still concise
+
+Price concerns = anxiety about affordability
+→ Response: "I get that – let's find something that works for your budget."
+
+═══════════════════════════════════════════════════
+IMPORTANT REMINDERS
+═══════════════════════════════════════════════════
+
+- Ask ONE question at a time (never multiple questions in one message)
+- Stay on topic – don't jump around randomly
+- If they ask about a specific property, be honest: "Let me connect you with an agent who can check availability for that one!"
+- Never lie or make up information
+- If they ask something you don't know: "Great question – let me check with the team and get back to you."
+- Always acknowledge their last message before moving on
+
+═══════════════════════════════════════════════════
+
+Your job: Make them feel heard, understood, and confident that they're in good hands.
 
 Respond naturally:"""
 
@@ -563,7 +706,16 @@ Respond naturally:"""
         history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
 
-        messages = [{"role": "system", "content": system_prompt}] + history[-20:]
+        # Check for objections and provide contextual guidance
+        objection = detect_objection(user_message)
+        objection_context = ""
+
+        if objection:
+            suggested_response = generate_objection_response(objection, agency.name)
+            if suggested_response:
+                objection_context = f"\n\nIMPORTANT: The user just expressed a '{objection}' concern. Consider using empathy and this approach: '{suggested_response}'"
+
+        messages = [{"role": "system", "content": system_prompt + objection_context}] + history[-20:]
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -600,7 +752,9 @@ Respond naturally:"""
                     agency_id=agency_id,
                     name=lead_data['name'],
                     email=lead_data['email'],
-                    phone=lead_data['phone'],
+                    phone=lead_data.get('phone'),
+                    whatsapp_number=lead_data.get('whatsapp_number'),
+                    contact_preference=lead_data.get('contact_preference', 'email'),
                     budget=lead_data['budget'],
                     message=ai_summary,
                     intent_score=quality_score
@@ -668,7 +822,7 @@ def export_leads(agency_id):
         ws = wb.active
         ws.title = "Leads"
 
-        headers = ["Sr #", "Quality", "Name", "Email", "Phone", "Budget", "Customer Insights", "Date", "Time"]
+        headers = ["Sr #", "Quality", "Name", "Email", "Contact", "Preference", "Budget", "Customer Insights", "Date"]
         ws.append(headers)
 
         for cell in ws[1]:
@@ -676,17 +830,19 @@ def export_leads(agency_id):
 
         for i, lead in enumerate(leads, start=1):
             quality_stars = "⭐" * (lead.intent_score or 1)
+            contact = lead.whatsapp_number if lead.whatsapp_number else (lead.phone if lead.phone else "—")
+            preference = lead.contact_preference.title() if lead.contact_preference else "Email"
             
             ws.append([
                 i,
                 quality_stars,
                 lead.name or "—",
                 lead.email or "—",
-                lead.phone or "—",
+                contact,
+                preference,
                 lead.budget or "—",
                 lead.message or "—",
-                lead.created_at.strftime('%Y-%m-%d') if lead.created_at else "—",
-                lead.created_at.strftime('%H:%M:%S') if lead.created_at else "—"
+                lead.created_at.strftime('%Y-%m-%d') if lead.created_at else "—"
             ])
 
         for column in ws.columns:
@@ -729,6 +885,7 @@ def refund():
 @app.route("/pricing")
 def pricing():
     return render_template("pricing.html")
+
 
 # -------------------------
 # DATABASE INIT
