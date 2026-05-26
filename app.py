@@ -900,38 +900,43 @@ Respond naturally:"""
         })
 
         lead_data = extract_lead_data(history)
-        
+
         if is_lead_qualified(lead_data, history):
-            existing_lead = Lead.query.filter_by(
-                agency_id=agency_id,
-                email=lead_data['email']
-            ).first()
-            
-            if existing_lead:
-                print(f"⚠️ Duplicate: {lead_data['email']}")
-            else:
-                ai_summary = generate_lead_summary(history, agency.name)
-                quality_score = analyze_lead_quality(lead_data, history)
-
-                lead = Lead(
+            try:
+                existing_lead = Lead.query.filter_by(
                     agency_id=agency_id,
-                    name=lead_data['name'],
-                    email=lead_data['email'],
-                    phone=lead_data.get('phone'),
-                    whatsapp_number=lead_data.get('whatsapp_number'),
-                    contact_preference=lead_data.get('contact_preference', 'email'),
-                    budget=lead_data['budget'],
-                    message=ai_summary,
-                    intent_score=quality_score
-                )
+                    email=lead_data['email']
+                ).first()
 
-                db.session.add(lead)
-                db.session.commit()
+                if existing_lead:
+                    print(f"⚠️ Duplicate: {lead_data['email']}")
+                else:
+                    ai_summary = generate_lead_summary(history, agency.name)
+                    quality_score = analyze_lead_quality(lead_data, history)
 
-                print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
+                    lead = Lead(
+                        agency_id=agency_id,
+                        name=lead_data['name'],
+                        email=lead_data['email'],
+                        phone=lead_data.get('phone'),
+                        whatsapp_number=lead_data.get('whatsapp_number'),
+                        contact_preference=lead_data.get('contact_preference', 'email'),
+                        budget=lead_data['budget'],
+                        message=ai_summary,
+                        intent_score=quality_score
+                    )
 
-                send_lead_email(agency, lead)
-                send_crm_webhook(agency, lead)
+                    db.session.add(lead)
+                    db.session.commit()
+
+                    print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
+
+                    send_lead_email(agency, lead)
+                    send_crm_webhook(agency, lead)
+
+            except Exception as save_err:
+                print(f"❌ Lead save error: {save_err}")
+                db.session.rollback()
 
         return jsonify({"reply": ai_reply})
 
@@ -1162,15 +1167,36 @@ with app.app_context():
             db.session.commit()
             print("✅ Migration: contact_preference added")
 
+        is_postgres = 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI']
+        bool_col_type = "BOOLEAN DEFAULT FALSE" if is_postgres else "INTEGER DEFAULT 0"
+
         if 'follow_up_1_sent' not in lead_cols:
-            db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_1_sent INTEGER DEFAULT 0;"))
+            db.session.execute(text(f"ALTER TABLE lead ADD COLUMN follow_up_1_sent {bool_col_type};"))
             db.session.commit()
             print("✅ Migration: follow_up_1_sent added")
+        elif is_postgres:
+            try:
+                db.session.execute(text(
+                    "ALTER TABLE lead ALTER COLUMN follow_up_1_sent TYPE BOOLEAN USING follow_up_1_sent::boolean;"
+                ))
+                db.session.commit()
+                print("✅ Migration: follow_up_1_sent converted to BOOLEAN")
+            except Exception:
+                db.session.rollback()
 
         if 'follow_up_7_sent' not in lead_cols:
-            db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_7_sent INTEGER DEFAULT 0;"))
+            db.session.execute(text(f"ALTER TABLE lead ADD COLUMN follow_up_7_sent {bool_col_type};"))
             db.session.commit()
             print("✅ Migration: follow_up_7_sent added")
+        elif is_postgres:
+            try:
+                db.session.execute(text(
+                    "ALTER TABLE lead ALTER COLUMN follow_up_7_sent TYPE BOOLEAN USING follow_up_7_sent::boolean;"
+                ))
+                db.session.commit()
+                print("✅ Migration: follow_up_7_sent converted to BOOLEAN")
+            except Exception:
+                db.session.rollback()
 
         # Agency table migrations
         if 'webhook_url' not in agency_cols:
