@@ -246,25 +246,25 @@ def process_pending_followups():
 
         day1_cutoff = now - timedelta(hours=24)
         day1_leads = Lead.query.filter(
-            Lead.follow_up_1_sent == False,
+            Lead.follow_up_1_sent == 0,
             Lead.created_at <= day1_cutoff
         ).all()
         for lead in day1_leads:
             agency = db.session.get(Agency, lead.agency_id)
             if agency and send_followup_email(agency, lead, 1):
-                lead.follow_up_1_sent = True
+                lead.follow_up_1_sent = 1
                 day1_count += 1
         db.session.commit()
 
         day7_cutoff = now - timedelta(days=7)
         day7_leads = Lead.query.filter(
-            Lead.follow_up_7_sent == False,
+            Lead.follow_up_7_sent == 0,
             Lead.created_at <= day7_cutoff
         ).all()
         for lead in day7_leads:
             agency = db.session.get(Agency, lead.agency_id)
             if agency and send_followup_email(agency, lead, 7):
-                lead.follow_up_7_sent = True
+                lead.follow_up_7_sent = 1
                 day7_count += 1
         db.session.commit()
 
@@ -356,6 +356,9 @@ def extract_lead_data(conversation_history):
         'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must',
         'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
         'searching', 'seeking', 'finding', 'buying', 'renting', 'moving',
+        'not', 'sure', 'idea', 'just', 'also', 'here', 'there', 'then',
+        'know', 'think', 'feel', 'seem', 'show', 'come', 'give', 'take',
+        'okay', 'note', 'info', 'area', 'more', 'some', 'very', 'even',
         'am', 'is', 'are', 'was', 'were', 'have', 'has', 'been', 'being',
         'villa', 'house', 'apartment', 'property', 'condo', 'flat', 'home',
         'bedroom', 'bathroom', 'kitchen', 'garage', 'living', 'drawing',
@@ -366,17 +369,19 @@ def extract_lead_data(conversation_history):
         'for', 'to', 'in', 'at', 'on', 'with', 'from', 'by', 'an', 'a', 'the',
         'what', 'where', 'when', 'why', 'how', 'which', 'who'
     }
-    
-    # Pattern 1: Explicit name introductions
+
+    # Pattern 1: Explicit name introductions — check ALL matches, prefer the latest one
+    # (avoids "I am looking..." matching before "I am Zafar")
     explicit_pattern = r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,})(?:\s|\.|\,|!|\?|$)"
-    
-    name_match = re.search(explicit_pattern, full_conversation, re.IGNORECASE)
-    if name_match:
-        potential_name = name_match.group(1).strip()
+
+    name_matches = list(re.finditer(explicit_pattern, full_conversation, re.IGNORECASE))
+    for match in reversed(name_matches):
+        potential_name = match.group(1).strip()
         if potential_name.lower() not in name_blocklist and len(potential_name) >= 3:
             lead_data['name'] = potential_name.title()
             print(f"✅ Name: {potential_name.title()}")
-    
+            break
+
     # Pattern 2: Standalone capitalized words (fallback)
     if not lead_data['name']:
         standalone_matches = re.findall(r"\b([A-Z][a-z]{3,})\b", full_conversation)
@@ -565,8 +570,8 @@ class Lead(db.Model):
     message = db.Column(db.Text)
     intent_score = db.Column(db.Integer, default=1)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
-    follow_up_1_sent = db.Column(db.Boolean, default=False)
-    follow_up_7_sent = db.Column(db.Boolean, default=False)
+    follow_up_1_sent = db.Column(db.Integer, default=0)
+    follow_up_7_sent = db.Column(db.Integer, default=0)
 
 
 # -------------------------
@@ -1167,36 +1172,15 @@ with app.app_context():
             db.session.commit()
             print("✅ Migration: contact_preference added")
 
-        is_postgres = 'postgresql' in app.config['SQLALCHEMY_DATABASE_URI']
-        bool_col_type = "BOOLEAN DEFAULT FALSE" if is_postgres else "INTEGER DEFAULT 0"
-
         if 'follow_up_1_sent' not in lead_cols:
-            db.session.execute(text(f"ALTER TABLE lead ADD COLUMN follow_up_1_sent {bool_col_type};"))
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_1_sent INTEGER DEFAULT 0;"))
             db.session.commit()
             print("✅ Migration: follow_up_1_sent added")
-        elif is_postgres:
-            try:
-                db.session.execute(text(
-                    "ALTER TABLE lead ALTER COLUMN follow_up_1_sent TYPE BOOLEAN USING follow_up_1_sent::boolean;"
-                ))
-                db.session.commit()
-                print("✅ Migration: follow_up_1_sent converted to BOOLEAN")
-            except Exception:
-                db.session.rollback()
 
         if 'follow_up_7_sent' not in lead_cols:
-            db.session.execute(text(f"ALTER TABLE lead ADD COLUMN follow_up_7_sent {bool_col_type};"))
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_7_sent INTEGER DEFAULT 0;"))
             db.session.commit()
             print("✅ Migration: follow_up_7_sent added")
-        elif is_postgres:
-            try:
-                db.session.execute(text(
-                    "ALTER TABLE lead ALTER COLUMN follow_up_7_sent TYPE BOOLEAN USING follow_up_7_sent::boolean;"
-                ))
-                db.session.commit()
-                print("✅ Migration: follow_up_7_sent converted to BOOLEAN")
-            except Exception:
-                db.session.rollback()
 
         # Agency table migrations
         if 'webhook_url' not in agency_cols:
