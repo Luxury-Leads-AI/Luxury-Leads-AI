@@ -15,6 +15,7 @@ from email.mime.text import MIMEText
 from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
 import pytz
+from collections import defaultdict
 
 # SendGrid email imports
 try:
@@ -134,6 +135,145 @@ Default Password: admin123
         print("⚠️ SendGrid not configured - email will NOT be sent on Render")
         print("⚠️ Please set SENDGRID_API_KEY in Render environment variables")
         return False
+
+
+def send_crm_webhook(agency, lead):
+    """POST lead data to agency's configured CRM webhook URL"""
+    if not agency.webhook_url:
+        return
+    try:
+        payload = {
+            "event": "lead_qualified",
+            "agency_id": agency.id,
+            "agency_name": agency.name,
+            "lead": {
+                "id": lead.id,
+                "name": lead.name,
+                "email": lead.email,
+                "phone": lead.phone,
+                "whatsapp_number": lead.whatsapp_number,
+                "contact_preference": lead.contact_preference,
+                "budget": lead.budget,
+                "summary": lead.message,
+                "intent_score": lead.intent_score,
+                "created_at": lead.created_at.isoformat() if lead.created_at else None
+            }
+        }
+        import httpx
+        response = httpx.post(agency.webhook_url, json=payload, timeout=5)
+        print(f"✅ Webhook sent to {agency.webhook_url} (Status: {response.status_code})")
+    except Exception as e:
+        print(f"⚠️ Webhook failed: {e}")
+
+
+def send_followup_email(agency, lead, day):
+    """Send a Day 1 or Day 7 follow-up reminder email to the agency"""
+    contact = lead.whatsapp_number or lead.phone or "Not provided"
+    stars = "⭐" * (lead.intent_score or 1)
+
+    if day == 1:
+        subject = f"⏰ Day 1 Follow-up: {lead.name or 'New Lead'} | {agency.name}"
+        body = f"""
+Hi {agency.owner_name or agency.name},
+
+Time to follow up with your qualified lead from yesterday!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 Name:    {lead.name or '—'}
+📧 Email:   {lead.email or '—'}
+📱 Contact: {contact}
+💰 Budget:  {lead.budget or '—'}
+🌟 Quality: {stars} ({lead.intent_score}/5)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 Customer Insights:
+{lead.message or 'No summary available'}
+
+🎯 Suggested Action: Reach out via {(lead.contact_preference or 'email').title()} within 24 hours.
+Hot leads respond best within the first 48 hours!
+
+Login to view: https://luxury-leads-ai.onrender.com/owner-login
+"""
+    elif day == 7:
+        subject = f"📅 7-Day Check-in: {lead.name or 'Lead'} | {agency.name}"
+        body = f"""
+Hi {agency.owner_name or agency.name},
+
+It's been 7 days since {lead.name or 'this lead'} qualified. Time for a re-engagement!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 Name:    {lead.name or '—'}
+📧 Email:   {lead.email or '—'}
+📱 Contact: {contact}
+💰 Budget:  {lead.budget or '—'}
+🌟 Quality: {stars} ({lead.intent_score}/5)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💬 Re-engagement script:
+"Hey {lead.name or 'there'}, just checking in! Have you found anything you like yet?
+I have a couple of new listings that might fit what you're looking for."
+
+Login to view: https://luxury-leads-ai.onrender.com/owner-login
+"""
+    else:
+        return False
+
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+    if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
+        try:
+            message = Mail(
+                from_email=SMTP_EMAIL,
+                to_emails=agency.email,
+                subject=subject,
+                plain_text_content=body
+            )
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+            response = sg.send(message)
+            print(f"✅ Follow-up Day {day} sent to {agency.email} (Status: {response.status_code})")
+            return True
+        except Exception as e:
+            print(f"⚠️ Follow-up Day {day} email failed: {e}")
+            return False
+    return False
+
+
+def process_pending_followups():
+    """Finds and sends all pending Day 1 and Day 7 follow-up emails"""
+    try:
+        now = datetime.utcnow()
+        day1_count = 0
+        day7_count = 0
+
+        day1_cutoff = now - timedelta(hours=24)
+        day1_leads = Lead.query.filter(
+            Lead.follow_up_1_sent == False,
+            Lead.created_at <= day1_cutoff
+        ).all()
+        for lead in day1_leads:
+            agency = db.session.get(Agency, lead.agency_id)
+            if agency and send_followup_email(agency, lead, 1):
+                lead.follow_up_1_sent = True
+                day1_count += 1
+        db.session.commit()
+
+        day7_cutoff = now - timedelta(days=7)
+        day7_leads = Lead.query.filter(
+            Lead.follow_up_7_sent == False,
+            Lead.created_at <= day7_cutoff
+        ).all()
+        for lead in day7_leads:
+            agency = db.session.get(Agency, lead.agency_id)
+            if agency and send_followup_email(agency, lead, 7):
+                lead.follow_up_7_sent = True
+                day7_count += 1
+        db.session.commit()
+
+        print(f"✅ Follow-ups processed: D1={day1_count}, D7={day7_count}")
+        return {"day1": day1_count, "day7": day7_count}
+    except Exception as e:
+        print(f"⚠️ Follow-up error: {e}")
+        db.session.rollback()
+        return {"error": str(e)}
 
 
 def clean_expired_sessions():
@@ -403,6 +543,7 @@ class Agency(db.Model):
     password_hash = db.Column(db.String(200))
     subscription_type = db.Column(db.String(50))
     status = db.Column(db.String(50), default="Active")
+    webhook_url = db.Column(db.String(500))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -424,6 +565,8 @@ class Lead(db.Model):
     message = db.Column(db.Text)
     intent_score = db.Column(db.Integer, default=1)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
+    follow_up_1_sent = db.Column(db.Boolean, default=False)
+    follow_up_7_sent = db.Column(db.Boolean, default=False)
 
 
 # -------------------------
@@ -695,6 +838,28 @@ IMPORTANT REMINDERS
 
 Your job: Make them feel heard, understood, and confident that they're in good hands.
 
+═══════════════════════════════════════════════════
+LANGUAGE
+═══════════════════════════════════════════════════
+
+Detect the language the visitor is using and respond in that same language throughout the entire conversation. If they write in Spanish, reply in Spanish. If Arabic, reply in Arabic. Match their language automatically — never switch back to English.
+
+═══════════════════════════════════════════════════
+DECISION SUPPORT (use when visitor seems hesitant or stuck)
+═══════════════════════════════════════════════════
+
+Readiness scale (when they're on the fence):
+"On a scale of 1-10, how ready do you feel to move forward?"
+- 7+: Help them take the next concrete step
+- 4-6: "Got it. What would get you to a [score+1]?"
+- 1-3: "No pressure at all – let's just explore together."
+
+Choice architecture (when torn between options):
+"If you had to pick just ONE thing – [A] or [B] – which feels more right to you?"
+
+Future framing (when worried about deciding):
+"Imagine it's 1 year from now. Would you regret taking action, or regret waiting?"
+
 Respond naturally:"""
 
         if session_key not in conversation_memory:
@@ -764,8 +929,9 @@ Respond naturally:"""
                 db.session.commit()
 
                 print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
-                
+
                 send_lead_email(agency, lead)
+                send_crm_webhook(agency, lead)
 
         return jsonify({"reply": ai_reply})
 
@@ -887,6 +1053,86 @@ def pricing():
     return render_template("pricing.html")
 
 
+@app.route("/analytics/<int:agency_id>")
+def analytics(agency_id):
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return redirect("/owner-login?error=Agency+not+found")
+
+    leads = Lead.query.filter_by(agency_id=agency_id).all()
+    now = datetime.utcnow()
+
+    total = len(leads)
+    hot = sum(1 for l in leads if l.intent_score == 5)
+    high = sum(1 for l in leads if (l.intent_score or 1) >= 4)
+    avg_score = round(sum(l.intent_score or 1 for l in leads) / total, 1) if total else 0.0
+    quality_dist = {i: sum(1 for l in leads if (l.intent_score or 1) == i) for i in range(1, 6)}
+
+    thirty_days_ago = now - timedelta(days=30)
+    daily_counts = defaultdict(int)
+    for lead in leads:
+        if lead.created_at:
+            try:
+                dt = lead.created_at
+                if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
+                    dt = dt.replace(tzinfo=None)
+                if dt >= thirty_days_ago:
+                    daily_counts[dt.strftime('%Y-%m-%d')] += 1
+            except Exception:
+                pass
+
+    date_labels, date_values = [], []
+    for i in range(29, -1, -1):
+        day = now - timedelta(days=i)
+        date_labels.append(day.strftime('%b %d'))
+        date_values.append(daily_counts.get(day.strftime('%Y-%m-%d'), 0))
+
+    this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_month_end = this_month_start - timedelta(seconds=1)
+    last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    def naive(dt):
+        if dt and hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
+            return dt.replace(tzinfo=None)
+        return dt
+
+    this_month = sum(1 for l in leads if naive(l.created_at) and naive(l.created_at) >= this_month_start)
+    last_month = sum(1 for l in leads if naive(l.created_at) and last_month_start <= naive(l.created_at) <= last_month_end)
+
+    return render_template("analytics.html",
+        agency=agency,
+        agency_id=agency_id,
+        total=total,
+        hot=hot,
+        high=high,
+        avg_score=avg_score,
+        quality_dist=quality_dist,
+        date_labels=date_labels,
+        date_values=date_values,
+        this_month=this_month,
+        last_month=last_month
+    )
+
+
+@app.route("/update-agency-webhook/<int:agency_id>", methods=["POST"])
+def update_agency_webhook(agency_id):
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return jsonify({"error": "Agency not found"}), 404
+
+    webhook_url = request.form.get("webhook_url", "").strip()
+    agency.webhook_url = webhook_url if webhook_url else None
+    db.session.commit()
+    print(f"✅ Webhook URL updated for agency {agency_id}: {webhook_url or 'cleared'}")
+    return redirect(f"/analytics/{agency_id}")
+
+
+@app.route("/send-followups", methods=["GET", "POST"])
+def send_followups():
+    results = process_pending_followups()
+    return jsonify({"status": "ok", "results": results})
+
+
 # -------------------------
 # DATABASE INIT
 # -------------------------
@@ -897,28 +1143,43 @@ with app.app_context():
     try:
         from sqlalchemy import text, inspect
         inspector = inspect(db.engine)
-        columns = [col['name'] for col in inspector.get_columns('lead')]
-        
-        # Migration 1: Add intent_score
-        if 'intent_score' not in columns:
+        lead_cols = [col['name'] for col in inspector.get_columns('lead')]
+        agency_cols = [col['name'] for col in inspector.get_columns('agency')]
+
+        # Lead table migrations
+        if 'intent_score' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN intent_score INTEGER DEFAULT 1;"))
             db.session.commit()
             print("✅ Migration: intent_score added")
-        
-        # Migration 2: Add whatsapp_number
-        if 'whatsapp_number' not in columns:
+
+        if 'whatsapp_number' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN whatsapp_number VARCHAR(50);"))
             db.session.commit()
             print("✅ Migration: whatsapp_number added")
-        
-        # Migration 3: Add contact_preference
-        if 'contact_preference' not in columns:
+
+        if 'contact_preference' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN contact_preference VARCHAR(20) DEFAULT 'email';"))
             db.session.commit()
             print("✅ Migration: contact_preference added")
-        
+
+        if 'follow_up_1_sent' not in lead_cols:
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_1_sent INTEGER DEFAULT 0;"))
+            db.session.commit()
+            print("✅ Migration: follow_up_1_sent added")
+
+        if 'follow_up_7_sent' not in lead_cols:
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_7_sent INTEGER DEFAULT 0;"))
+            db.session.commit()
+            print("✅ Migration: follow_up_7_sent added")
+
+        # Agency table migrations
+        if 'webhook_url' not in agency_cols:
+            db.session.execute(text("ALTER TABLE agency ADD COLUMN webhook_url VARCHAR(500);"))
+            db.session.commit()
+            print("✅ Migration: webhook_url added")
+
         print("✅ All migrations complete")
-            
+
     except Exception as e:
         print(f"⚠️ Migration error: {e}")
         db.session.rollback()

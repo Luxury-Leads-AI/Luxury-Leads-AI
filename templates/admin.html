@@ -360,6 +360,7 @@
   </div>
 
   <div class="actions">
+    <a href="/analytics/{{ agency.id }}" class="export-btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 12px rgba(102,126,234,0.3);">📈 Analytics</a>
     <a href="/export/{{ agency.id }}" class="export-btn">📥 Export Excel</a>
     {% if leads %}
     <button onclick="clearAllLeads()" class="clear-all-btn">🗑️ Clear All Leads</button>
@@ -397,14 +398,20 @@
     </div>
   </div>
 
-  <!-- Filter Tabs -->
+  <!-- Filter & Search -->
   <div class="filter-section">
-    <div class="filter-tabs">
-      <div class="filter-tab active" onclick="filterLeads('all')">🌟 All Leads</div>
-      <div class="filter-tab" onclick="filterLeads(5)">🔥 Hot (5⭐)</div>
-      <div class="filter-tab" onclick="filterLeads(4)">💎 High (4⭐)</div>
-      <div class="filter-tab" onclick="filterLeads(3)">⚡ Medium (3⭐)</div>
-      <div class="filter-tab" onclick="filterLeads(2)">💡 Low (2⭐)</div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+      <div class="filter-tabs">
+        <div class="filter-tab active" onclick="filterLeads('all')">🌟 All Leads</div>
+        <div class="filter-tab" onclick="filterLeads(5)">🔥 Hot (5⭐)</div>
+        <div class="filter-tab" onclick="filterLeads(4)">💎 High (4⭐)</div>
+        <div class="filter-tab" onclick="filterLeads(3)">⚡ Medium (3⭐)</div>
+        <div class="filter-tab" onclick="filterLeads(2)">💡 Low (2⭐)</div>
+      </div>
+      <input id="search-input" type="text" placeholder="🔍 Search name, email, budget..."
+        oninput="searchLeads(this.value)"
+        style="padding: 8px 14px; background: #0f172a; border: 1px solid #334155;
+               border-radius: 6px; color: #e2e8f0; font-size: 14px; width: 280px; outline: none;" />
     </div>
   </div>
 
@@ -617,6 +624,27 @@ function filterLeads(quality) {
   } else {
     const existingEmpty = document.getElementById('filter-empty');
     if (existingEmpty) existingEmpty.remove();
+  }
+}
+
+// Search leads by name, email, or budget
+function searchLeads(query) {
+  const rows = document.querySelectorAll('.lead-row');
+  const q = query.toLowerCase().trim();
+
+  rows.forEach(row => {
+    row.style.display = (!q || row.innerText.toLowerCase().includes(q)) ? '' : 'none';
+  });
+
+  const existingEmpty = document.getElementById('filter-empty');
+  if (existingEmpty) existingEmpty.remove();
+
+  const visible = Array.from(rows).filter(r => r.style.display !== 'none');
+  if (visible.length === 0 && q) {
+    const emptyRow = document.createElement('tr');
+    emptyRow.id = 'filter-empty';
+    emptyRow.innerHTML = `<td colspan="9" class="empty"><div class="empty-icon">🔍</div><div>No leads matching "${query}"</div></td>`;
+    document.querySelector('tbody').appendChild(emptyRow);
   }
 }
 
