@@ -113,7 +113,6 @@ Default Password: admin123
     
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     
-    # TRY SENDGRID FIRST (works on Render)
     if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
         try:
             print(f"📧 Sending via SendGrid to: {agency.email}")
@@ -129,11 +128,9 @@ Default Password: admin123
             return True
         except Exception as e:
             print(f"⚠️ SendGrid failed: {e}")
-            print("⚠️ Gmail SMTP not available on Render free tier")
             return False
     else:
         print("⚠️ SendGrid not configured - email will NOT be sent on Render")
-        print("⚠️ Please set SENDGRID_API_KEY in Render environment variables")
         return False
 
 
@@ -359,6 +356,9 @@ def extract_lead_data(conversation_history):
         'not', 'sure', 'idea', 'just', 'also', 'here', 'there', 'then',
         'know', 'think', 'feel', 'seem', 'show', 'come', 'give', 'take',
         'okay', 'note', 'info', 'area', 'more', 'some', 'very', 'even',
+        'asking', 'saying', 'telling', 'checking', 'getting', 'making',
+        'coconut', 'grove', 'hilton', 'santa', 'monica', 'myrtle', 'island',
+        'south', 'north', 'east', 'west', 'central', 'downtown', 'uptown',
         'am', 'is', 'are', 'was', 'were', 'have', 'has', 'been', 'being',
         'villa', 'house', 'apartment', 'property', 'condo', 'flat', 'home',
         'bedroom', 'bathroom', 'kitchen', 'garage', 'living', 'drawing',
@@ -370,8 +370,7 @@ def extract_lead_data(conversation_history):
         'what', 'where', 'when', 'why', 'how', 'which', 'who'
     }
 
-    # Pattern 1: Explicit name introductions — check ALL matches, prefer the latest one
-    # (avoids "I am looking..." matching before "I am Zafar")
+    # Pattern 1: Explicit name introductions — prefer latest match
     explicit_pattern = r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,})(?:\s|\.|\,|!|\?|$)"
 
     name_matches = list(re.finditer(explicit_pattern, full_conversation, re.IGNORECASE))
@@ -395,7 +394,6 @@ def extract_lead_data(conversation_history):
     whatsapp_keywords = ['whatsapp', 'wa', 'whats app']
     mentions_whatsapp = any(kw in full_conversation.lower() for kw in whatsapp_keywords)
     
-    # Phone patterns
     phone_patterns = [
         r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{2,4}",
         r"\+?\d{9,15}",
@@ -474,11 +472,8 @@ def generate_objection_response(objection_type, agency_name):
     """Generate contextual response to objection"""
     responses = {
         'price': "I hear you – budget is key. Even a rough range helps me point you in the right direction. What feels comfortable for you?",
-        
         'timing': "Totally fair! No pressure at all. What's the main thing making you hesitant right now?",
-        
         'indecision': "I get that – it's a big decision! Let's try this: if you had to pick just ONE thing that matters most to you, what would it be?",
-        
         'trust': f"I understand the concern. {agency_name} is a licensed real estate agency. Would you like to know more about us, or would you prefer to just explore properties for now?"
     }
     
@@ -728,144 +723,59 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
-        system_prompt = f"""You are {agency.assistant_name}, a warm and empathetic real estate consultant at {agency.name}.
+        system_prompt = f"""You are {agency.assistant_name}, a real estate consultant at {agency.name}.
 
-═══════════════════════════════════════════════════
-YOUR CORE IDENTITY
-═══════════════════════════════════════════════════
+CRITICAL FORMATTING RULES - MUST FOLLOW:
+- Never use markdown: no **, no *, no _, no #, no bullet points with -, no numbered lists with 1. 2. 3.
+- Never use bold or italic formatting of any kind
+- Write in plain conversational text only
+- If listing options, separate with commas or "or" not bullet points
+- Example WRONG: "Here are some options: **Miami**, **Malibu**"
+- Example RIGHT: "Some popular spots are Miami, Malibu, and Santa Monica."
 
-Role: Trusted guide, not a salesperson. You listen more than you talk.
-Tone: Warm, calm, confident, helpful – like a friend who knows real estate inside out.
-Pacing: Natural, conversational. Use casual language.
-Mindset: Every conversation is about helping the person, not just collecting data.
+GREETING RULES:
+- Never start with the same greeting twice in a conversation
+- Vary your opening: "Hi there!", "Hey!", "Hello!", "Welcome!", "Hey, good to see you!"
+- After the first message, never use opening greetings again
+- Do not say "Perfect", "Great", "Nice", "Awesome" more than once per conversation
+- Do not say "Sounds good" repeatedly
 
-═══════════════════════════════════════════════════
-HOW YOU COMMUNICATE
-═══════════════════════════════════════════════════
+PERSONALITY:
+- Warm and natural, like a knowledgeable friend
+- Short responses: 1-2 sentences only
+- Ask ONE question at a time
+- Use casual language and contractions: "it's", "that's", "you're", "we'll"
+- Show genuine interest without being over-enthusiastic
+- Acknowledge what they said before asking next question
 
-✅ DO:
-- Sound natural: "Got it!", "Makes sense", "Perfect!", "Nice!"
-- Use contractions: "it's", "that's", "you're", "we'll"
-- Vary your responses – don't repeat the same phrases
-- Show empathy: "I hear you", "I get that", "Totally fair"
-- Keep it short: 1-2 sentences max per response
-- Use light punctuation: "Sounds good!" not "That sounds very good."
-- One emoji max per response (and only when it fits)
+CONVERSATION FLOW - COLLECT IN ORDER:
+1. Property type (villa, condo, apartment, etc.)
+2. Location preference
+3. Budget (ask gently: "What budget range are you working with?")
+4. Timeline ("When are you hoping to make a move?")
+5. Name ("What's your name?")
+6. Email
+7. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
+8. If WhatsApp/phone: ask for the number
 
-❌ DON'T:
-- Sound robotic: "How may I assist you today?"
-- Use formal language: "Please provide your information"
-- Write long paragraphs
-- Repeat phrases like "Great!" every time
-- Over-use emojis
-- Push for information aggressively
+HANDLING HESITATION:
+- Price concern: "I hear you - even a rough range helps. What feels comfortable?"
+- Not ready: "No pressure at all. What's holding you back right now?"
+- Indecisive: "If you had to pick just one thing that matters most, what would it be?"
 
-═══════════════════════════════════════════════════
-CONVERSATION FLOW (COLLECT IN ORDER)
-═══════════════════════════════════════════════════
+LANGUAGE:
+- Detect the visitor's language and respond in that same language throughout
+- Never switch back to English if they wrote in another language
 
-1️⃣ OPENING
-"Hey there! 😊 Looking for a place or just exploring?"
+DECISION SUPPORT (when visitor seems stuck):
+- Readiness: "On a scale of 1-10, how ready do you feel to move forward?"
+  - 7+: Help take next step
+  - 4-6: "What would get you to a higher number?"
+  - 1-3: "Let's just explore together, no pressure."
+- Choice: "If you had to pick just one - location or size - which matters more?"
+- Future: "A year from now, would you regret waiting or regret acting?"
 
-2️⃣ PROPERTY TYPE
-Ask naturally: "What kind of property are you thinking about?"
-(If unclear: "Like a villa, condo, apartment...?")
-
-3️⃣ LOCATION
-"Got it! Where are you hoping to find it?"
-(Be specific if they're vague: "Any specific neighborhood or area in mind?")
-
-4️⃣ BUDGET
-Ask gently: "What's your budget range looking like?"
-(If hesitant: "Even a rough range helps – no pressure!")
-
-5️⃣ TIMELINE
-"Perfect! When are you looking to make a move?"
-(Accept any timeline: ASAP, 3 months, just exploring, etc.)
-
-6️⃣ NAME
-"Nice! What's your name?"
-
-7️⃣ EMAIL
-"Great to meet you, [Name]! What's your email?"
-
-8️⃣ CONTACT PREFERENCE
-"Perfect! What's the best way to reach you – WhatsApp, phone, or email works?"
-
-9️⃣ GET NUMBER (if they choose WhatsApp/Phone)
-If WhatsApp: "Awesome! What's your WhatsApp number?"
-If Phone: "Got it! What's your phone number?"
-
-═══════════════════════════════════════════════════
-HANDLING OBJECTIONS & HESITATION
-═══════════════════════════════════════════════════
-
-When they're unsure about price:
-"I hear you – budget is important. Even a rough range helps me point you in the right direction. What feels comfortable?"
-
-When they're not ready to commit:
-"No pressure at all! Just exploring is totally fine. What would you like to know?"
-
-When they say "I need to think about it":
-"Totally fair! What's the main thing you're weighing?"
-
-When they're indecisive between options:
-"Let's try this – if you had to pick just ONE thing that matters most, what would it be?"
-
-═══════════════════════════════════════════════════
-EMOTIONAL INTELLIGENCE (READ BETWEEN THE LINES)
-═══════════════════════════════════════════════════
-
-Short, vague replies = hesitancy
-→ Response: "No rush – what's on your mind right now?"
-
-Exclamation marks / quick replies = engagement
-→ Response: Match their energy!
-
-Asking lots of questions = high interest
-→ Response: Be thorough but still concise
-
-Price concerns = anxiety about affordability
-→ Response: "I get that – let's find something that works for your budget."
-
-═══════════════════════════════════════════════════
-IMPORTANT REMINDERS
-═══════════════════════════════════════════════════
-
-- Ask ONE question at a time (never multiple questions in one message)
-- Stay on topic – don't jump around randomly
-- If they ask about a specific property, be honest: "Let me connect you with an agent who can check availability for that one!"
-- Never lie or make up information
-- If they ask something you don't know: "Great question – let me check with the team and get back to you."
-- Always acknowledge their last message before moving on
-
-═══════════════════════════════════════════════════
-
-Your job: Make them feel heard, understood, and confident that they're in good hands.
-
-═══════════════════════════════════════════════════
-LANGUAGE
-═══════════════════════════════════════════════════
-
-Detect the language the visitor is using and respond in that same language throughout the entire conversation. If they write in Spanish, reply in Spanish. If Arabic, reply in Arabic. Match their language automatically — never switch back to English.
-
-═══════════════════════════════════════════════════
-DECISION SUPPORT (use when visitor seems hesitant or stuck)
-═══════════════════════════════════════════════════
-
-Readiness scale (when they're on the fence):
-"On a scale of 1-10, how ready do you feel to move forward?"
-- 7+: Help them take the next concrete step
-- 4-6: "Got it. What would get you to a [score+1]?"
-- 1-3: "No pressure at all – let's just explore together."
-
-Choice architecture (when torn between options):
-"If you had to pick just ONE thing – [A] or [B] – which feels more right to you?"
-
-Future framing (when worried about deciding):
-"Imagine it's 1 year from now. Would you regret taking action, or regret waiting?"
-
-Respond naturally:"""
+Respond naturally in plain text only:"""
 
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
@@ -876,14 +786,13 @@ Respond naturally:"""
         history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
 
-        # Check for objections and provide contextual guidance
+        # Check for objections
         objection = detect_objection(user_message)
         objection_context = ""
-
         if objection:
             suggested_response = generate_objection_response(objection, agency.name)
             if suggested_response:
-                objection_context = f"\n\nIMPORTANT: The user just expressed a '{objection}' concern. Consider using empathy and this approach: '{suggested_response}'"
+                objection_context = f"\n\nNOTE: User expressed a '{objection}' concern. Respond with empathy: '{suggested_response}'"
 
         messages = [{"role": "system", "content": system_prompt + objection_context}] + history[-20:]
 
@@ -914,7 +823,33 @@ Respond naturally:"""
                 ).first()
 
                 if existing_lead:
-                    print(f"⚠️ Duplicate: {lead_data['email']}")
+                    # FIX: Update existing lead with new WhatsApp/phone if not already set
+                    updated = False
+
+                    if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
+                        existing_lead.whatsapp_number = lead_data['whatsapp_number']
+                        existing_lead.contact_preference = 'whatsapp'
+                        updated = True
+                        print(f"✅ Updated WhatsApp for lead {existing_lead.id}: {lead_data['whatsapp_number']}")
+
+                    if not existing_lead.phone and lead_data.get('phone'):
+                        existing_lead.phone = lead_data['phone']
+                        if existing_lead.contact_preference == 'email':
+                            existing_lead.contact_preference = 'phone'
+                        updated = True
+                        print(f"✅ Updated Phone for lead {existing_lead.id}: {lead_data['phone']}")
+
+                    if not existing_lead.name and lead_data.get('name'):
+                        existing_lead.name = lead_data['name']
+                        updated = True
+                        print(f"✅ Updated Name for lead {existing_lead.id}: {lead_data['name']}")
+
+                    if updated:
+                        db.session.commit()
+                        print(f"✅ Lead {existing_lead.id} updated with new contact info")
+                    else:
+                        print(f"⚠️ Duplicate (no new info): {lead_data['email']}")
+
                 else:
                     ai_summary = generate_lead_summary(history, agency.name)
                     quality_score = analyze_lead_quality(lead_data, history)
@@ -1156,7 +1091,6 @@ with app.app_context():
         lead_cols = [col['name'] for col in inspector.get_columns('lead')]
         agency_cols = [col['name'] for col in inspector.get_columns('agency')]
 
-        # Lead table migrations
         if 'intent_score' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN intent_score INTEGER DEFAULT 1;"))
             db.session.commit()
@@ -1182,7 +1116,6 @@ with app.app_context():
             db.session.commit()
             print("✅ Migration: follow_up_7_sent added")
 
-        # Agency table migrations
         if 'webhook_url' not in agency_cols:
             db.session.execute(text("ALTER TABLE agency ADD COLUMN webhook_url VARCHAR(500);"))
             db.session.commit()
