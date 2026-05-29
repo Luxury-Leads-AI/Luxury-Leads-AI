@@ -2,13 +2,8 @@
 <html>
 <head>
   <title>Agency Dashboard - Luxury Leads AI</title>
-
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
@@ -25,17 +20,8 @@
       box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
     }
 
-    .title {
-      font-size: 24px;
-      font-weight: bold;
-      color: white;
-    }
-
-    .subtitle {
-      font-size: 13px;
-      opacity: 0.9;
-      margin-top: 4px;
-    }
+    .title { font-size: 24px; font-weight: bold; color: white; }
+    .subtitle { font-size: 13px; opacity: 0.9; margin-top: 4px; }
 
     .actions a, .actions button {
       text-decoration: none;
@@ -49,46 +35,13 @@
       border: none;
       cursor: pointer;
     }
+    .actions a:hover, .actions button:hover { transform: translateY(-2px); }
 
-    .actions a:hover, .actions button:hover {
-      transform: translateY(-2px);
-    }
+    .export-btn { background: #22c55e; color: white; box-shadow: 0 4px 12px rgba(34,197,94,0.3); }
+    .clear-all-btn { background: #f59e0b; color: white; box-shadow: 0 4px 12px rgba(245,158,11,0.3); }
+    .logout-btn { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3) !important; }
 
-    .export-btn {
-      background: #22c55e;
-      color: white;
-      box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
-    }
-
-    .export-btn:hover {
-      box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
-    }
-
-    .clear-all-btn {
-      background: #f59e0b;
-      color: white;
-      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-    }
-
-    .clear-all-btn:hover {
-      box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
-    }
-
-    .logout-btn {
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-
-    .logout-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
-    }
-
-    .container {
-      padding: 30px 40px;
-      max-width: 1600px;
-      margin: 0 auto;
-    }
+    .container { padding: 30px 40px; max-width: 1600px; margin: 0 auto; }
 
     .stats-grid {
       display: grid;
@@ -103,25 +56,9 @@
       border-radius: 12px;
       border: 1px solid #334155;
     }
-
-    .stat-label {
-      font-size: 13px;
-      color: #94a3b8;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .stat-value {
-      font-size: 32px;
-      font-weight: bold;
-      color: white;
-    }
-
-    .stat-icon {
-      font-size: 24px;
-      margin-bottom: 10px;
-    }
+    .stat-label { font-size: 13px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 32px; font-weight: bold; color: white; }
+    .stat-icon { font-size: 24px; margin-bottom: 10px; }
 
     .filter-section {
       background: #1e293b;
@@ -131,12 +68,7 @@
       border: 1px solid #334155;
     }
 
-    .filter-tabs {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
+    .filter-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
     .filter-tab {
       padding: 8px 16px;
       border-radius: 6px;
@@ -147,16 +79,46 @@
       border: 1px solid #334155;
       transition: all 0.2s;
     }
-
-    .filter-tab:hover {
-      background: #334155;
-      color: white;
-    }
-
+    .filter-tab:hover { background: #334155; color: white; }
     .filter-tab.active {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       border-color: transparent;
+    }
+
+    /* Bulk action bar */
+    .bulk-bar {
+      display: none;
+      background: #1e3a5f;
+      border: 1px solid #3b82f6;
+      border-radius: 10px;
+      padding: 12px 20px;
+      margin-bottom: 16px;
+      align-items: center;
+      gap: 16px;
+    }
+    .bulk-bar.visible { display: flex; }
+    .bulk-count { color: #93c5fd; font-weight: 600; font-size: 14px; }
+    .btn-bulk-delete {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-bulk-delete:hover { background: #dc2626; }
+    .btn-bulk-cancel {
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid #334155;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
     }
 
     table {
@@ -167,13 +129,7 @@
       overflow: hidden;
       box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     }
-
-    th, td {
-      padding: 16px;
-      text-align: left;
-      border-bottom: 1px solid #334155;
-    }
-
+    th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid #334155; }
     th {
       background: #0f172a;
       color: #38bdf8;
@@ -182,183 +138,264 @@
       font-size: 12px;
       letter-spacing: 0.5px;
     }
+    tbody tr { transition: background 0.2s; cursor: pointer; }
+    tbody tr:hover { background: #334155; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr.selected-row { background: rgba(59, 130, 246, 0.1); }
 
-    tbody tr {
-      transition: background 0.2s;
-    }
+    .empty { text-align: center; padding: 60px 20px; color: #64748b; }
+    .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+    .insights-cell { max-width: 280px; line-height: 1.5; color: #cbd5e1; font-size: 13px; }
+    .no-data { color: #64748b; font-style: italic; }
 
-    tbody tr:hover {
-      background: #334155;
-    }
-
-    tbody tr:last-child td {
-      border-bottom: none;
-    }
-
-    .empty {
-      text-align: center;
-      padding: 60px 20px;
-      color: #64748b;
-    }
-
-    .empty-icon {
-      font-size: 48px;
-      margin-bottom: 16px;
-      opacity: 0.5;
-    }
-
-    .insights-cell {
-      max-width: 350px;
-      line-height: 1.5;
-      color: #cbd5e1;
-    }
-
-    .no-data {
-      color: #64748b;
-      font-style: italic;
-    }
-
+    /* Quality badges */
     .quality-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 10px;
-      border-radius: 12px;
-      font-size: 13px;
-      font-weight: 600;
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
     }
+    .quality-5 { background: rgba(34,197,94,0.2); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .quality-4 { background: rgba(59,130,246,0.2); color: #3b82f6; border: 1px solid rgba(59,130,246,0.3); }
+    .quality-3 { background: rgba(234,179,8,0.2); color: #eab308; border: 1px solid rgba(234,179,8,0.3); }
+    .quality-2 { background: rgba(249,115,22,0.2); color: #f97316; border: 1px solid rgba(249,115,22,0.3); }
+    .quality-1 { background: rgba(148,163,184,0.2); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
 
-    .quality-5 {
-      background: rgba(34, 197, 94, 0.2);
-      color: #22c55e;
-      border: 1px solid rgba(34, 197, 94, 0.3);
+    /* Status badges */
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
-
-    .quality-4 {
-      background: rgba(59, 130, 246, 0.2);
-      color: #3b82f6;
-      border: 1px solid rgba(59, 130, 246, 0.3);
-    }
-
-    .quality-3 {
-      background: rgba(234, 179, 8, 0.2);
-      color: #eab308;
-      border: 1px solid rgba(234, 179, 8, 0.3);
-    }
-
-    .quality-2 {
-      background: rgba(249, 115, 22, 0.2);
-      color: #f97316;
-      border: 1px solid rgba(249, 115, 22, 0.3);
-    }
-
-    .quality-1 {
-      background: rgba(148, 163, 184, 0.2);
-      color: #94a3b8;
-      border: 1px solid rgba(148, 163, 184, 0.3);
-    }
+    .status-new { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .status-contacted { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+    .status-meeting { background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.3); }
+    .status-closed { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+    .status-lost { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
 
     .hot-lead-indicator {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      background: #ef4444;
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-      margin-right: 8px;
+      display: inline-block; width: 8px; height: 8px;
+      background: #ef4444; border-radius: 50%;
+      animation: pulse 2s infinite; margin-right: 6px;
     }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    .badge-new {
-      background: rgba(34, 197, 94, 0.2);
-      color: #22c55e;
-    }
+    .badge { display: inline-block; padding: 3px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+    .badge-new { background: rgba(34,197,94,0.2); color: #22c55e; }
 
     .btn-delete {
-      background: #ef4444;
-      color: white;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
+      background: #ef4444; color: white; border: none;
+      padding: 5px 10px; border-radius: 6px; font-size: 11px;
+      cursor: pointer; transition: all 0.2s;
     }
+    .btn-delete:hover { background: #dc2626; }
 
-    .btn-delete:hover {
-      background: #dc2626;
-      transform: scale(1.05);
+    .btn-view {
+      background: #667eea; color: white; border: none;
+      padding: 5px 10px; border-radius: 6px; font-size: 11px;
+      cursor: pointer; transition: all 0.2s; margin-right: 4px;
     }
+    .btn-view:hover { background: #5568d3; }
 
-    .actions-cell {
-      text-align: center;
-    }
+    .actions-cell { text-align: center; white-space: nowrap; }
 
     .contact-link {
-      color: #38bdf8;
-      text-decoration: none;
-      display: inline-flex;
+      color: #38bdf8; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .contact-link:hover { color: #0ea5e9; text-decoration: underline; }
+    .whatsapp-link { color: #22c55e; }
+    .whatsapp-link:hover { color: #16a34a; }
+
+    /* Checkbox */
+    .lead-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: #667eea; }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 1000;
       align-items: center;
-      gap: 4px;
-      transition: color 0.2s;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: #1e293b;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 680px;
+      max-height: 90vh;
+      overflow-y: auto;
+      border: 1px solid #334155;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
 
-    .contact-link:hover {
-      color: #0ea5e9;
-      text-decoration: underline;
+    .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      background: #1e293b;
+      z-index: 10;
+    }
+    .modal-title { font-size: 18px; font-weight: 700; color: white; }
+    .modal-close {
+      background: transparent; border: none; color: #94a3b8;
+      font-size: 22px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+      transition: background 0.2s;
+    }
+    .modal-close:hover { background: #334155; color: white; }
+
+    .modal-body { padding: 24px; }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .info-item label {
+      display: block;
+      font-size: 11px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .info-item .info-value {
+      font-size: 15px;
+      color: #e2e8f0;
+      font-weight: 500;
     }
 
-    .whatsapp-link {
-      color: #22c55e;
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
     }
 
-    .whatsapp-link:hover {
-      color: #16a34a;
+    /* Status buttons in modal */
+    .status-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
     }
+    .status-btn {
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+      opacity: 0.5;
+    }
+    .status-btn.active-status { opacity: 1; transform: scale(1.05); }
+    .status-btn:hover { opacity: 1; }
+    .status-btn-new { background: rgba(34,197,94,0.15); color: #22c55e; border-color: rgba(34,197,94,0.4); }
+    .status-btn-contacted { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.4); }
+    .status-btn-meeting { background: rgba(168,85,247,0.15); color: #c084fc; border-color: rgba(168,85,247,0.4); }
+    .status-btn-closed { background: rgba(16,185,129,0.15); color: #10b981; border-color: rgba(16,185,129,0.4); }
+    .status-btn-lost { background: rgba(239,68,68,0.15); color: #f87171; border-color: rgba(239,68,68,0.4); }
+
+    /* Insights box */
+    .insights-box {
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 14px;
+      color: #cbd5e1;
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 24px;
+      border: 1px solid #334155;
+    }
+
+    /* Notes */
+    .notes-list { margin-bottom: 16px; }
+    .note-item {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+    .note-text { color: #e2e8f0; font-size: 14px; line-height: 1.5; margin-bottom: 6px; }
+    .note-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .note-time { font-size: 11px; color: #64748b; }
+    .note-delete-btn {
+      background: transparent; border: none;
+      color: #ef4444; font-size: 12px; cursor: pointer;
+      padding: 2px 6px; border-radius: 4px;
+      transition: background 0.2s;
+    }
+    .note-delete-btn:hover { background: rgba(239,68,68,0.1); }
+
+    .note-input-area {
+      display: flex;
+      gap: 8px;
+    }
+    .note-input {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #e2e8f0;
+      font-size: 14px;
+      outline: none;
+      resize: none;
+      min-height: 44px;
+    }
+    .note-input:focus { border-color: #667eea; }
+    .btn-add-note {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .btn-add-note:hover { background: #5568d3; }
+
+    .no-notes { color: #64748b; font-size: 13px; font-style: italic; padding: 8px 0; }
 
     @media (max-width: 768px) {
-      .container {
-        padding: 20px;
-      }
-      
-      .topbar {
-        flex-direction: column;
-        gap: 15px;
-        text-align: center;
-      }
-      
-      table {
-        font-size: 12px;
-      }
-      
-      th, td {
-        padding: 10px;
-      }
+      .container { padding: 16px; }
+      .topbar { flex-direction: column; gap: 15px; text-align: center; padding: 16px; }
+      table { font-size: 12px; }
+      th, td { padding: 8px 10px; }
+      .info-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
-
 <body>
 
+<!-- TOPBAR -->
 <div class="topbar">
   <div>
     <div class="title">📊 Agency Dashboard</div>
     <div class="subtitle">{{ agency.name if agency else 'Your Agency' }}</div>
   </div>
-
   <div class="actions">
     <a href="/analytics/{{ agency.id }}" class="export-btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 12px rgba(102,126,234,0.3);">📈 Analytics</a>
     <a href="/export/{{ agency.id }}" class="export-btn">📥 Export Excel</a>
@@ -371,281 +408,567 @@
 
 <div class="container">
 
-  <!-- Stats Cards -->
+  <!-- STATS -->
   <div class="stats-grid">
     <div class="stat-card">
       <div class="stat-icon">📊</div>
       <div class="stat-label">Total Leads</div>
-      <div class="stat-value">{{ leads|length }}</div>
+      <div class="stat-value" id="total-count">{{ leads|length }}</div>
     </div>
-    
     <div class="stat-card">
       <div class="stat-icon">🔥</div>
       <div class="stat-label">Hot Leads (5⭐)</div>
       <div class="stat-value">{{ leads|selectattr('intent_score', 'equalto', 5)|list|length }}</div>
     </div>
-    
     <div class="stat-card">
       <div class="stat-icon">💎</div>
       <div class="stat-label">High Quality (4-5⭐)</div>
       <div class="stat-value">{{ leads|selectattr('intent_score', 'ge', 4)|list|length }}</div>
     </div>
-    
     <div class="stat-card">
-      <div class="stat-icon">📈</div>
-      <div class="stat-label">This Week</div>
-      <div class="stat-value">{{ leads|length }}</div>
+      <div class="stat-icon">✅</div>
+      <div class="stat-label">Closed</div>
+      <div class="stat-value">{{ leads|selectattr('lead_status', 'equalto', 'closed')|list|length }}</div>
     </div>
   </div>
 
-  <!-- Filter & Search -->
+  <!-- FILTER & SEARCH -->
   <div class="filter-section">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
-      <div class="filter-tabs">
-        <div class="filter-tab active" onclick="filterLeads('all')">🌟 All Leads</div>
-        <div class="filter-tab" onclick="filterLeads(5)">🔥 Hot (5⭐)</div>
-        <div class="filter-tab" onclick="filterLeads(4)">💎 High (4⭐)</div>
-        <div class="filter-tab" onclick="filterLeads(3)">⚡ Medium (3⭐)</div>
-        <div class="filter-tab" onclick="filterLeads(2)">💡 Low (2⭐)</div>
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+      <div class="filter-tabs" id="quality-tabs">
+        <div class="filter-tab active" onclick="filterByQuality('all', this)">🌟 All</div>
+        <div class="filter-tab" onclick="filterByQuality(5, this)">🔥 Hot (5⭐)</div>
+        <div class="filter-tab" onclick="filterByQuality(4, this)">💎 High (4⭐)</div>
+        <div class="filter-tab" onclick="filterByQuality(3, this)">⚡ Medium (3⭐)</div>
+        <div class="filter-tab" onclick="filterByQuality(2, this)">💡 Low (2⭐)</div>
       </div>
       <input id="search-input" type="text" placeholder="🔍 Search name, email, budget..."
         oninput="searchLeads(this.value)"
         style="padding: 8px 14px; background: #0f172a; border: 1px solid #334155;
                border-radius: 6px; color: #e2e8f0; font-size: 14px; width: 280px; outline: none;" />
     </div>
+    <!-- Pipeline status filter -->
+    <div class="filter-tabs" id="status-tabs">
+      <div class="filter-tab active" onclick="filterByStatus('all', this)">📋 All Status</div>
+      <div class="filter-tab" onclick="filterByStatus('new', this)">🆕 New</div>
+      <div class="filter-tab" onclick="filterByStatus('contacted', this)">📞 Contacted</div>
+      <div class="filter-tab" onclick="filterByStatus('meeting', this)">🤝 Meeting</div>
+      <div class="filter-tab" onclick="filterByStatus('closed', this)">✅ Closed</div>
+      <div class="filter-tab" onclick="filterByStatus('lost', this)">❌ Lost</div>
+    </div>
   </div>
 
-  <!-- Leads Table -->
+  <!-- BULK ACTION BAR -->
+  <div class="bulk-bar" id="bulk-bar">
+    <span class="bulk-count" id="bulk-count">0 leads selected</span>
+    <button class="btn-bulk-delete" onclick="bulkDelete()">🗑️ Delete Selected</button>
+    <button class="btn-bulk-cancel" onclick="clearSelection()">✕ Cancel</button>
+  </div>
+
+  <!-- LEADS TABLE -->
   <table id="leadsTable">
     <thead>
       <tr>
+        <th><input type="checkbox" id="select-all" class="lead-checkbox" onclick="toggleSelectAll(this)"></th>
         <th>Sr. #</th>
         <th>Quality</th>
+        <th>Status</th>
         <th>Name</th>
         <th>Email</th>
         <th>Contact</th>
         <th>Budget</th>
-        <th>Customer Insights</th>
+        <th>Insights</th>
         <th>Date</th>
-        <th>Action</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
 {% if leads %}
   {% for lead in leads %}
-  <tr class="lead-row" data-quality="{{ lead.intent_score or 1 }}" id="lead-{{ lead.id }}">
+  <tr class="lead-row"
+      data-quality="{{ lead.intent_score or 1 }}"
+      data-status="{{ lead.lead_status or 'new' }}"
+      id="lead-{{ lead.id }}"
+      onclick="handleRowClick(event, {{ lead.id }})">
+    <td onclick="event.stopPropagation()">
+      <input type="checkbox" class="lead-checkbox row-checkbox" data-id="{{ lead.id }}" onchange="updateBulkBar()">
+    </td>
     <td>
-      {% if lead.intent_score == 5 %}
-        <span class="hot-lead-indicator"></span>
-      {% endif %}
+      {% if lead.intent_score == 5 %}<span class="hot-lead-indicator"></span>{% endif %}
       {{ loop.index }}
       {% if lead.created_at and now %}
         {% set time_diff = (now - lead.created_at).total_seconds() %}
-        {% if time_diff < 86400 %}
-          <span class="badge badge-new">New</span>
-        {% endif %}
+        {% if time_diff < 86400 %}<span class="badge badge-new">New</span>{% endif %}
       {% endif %}
     </td>
     <td>
       <span class="quality-badge quality-{{ lead.intent_score or 1 }}">
         {% if lead.intent_score == 5 %}🔥 Hot
         {% elif lead.intent_score == 4 %}💎 High
-        {% elif lead.intent_score == 3 %}⚡ Medium
+        {% elif lead.intent_score == 3 %}⚡ Med
         {% elif lead.intent_score == 2 %}💡 Low
-        {% else %}📝 Basic
-        {% endif %}
+        {% else %}📝 Basic{% endif %}
       </span>
     </td>
     <td>
-      <strong>{% if lead.name %}{{ lead.name }}{% else %}<span class="no-data">—</span>{% endif %}</strong>
+      <span class="status-badge status-{{ lead.lead_status or 'new' }}">
+        {% if lead.lead_status == 'new' or not lead.lead_status %}🆕 New
+        {% elif lead.lead_status == 'contacted' %}📞 Contacted
+        {% elif lead.lead_status == 'meeting' %}🤝 Meeting
+        {% elif lead.lead_status == 'closed' %}✅ Closed
+        {% elif lead.lead_status == 'lost' %}❌ Lost
+        {% else %}🆕 New{% endif %}
+      </span>
     </td>
-    <td>{% if lead.email %}{{ lead.email }}{% else %}<span class="no-data">—</span>{% endif %}</td>
+    <td><strong>{{ lead.name or '—' }}</strong></td>
+    <td style="font-size:13px;">{{ lead.email or '—' }}</td>
     <td>
       {% if lead.whatsapp_number %}
         {% set wa_clean = lead.whatsapp_number | regex_replace('[^0-9]', '') %}
-        <a href="https://wa.me/{{ wa_clean }}"
-           target="_blank"
-           class="contact-link whatsapp-link"
-           title="Open WhatsApp chat">
+        <a href="https://wa.me/{{ wa_clean }}" target="_blank"
+           class="contact-link whatsapp-link" title="WhatsApp" onclick="event.stopPropagation()">
           💬 {{ lead.whatsapp_number }}
         </a>
       {% elif lead.phone %}
-        <a href="tel:{{ lead.phone }}"
-           class="contact-link"
-           title="Call this number">
+        <a href="tel:{{ lead.phone }}" class="contact-link" title="Call" onclick="event.stopPropagation()">
           📱 {{ lead.phone }}
         </a>
       {% else %}
         <span class="no-data">—</span>
       {% endif %}
     </td>
-    <td>{% if lead.budget %}{{ lead.budget }}{% else %}<span class="no-data">—</span>{% endif %}</td>
-    <td class="insights-cell">
-      {% if lead.message %}{{ lead.message }}{% else %}<span class="no-data">No insights available</span>{% endif %}
+    <td>{{ lead.budget or '—' }}</td>
+    <td class="insights-cell">{{ lead.message or '—' }}</td>
+    <td style="white-space:nowrap; font-size:12px; color:#94a3b8;">
+      {% if lead.created_at %}{{ lead.created_at.strftime('%b %d, %Y') }}{% else %}—{% endif %}
     </td>
-    <td>
-      {% if lead.created_at %}
-        {{ lead.created_at.strftime('%B %d, %Y') }}
-      {% else %}
-        —
-      {% endif %}
-    </td>
-    <td class="actions-cell">
-      <button class="btn-delete" onclick="deleteLead({{ lead.id }})">🗑️ Delete</button>
+    <td class="actions-cell" onclick="event.stopPropagation()">
+      <button class="btn-view" onclick="openModal({{ lead.id }})">👁 View</button>
+      <button class="btn-delete" onclick="deleteLead({{ lead.id }})">🗑️</button>
     </td>
   </tr>
   {% endfor %}
 {% else %}
   <tr>
-    <td colspan="9" class="empty">
+    <td colspan="11" class="empty">
       <div class="empty-icon">📭</div>
-      <div style="font-size: 18px; margin-bottom: 8px; font-weight: 600;">No Leads Yet</div>
-      <div style="font-size: 14px; color: #64748b;">
+      <div style="font-size:18px; margin-bottom:8px; font-weight:600;">No Leads Yet</div>
+      <div style="font-size:14px; color:#64748b;">
         Share your widget to start collecting leads!<br>
-        <code style="background: #0f172a; padding: 4px 8px; border-radius: 4px; margin-top: 10px; display: inline-block;">
+        <code style="background:#0f172a; padding:4px 8px; border-radius:4px; margin-top:10px; display:inline-block;">
           &lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="{{ agency.id }}"&gt;&lt;/script&gt;
         </code>
       </div>
     </td>
   </tr>
 {% endif %}
-</tbody>
+    </tbody>
   </table>
+</div>
 
+<!-- ── LEAD DETAIL MODAL ── -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOnOverlay(event)">
+  <div class="modal" id="modal-content">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-lead-name">Lead Details</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Info Grid -->
+      <div class="info-grid" id="modal-info-grid">
+        <div class="info-item">
+          <label>📧 Email</label>
+          <div class="info-value" id="modal-email">—</div>
+        </div>
+        <div class="info-item">
+          <label>💬 Contact</label>
+          <div class="info-value" id="modal-contact">—</div>
+        </div>
+        <div class="info-item">
+          <label>💰 Budget</label>
+          <div class="info-value" id="modal-budget">—</div>
+        </div>
+        <div class="info-item">
+          <label>📅 Date</label>
+          <div class="info-value" id="modal-date">—</div>
+        </div>
+        <div class="info-item">
+          <label>📞 Prefers</label>
+          <div class="info-value" id="modal-pref">—</div>
+        </div>
+        <div class="info-item">
+          <label>🌟 Quality</label>
+          <div class="info-value" id="modal-quality">—</div>
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="section-title">📊 Lead Status</div>
+      <div class="status-buttons" id="modal-status-buttons">
+        <button class="status-btn status-btn-new" onclick="updateStatus('new')">🆕 New</button>
+        <button class="status-btn status-btn-contacted" onclick="updateStatus('contacted')">📞 Contacted</button>
+        <button class="status-btn status-btn-meeting" onclick="updateStatus('meeting')">🤝 Meeting</button>
+        <button class="status-btn status-btn-closed" onclick="updateStatus('closed')">✅ Closed</button>
+        <button class="status-btn status-btn-lost" onclick="updateStatus('lost')">❌ Lost</button>
+      </div>
+
+      <!-- Customer Insights -->
+      <div class="section-title">📝 Customer Insights</div>
+      <div class="insights-box" id="modal-insights">—</div>
+
+      <!-- Notes -->
+      <div class="section-title">🗒️ Notes <span id="notes-count" style="color:#64748b; font-weight:400;"></span></div>
+      <div class="notes-list" id="notes-list"></div>
+      <div class="note-input-area">
+        <textarea class="note-input" id="note-input" placeholder="Add a note... e.g. Called today, showing scheduled for Thursday"
+          rows="2" onkeydown="if(event.ctrlKey&&event.key==='Enter') addNote()"></textarea>
+        <button class="btn-add-note" onclick="addNote()">+ Add</button>
+      </div>
+
+    </div>
+  </div>
 </div>
 
 <script>
-// Delete single lead
-async function deleteLead(leadId) {
-  if (!confirm('⚠️ Are you sure you want to delete this lead?\n\nThis action cannot be undone.')) {
-    return;
+  let currentLeadId = null;
+  let currentStatus = 'new';
+
+  // ── MODAL ──────────────────────────────────────
+
+  async function openModal(leadId) {
+    currentLeadId = leadId;
+    document.getElementById('modal-overlay').classList.add('open');
+    document.getElementById('modal-lead-name').textContent = 'Loading...';
+
+    try {
+      const res = await fetch(`/get-lead-detail/${leadId}`);
+      const d = await res.json();
+      if (d.error) { alert('❌ ' + d.error); closeModal(); return; }
+
+      currentStatus = d.lead_status || 'new';
+
+      document.getElementById('modal-lead-name').textContent = '👤 ' + d.name;
+      document.getElementById('modal-email').textContent = d.email;
+      document.getElementById('modal-budget').textContent = d.budget;
+      document.getElementById('modal-date').textContent = d.created_at;
+      document.getElementById('modal-pref').textContent = (d.contact_preference || 'email').replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase());
+      document.getElementById('modal-quality').textContent = '⭐'.repeat(d.intent_score) + ` (${d.intent_score}/5)`;
+      document.getElementById('modal-insights').textContent = d.message || 'No insights available';
+
+      // Contact
+      if (d.whatsapp_link) {
+        document.getElementById('modal-contact').innerHTML = `<a href="${d.whatsapp_link}" target="_blank" style="color:#22c55e; text-decoration:none;">💬 ${d.whatsapp_number}</a>`;
+      } else if (d.phone) {
+        document.getElementById('modal-contact').innerHTML = `<a href="tel:${d.phone}" style="color:#38bdf8; text-decoration:none;">📱 ${d.phone}</a>`;
+      } else {
+        document.getElementById('modal-contact').textContent = '—';
+      }
+
+      // Status buttons
+      highlightStatusBtn(currentStatus);
+
+      // Notes
+      renderNotes(d.notes || []);
+
+    } catch(e) {
+      alert('❌ Failed to load lead details');
+      closeModal();
+    }
   }
-  
-  try {
-    const response = await fetch(`/delete-lead/${leadId}`, {
-      method: 'DELETE'
-    });
-    
-    if (response.ok) {
-      const row = document.getElementById(`lead-${leadId}`);
-      row.style.opacity = '0';
-      row.style.transform = 'translateX(-20px)';
-      setTimeout(() => {
-        row.remove();
-        const remainingRows = document.querySelectorAll('.lead-row');
-        if (remainingRows.length === 0) {
-          location.reload();
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    document.getElementById('note-input').value = '';
+    currentLeadId = null;
+  }
+
+  function closeModalOnOverlay(e) {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  }
+
+  // Handle row click (open modal unless clicking checkbox/button)
+  function handleRowClick(e, leadId) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+    openModal(leadId);
+  }
+
+  // ── STATUS ─────────────────────────────────────
+
+  function highlightStatusBtn(status) {
+    document.querySelectorAll('.status-btn').forEach(btn => btn.classList.remove('active-status'));
+    const btn = document.querySelector(`.status-btn-${status}`);
+    if (btn) btn.classList.add('active-status');
+  }
+
+  async function updateStatus(newStatus) {
+    if (!currentLeadId) return;
+    try {
+      const res = await fetch(`/update-lead-status/${currentLeadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      const d = await res.json();
+      if (d.success) {
+        currentStatus = newStatus;
+        highlightStatusBtn(newStatus);
+        // Update badge in table row
+        const row = document.getElementById(`lead-${currentLeadId}`);
+        if (row) {
+          row.setAttribute('data-status', newStatus);
+          const badge = row.querySelector('.status-badge');
+          if (badge) {
+            const labels = {
+              new: '🆕 New', contacted: '📞 Contacted',
+              meeting: '🤝 Meeting', closed: '✅ Closed', lost: '❌ Lost'
+            };
+            badge.textContent = labels[newStatus] || '🆕 New';
+            badge.className = `status-badge status-${newStatus}`;
+          }
         }
-      }, 300);
-      updateStats();
-    } else {
-      alert('❌ Failed to delete lead. Please try again.');
+      }
+    } catch(e) {
+      console.error('Status update failed', e);
     }
-  } catch (error) {
-    alert('❌ Network error. Please check your connection.');
   }
-}
 
-// Clear all leads
-async function clearAllLeads() {
-  if (!confirm('⚠️ WARNING: Delete ALL leads?\n\nThis will permanently delete all leads from your dashboard.\n\nAre you absolutely sure?')) {
-    return;
+  // ── NOTES ──────────────────────────────────────
+
+  function renderNotes(notes) {
+    const list = document.getElementById('notes-list');
+    const count = document.getElementById('notes-count');
+    count.textContent = notes.length ? `(${notes.length})` : '';
+
+    if (!notes.length) {
+      list.innerHTML = '<div class="no-notes">No notes yet. Add your first note below.</div>';
+      return;
+    }
+    list.innerHTML = notes.map(n => `
+      <div class="note-item" id="note-item-${n.id}">
+        <div class="note-text">${escapeHtml(n.text)}</div>
+        <div class="note-meta">
+          <span class="note-time">🕐 ${n.timestamp}</span>
+          <button class="note-delete-btn" onclick="deleteNote(${n.id})">🗑️ Remove</button>
+        </div>
+      </div>
+    `).join('');
   }
-  
-  if (!confirm('⚠️ FINAL CONFIRMATION\n\nThis action CANNOT be undone!\n\nClick OK to proceed with deletion.')) {
-    return;
+
+  async function addNote() {
+    if (!currentLeadId) return;
+    const input = document.getElementById('note-input');
+    const text = input.value.trim();
+    if (!text) { input.focus(); return; }
+
+    try {
+      const res = await fetch(`/add-lead-note/${currentLeadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: text })
+      });
+      const d = await res.json();
+      if (d.success) {
+        input.value = '';
+        // Refresh notes by re-fetching
+        const detail = await fetch(`/get-lead-detail/${currentLeadId}`);
+        const data = await detail.json();
+        renderNotes(data.notes || []);
+      }
+    } catch(e) {
+      alert('❌ Failed to add note');
+    }
   }
-  
-  const agencyId = new URLSearchParams(window.location.search).get('agency_id');
-  
-  try {
-    const response = await fetch(`/clear-all-leads/${agencyId}`, {
-      method: 'DELETE'
+
+  async function deleteNote(noteId) {
+    if (!currentLeadId) return;
+    if (!confirm('Remove this note?')) return;
+    try {
+      const res = await fetch(`/delete-lead-note/${currentLeadId}/${noteId}`, { method: 'DELETE' });
+      const d = await res.json();
+      if (d.success) {
+        const detail = await fetch(`/get-lead-detail/${currentLeadId}`);
+        const data = await detail.json();
+        renderNotes(data.notes || []);
+      }
+    } catch(e) {
+      alert('❌ Failed to delete note');
+    }
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── BULK SELECT ────────────────────────────────
+
+  function toggleSelectAll(masterCb) {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(cb => {
+      const row = cb.closest('tr');
+      if (row && row.style.display !== 'none') {
+        cb.checked = masterCb.checked;
+        row.classList.toggle('selected-row', masterCb.checked);
+      }
     });
-    
-    if (response.ok) {
-      alert('✅ All leads have been deleted successfully!');
-      location.reload();
+    updateBulkBar();
+  }
+
+  function updateBulkBar() {
+    const selected = document.querySelectorAll('.row-checkbox:checked');
+    const bar = document.getElementById('bulk-bar');
+    const count = document.getElementById('bulk-count');
+    if (selected.length > 0) {
+      bar.classList.add('visible');
+      count.textContent = `${selected.length} lead${selected.length > 1 ? 's' : ''} selected`;
     } else {
-      alert('❌ Failed to delete leads. Please try again.');
+      bar.classList.remove('visible');
+      document.getElementById('select-all').checked = false;
     }
-  } catch (error) {
-    alert('❌ Network error. Please check your connection.');
+    // Highlight rows
+    document.querySelectorAll('.row-checkbox').forEach(cb => {
+      cb.closest('tr').classList.toggle('selected-row', cb.checked);
+    });
   }
-}
 
-// Update stats after deletion
-function updateStats() {
-  const remainingRows = document.querySelectorAll('.lead-row');
-  const totalLeads = remainingRows.length;
-  document.querySelector('.stat-value').textContent = totalLeads;
-}
+  function clearSelection() {
+    document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
+    document.getElementById('select-all').checked = false;
+    document.getElementById('bulk-bar').classList.remove('visible');
+    document.querySelectorAll('.lead-row').forEach(r => r.classList.remove('selected-row'));
+  }
 
-// Filter leads by quality
-function filterLeads(quality) {
-  const rows = document.querySelectorAll('.lead-row');
-  const tabs = document.querySelectorAll('.filter-tab');
-  
-  tabs.forEach(tab => tab.classList.remove('active'));
-  event.target.classList.add('active');
-  
-  rows.forEach(row => {
-    const rowQuality = parseInt(row.getAttribute('data-quality'));
-    if (quality === 'all') {
-      row.style.display = '';
-    } else {
-      row.style.display = rowQuality === quality ? '' : 'none';
+  async function bulkDelete() {
+    const selected = Array.from(document.querySelectorAll('.row-checkbox:checked'));
+    if (!selected.length) return;
+    if (!confirm(`⚠️ Delete ${selected.length} selected lead${selected.length > 1 ? 's' : ''}?\n\nThis cannot be undone.`)) return;
+
+    const ids = selected.map(cb => cb.getAttribute('data-id'));
+    try {
+      const res = await fetch('/bulk-delete-leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_ids: ids })
+      });
+      const d = await res.json();
+      if (d.success) {
+        ids.forEach(id => {
+          const row = document.querySelector(`[data-id="${id}"]`)?.closest('tr');
+          if (row) row.remove();
+        });
+        clearSelection();
+        updateTotalCount();
+        const remaining = document.querySelectorAll('.lead-row');
+        if (remaining.length === 0) location.reload();
+      } else {
+        alert('❌ Failed to delete leads');
+      }
+    } catch(e) {
+      alert('❌ Network error');
     }
-  });
-  
-  const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none');
-  const tbody = document.querySelector('tbody');
-  
-  if (visibleRows.length === 0 && quality !== 'all') {
-    const emptyRow = document.createElement('tr');
-    emptyRow.innerHTML = `
-      <td colspan="9" class="empty">
-        <div class="empty-icon">🔍</div>
-        <div style="font-size: 16px;">No leads found with this quality filter</div>
-      </td>
-    `;
-    emptyRow.id = 'filter-empty';
-    tbody.appendChild(emptyRow);
-  } else {
-    const existingEmpty = document.getElementById('filter-empty');
-    if (existingEmpty) existingEmpty.remove();
   }
-}
 
-// Search leads by name, email, or budget
-function searchLeads(query) {
-  const rows = document.querySelectorAll('.lead-row');
-  const q = query.toLowerCase().trim();
+  // ── DELETE SINGLE ──────────────────────────────
 
-  rows.forEach(row => {
-    row.style.display = (!q || row.innerText.toLowerCase().includes(q)) ? '' : 'none';
-  });
-
-  const existingEmpty = document.getElementById('filter-empty');
-  if (existingEmpty) existingEmpty.remove();
-
-  const visible = Array.from(rows).filter(r => r.style.display !== 'none');
-  if (visible.length === 0 && q) {
-    const emptyRow = document.createElement('tr');
-    emptyRow.id = 'filter-empty';
-    emptyRow.innerHTML = `<td colspan="9" class="empty"><div class="empty-icon">🔍</div><div>No leads matching "${query}"</div></td>`;
-    document.querySelector('tbody').appendChild(emptyRow);
+  async function deleteLead(leadId) {
+    if (!confirm('⚠️ Delete this lead?\n\nThis cannot be undone.')) return;
+    try {
+      const res = await fetch(`/delete-lead/${leadId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const row = document.getElementById(`lead-${leadId}`);
+        row.style.opacity = '0';
+        row.style.transform = 'translateX(-20px)';
+        setTimeout(() => {
+          row.remove();
+          updateTotalCount();
+          if (!document.querySelectorAll('.lead-row').length) location.reload();
+        }, 300);
+      } else {
+        alert('❌ Failed to delete lead');
+      }
+    } catch(e) {
+      alert('❌ Network error');
+    }
   }
-}
 
-// Add smooth transitions
-document.addEventListener('DOMContentLoaded', () => {
-  const rows = document.querySelectorAll('.lead-row');
-  rows.forEach(row => {
-    row.style.transition = 'opacity 0.3s, transform 0.3s';
+  // ── CLEAR ALL ──────────────────────────────────
+
+  async function clearAllLeads() {
+    if (!confirm('⚠️ Delete ALL leads? This cannot be undone.')) return;
+    if (!confirm('⚠️ FINAL CONFIRMATION - Click OK to proceed.')) return;
+    const agencyId = new URLSearchParams(window.location.search).get('agency_id');
+    try {
+      const res = await fetch(`/clear-all-leads/${agencyId}`, { method: 'DELETE' });
+      if (res.ok) { alert('✅ All leads deleted!'); location.reload(); }
+      else alert('❌ Failed to delete leads');
+    } catch(e) {
+      alert('❌ Network error');
+    }
+  }
+
+  // ── FILTER BY QUALITY ──────────────────────────
+
+  function filterByQuality(quality, el) {
+    document.querySelectorAll('#quality-tabs .filter-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    applyFilters();
+  }
+
+  function filterByStatus(status, el) {
+    document.querySelectorAll('#status-tabs .filter-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    applyFilters();
+  }
+
+  function applyFilters() {
+    const qualityTab = document.querySelector('#quality-tabs .filter-tab.active');
+    const statusTab = document.querySelector('#status-tabs .filter-tab.active');
+    const quality = qualityTab ? qualityTab.textContent : 'all';
+    const status = statusTab ? statusTab.getAttribute('onclick').match(/'([^']+)'/)?.[1] : 'all';
+    const search = document.getElementById('search-input').value.toLowerCase().trim();
+    const rows = document.querySelectorAll('.lead-row');
+
+    rows.forEach(row => {
+      const rowQuality = parseInt(row.getAttribute('data-quality'));
+      const rowStatus = row.getAttribute('data-status') || 'new';
+      const text = row.innerText.toLowerCase();
+
+      const qualityMatch = (quality === '🌟 All' || quality.includes('All')) || rowQuality === parseInt(quality);
+      const statusMatch = status === 'all' || rowStatus === status;
+      const searchMatch = !search || text.includes(search);
+
+      row.style.display = (qualityMatch && statusMatch && searchMatch) ? '' : 'none';
+    });
+
+    updateEmptyState();
+  }
+
+  function searchLeads(query) { applyFilters(); }
+
+  function updateEmptyState() {
+    const visible = Array.from(document.querySelectorAll('.lead-row')).filter(r => r.style.display !== 'none');
+    const existing = document.getElementById('filter-empty');
+    if (existing) existing.remove();
+    if (!visible.length) {
+      const emptyRow = document.createElement('tr');
+      emptyRow.id = 'filter-empty';
+      emptyRow.innerHTML = `<td colspan="11" class="empty"><div class="empty-icon">🔍</div><div>No leads match your filters</div></td>`;
+      document.querySelector('tbody').appendChild(emptyRow);
+    }
+  }
+
+  function updateTotalCount() {
+    const count = document.querySelectorAll('.lead-row').length;
+    const el = document.getElementById('total-count');
+    if (el) el.textContent = count;
+  }
+
+  // ── INIT ───────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.lead-row').forEach(row => {
+      row.style.transition = 'opacity 0.3s, transform 0.3s';
+    });
   });
-});
 </script>
-
 </body>
 </html>

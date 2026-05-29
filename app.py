@@ -10,6 +10,7 @@ from openpyxl.styles import Font
 from io import BytesIO
 import os
 import re
+import json
 import smtplib
 from email.mime.text import MIMEText
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -301,20 +302,17 @@ def clean_expired_sessions():
     try:
         current_time = datetime.utcnow()
         expired_keys = []
-        
         for key in list(session_timestamps.keys()):
             last_activity = session_timestamps[key]
             time_diff = (current_time - last_activity).total_seconds()
             if time_diff > 1800:
                 expired_keys.append(key)
-        
         for key in expired_keys:
             if key in conversation_memory:
                 del conversation_memory[key]
                 print(f"🧹 Expired session cleared: {key}")
             if key in session_timestamps:
                 del session_timestamps[key]
-                
     except Exception as e:
         print(f"⚠️ Session cleanup error: {e}")
 
@@ -326,20 +324,13 @@ def generate_lead_summary(conversation_history, agency_name):
             f"{'Customer' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
             for msg in conversation_history
         ])
-
         analysis_prompt = f"""Analyze this conversation and create a 2-3 sentence business summary for {agency_name}.
-
 Focus on: intent, property type, budget, location, timeline, urgency.
-
 Conversation:
 {conversation_text}
-
 Format: "[INTENT] + [REQUIREMENTS] + [TIMELINE]"
-
 Example: "Buyer seeking 3-bed villa in Dubai Marina, budget 2-3M AED, wants to move within 3 months."
-
 Write summary:"""
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": analysis_prompt}],
@@ -353,20 +344,7 @@ Write summary:"""
 
 
 def extract_name_from_context(conversation_history):
-    """
-    ROBUST NAME EXTRACTION - Three methods in priority order:
-
-    Method 1 (BEST): Context-aware - find user reply after AI asks "What's your name?"
-    Method 2 (FALLBACK): Explicit pattern - "My name is X", "I am X", "Call me X"
-    Method 3 (LAST RESORT): Not used - removed to avoid false positives
-
-    This handles ALL cases:
-    - User says name after AI asks
-    - User volunteers name early: "My name is Hassan"
-    - AI changes order unexpectedly
-    """
-
-    # Words that are NOT names - shared by both methods
+    """ROBUST NAME EXTRACTION - Context-aware + explicit fallback"""
     not_a_name = {
         'yes', 'no', 'ok', 'okay', 'sure', 'fine', 'good', 'great',
         'hello', 'hi', 'hey', 'thanks', 'thank', 'please', 'sorry',
@@ -384,21 +362,11 @@ def extract_name_from_context(conversation_history):
         'asking', 'checking', 'getting', 'making', 'looking', 'trying'
     }
 
-    # ─────────────────────────────────────────────
-    # METHOD 1: Context-aware (AI asks → next reply)
-    # ─────────────────────────────────────────────
     name_question_patterns = [
-        "what's your name",
-        "what is your name",
-        "whats your name",
-        "your name?",
-        "may i have your name",
-        "can i get your name",
-        "could i get your name",
-        "mind sharing your name",
-        "first name",
-        "tell me your name",
-        "know your name"
+        "what's your name", "what is your name", "whats your name",
+        "your name?", "may i have your name", "can i get your name",
+        "could i get your name", "mind sharing your name",
+        "first name", "tell me your name", "know your name"
     ]
 
     for i, msg in enumerate(conversation_history):
@@ -409,29 +377,18 @@ def extract_name_from_context(conversation_history):
                     next_msg = conversation_history[i + 1]
                     if next_msg['role'] == 'user':
                         candidate = next_msg['content'].strip()
-
-                        # Strip common prefixes
                         candidate = re.sub(
                             r'^(i\s+am|i\'m|my\s+name\s+is|name\s+is|it\'s|its|call\s+me|this\s+is)\s+',
                             '', candidate, flags=re.IGNORECASE
                         ).strip()
-
-                        # Take first word only
                         first_word = candidate.split()[0] if candidate.split() else ''
-
                         if (first_word
                                 and re.match(r'^[a-zA-Z]{2,30}$', first_word)
                                 and first_word.lower() not in not_a_name):
                             print(f"✅ Name (context): {first_word.title()}")
                             return first_word.title()
 
-    # ─────────────────────────────────────────────
-    # METHOD 2: Explicit introduction anywhere in chat
-    # Handles: "My name is Javed", "I am Hassan", "Call me Sara"
-    # Uses ALL messages, prefers LATEST match (most recent = most reliable)
-    # ─────────────────────────────────────────────
     explicit_pattern = r'(?:i\s+am|i\'m|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{2,30})(?:\s|[.,!?]|$)'
-
     found_names = []
     for msg in conversation_history:
         if msg['role'] == 'user':
@@ -443,7 +400,6 @@ def extract_name_from_context(conversation_history):
                     found_names.append(candidate.title())
 
     if found_names:
-        # Return the LAST found name (most recent in conversation)
         print(f"✅ Name (explicit): {found_names[-1]}")
         return found_names[-1]
 
@@ -456,37 +412,20 @@ def extract_lead_data(conversation_history):
     full_conversation_user = " ".join([
         msg['content'] for msg in conversation_history if msg['role'] == 'user'
     ])
-    
     lead_data = {
-        'name': None,
-        'email': None,
-        'phone': None,
-        'whatsapp_number': None,
-        'contact_preference': 'email',
-        'budget': None
+        'name': None, 'email': None, 'phone': None,
+        'whatsapp_number': None, 'contact_preference': 'email', 'budget': None
     }
-    
-    # EMAIL
-    email_match = re.search(
-        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-        full_conversation_user
-    )
+    email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", full_conversation_user)
     if email_match:
         lead_data['email'] = email_match.group(0)
 
-    # NAME - Robust extraction (context + explicit fallback)
     lead_data['name'] = extract_name_from_context(conversation_history)
 
-    # CONTACT PREFERENCE DETECTION
     contact_question_patterns = [
-        "best way to reach you",
-        "how can i reach you",
-        "reach you",
-        "contact you",
-        "whatsapp, phone, or email",
-        "phone, or email"
+        "best way to reach you", "how can i reach you", "reach you",
+        "contact you", "whatsapp, phone, or email", "phone, or email"
     ]
-
     for i, msg in enumerate(conversation_history):
         if msg['role'] == 'assistant':
             ai_text = msg['content'].lower()
@@ -498,7 +437,6 @@ def extract_lead_data(conversation_history):
                         has_email = 'email' in user_pref
                         has_whatsapp = 'whatsapp' in user_pref or 'wa' in user_pref
                         has_phone = 'phone' in user_pref or 'call' in user_pref
-
                         if has_email and has_whatsapp:
                             lead_data['contact_preference'] = 'email_and_whatsapp'
                         elif has_email and has_phone:
@@ -511,20 +449,16 @@ def extract_lead_data(conversation_history):
                             lead_data['contact_preference'] = 'email'
                         break
 
-    # WHATSAPP vs PHONE DETECTION
     whatsapp_keywords = ['whatsapp', 'whats app']
     full_lower = full_conversation_user.lower()
     mentions_whatsapp = any(kw in full_lower for kw in whatsapp_keywords)
-    
     if lead_data['contact_preference'] in ('whatsapp', 'email_and_whatsapp'):
         mentions_whatsapp = True
 
     phone_patterns = [
         r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{2,4}",
-        r"\+?\d{9,15}",
-        r"\d{3}[\s\-]?\d{3}[\s\-]?\d{3,4}",
+        r"\+?\d{9,15}", r"\d{3}[\s\-]?\d{3}[\s\-]?\d{3,4}",
     ]
-    
     for pattern in phone_patterns:
         phone_match = re.search(pattern, full_conversation_user)
         if phone_match:
@@ -539,62 +473,44 @@ def extract_lead_data(conversation_history):
                     print(f"✅ Phone: {phone}")
                 break
 
-    # BUDGET - All formats
     budget_patterns = [
         r"(\d+(?:\.\d+)?)\s*([MmKk])\s*(?:\$|dollars?)?",
         r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
         r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*(?:\$|dollars?|usd|aed)?",
         r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
     ]
-    
     for pattern in budget_patterns:
         budget_match = re.search(pattern, full_conversation_user, re.IGNORECASE)
         if budget_match:
             amount = budget_match.group(1)
             unit = budget_match.group(2) if len(budget_match.groups()) > 1 and budget_match.group(2) else ''
-            
             if unit:
                 unit = unit.lower()
                 if unit in ['m', 'million']:
                     unit = 'million'
                 elif unit in ['k', 'thousand']:
                     unit = 'thousand'
-            
             currency = ''
             if '$' in full_conversation_user or 'dollar' in full_conversation_user.lower():
                 currency = 'USD'
             elif 'aed' in full_conversation_user.lower():
                 currency = 'AED'
-            
             lead_data['budget'] = f"{amount} {unit} {currency}".strip() if unit else f"{amount} {currency}".strip()
             print(f"✅ Budget: {lead_data['budget']}")
             break
-    
     return lead_data
 
 
 def contact_step_completed(conversation_history):
-    """
-    Check if the contact preference step is fully completed.
-    Email is only sent AFTER this step is done.
-    """
+    """Check if the contact preference step is fully completed"""
     contact_question_patterns = [
-        "best way to reach you",
-        "how can i reach you",
-        "reach you",
-        "contact you",
-        "whatsapp, phone, or email",
-        "phone, or email"
+        "best way to reach you", "how can i reach you", "reach you",
+        "contact you", "whatsapp, phone, or email", "phone, or email"
     ]
-
     number_question_patterns = [
-        "whatsapp number",
-        "phone number",
-        "your number",
-        "share your number",
-        "what's your"
+        "whatsapp number", "phone number", "your number",
+        "share your number", "what's your"
     ]
-
     asked_contact_pref = False
     asked_number = False
     gave_number = False
@@ -604,7 +520,6 @@ def contact_step_completed(conversation_history):
     for i, msg in enumerate(conversation_history):
         if msg['role'] == 'assistant':
             ai_text = msg['content'].lower()
-
             if any(p in ai_text for p in contact_question_patterns):
                 asked_contact_pref = True
                 if i + 1 < len(conversation_history):
@@ -613,7 +528,6 @@ def contact_step_completed(conversation_history):
                         user_text = next_msg['content'].lower()
                         if 'email' in user_text and 'whatsapp' not in user_text and 'phone' not in user_text:
                             user_said_email_only = True
-
             if any(p in ai_text for p in number_question_patterns):
                 asked_number = True
                 if i + 1 < len(conversation_history):
@@ -633,25 +547,21 @@ def contact_step_completed(conversation_history):
     user_msg_count = len([m for m in conversation_history if m['role'] == 'user'])
     if asked_contact_pref and user_msg_count >= 10:
         return True
-
     return False
 
 
 def detect_objection(user_message):
     """Detect if user message contains an objection"""
     user_message_lower = user_message.lower()
-    
     objections = {
         'price': ['expensive', 'too much', 'costly', 'afford', 'budget', 'high price', 'over budget'],
         'timing': ['not ready', 'not sure', 'need time', 'thinking', 'maybe later', 'unsure'],
         'indecision': ['torn', 'confused', 'cant decide', "can't decide", 'both', 'either'],
         'trust': ['scam', 'legit', 'real', 'trust', 'safe', 'reliable']
     }
-    
     for objection_type, keywords in objections.items():
         if any(keyword in user_message_lower for keyword in keywords):
             return objection_type
-    
     return None
 
 
@@ -669,25 +579,17 @@ def generate_objection_response(objection_type, agency_name):
 def analyze_lead_quality(lead_data, conversation_history):
     """Timeline-aware scoring"""
     score = 1
-    
     has_name = bool(lead_data.get('name'))
     has_phone = bool(lead_data.get('phone') or lead_data.get('whatsapp_number'))
     has_budget = bool(lead_data.get('budget'))
-    
-    if has_name:
-        score += 1
-    if has_budget:
-        score += 1
-    if has_phone:
-        score += 1
-    
+    if has_name: score += 1
+    if has_budget: score += 1
+    if has_phone: score += 1
     full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
     urgency = ['asap', 'urgent', 'soon', 'quickly', 'this week', 'this month', 'within', 'month', 'week']
-    
     has_urgency = any(kw in full_text for kw in urgency)
     if has_urgency:
         score = min(score + 1, 5)
-    
     print(f"📊 Quality: Name={has_name}, Phone={has_phone}, Budget={has_budget}, Timeline={has_urgency} → {score}/5")
     return min(score, 5)
 
@@ -699,20 +601,11 @@ def is_lead_qualified(lead_data, conversation_history):
     has_budget = bool(lead_data.get('budget'))
     message_count = len([msg for msg in conversation_history if msg['role'] == 'user'])
     contact_done = contact_step_completed(conversation_history)
-
-    is_qualified = (
-        has_email and
-        has_name and
-        has_budget and
-        message_count >= 7 and
-        contact_done
-    )
-
+    is_qualified = (has_email and has_name and has_budget and message_count >= 7 and contact_done)
     if is_qualified:
         print(f"✅ QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}, ContactDone={contact_done}")
     else:
         print(f"⚠️ Not yet: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}/7, ContactDone={contact_done}")
-
     return is_qualified
 
 
@@ -751,6 +644,10 @@ class Lead(db.Model):
     budget = db.Column(db.String(50))
     message = db.Column(db.Text)
     intent_score = db.Column(db.Integer, default=1)
+    # NEW: Status tracking
+    lead_status = db.Column(db.String(20), default='new')
+    # NEW: Notes (JSON array stored as text)
+    notes = db.Column(db.Text, default='[]')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
     follow_up_1_sent = db.Column(db.Integer, default=0)
     follow_up_7_sent = db.Column(db.Integer, default=0)
@@ -772,21 +669,16 @@ def signup():
 def owner_login():
     if request.method == "GET":
         return render_template("owner_login.html")
-
     agency_id = request.form.get("agency_id", "").strip()
     password = request.form.get("password", "").strip()
-
     if not agency_id or not password:
         return redirect("/owner-login?error=Missing+credentials")
-
     try:
         agency = db.session.get(Agency, int(agency_id))
     except:
         return redirect("/owner-login?error=Invalid+Agency+ID")
-
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
-
     if password == "admin123":
         session['agency_id'] = str(agency_id)
         return redirect(f"/admin?agency_id={agency_id}")
@@ -796,21 +688,16 @@ def owner_login():
 @app.route("/admin")
 def admin():
     agency_id = request.args.get("agency_id")
-
     if not agency_id:
         return redirect("/owner-login?error=Please+login+first")
-
     try:
         leads = Lead.query.filter_by(
             agency_id=int(agency_id)
         ).order_by(Lead.intent_score.desc(), Lead.created_at.desc()).all()
-
         agency = db.session.get(Agency, int(agency_id))
         if not agency:
             return redirect("/owner-login?error=Agency+not+found")
-
         return render_template("admin.html", leads=leads, agency=agency, now=datetime.utcnow())
-
     except Exception as e:
         print(f"❌ ADMIN ERROR: {e}")
         return redirect("/owner-login?error=Something+went+wrong")
@@ -827,12 +714,9 @@ def ping():
 def create_agency():
     if request.method == "OPTIONS":
         return "", 200
-
     data = request.json
-
     if not data.get("name") or not data.get("email"):
         return jsonify({"error": "Name and email required"}), 400
-
     agency = Agency(
         name=data.get("name"),
         prompt=data.get("prompt", "You are a luxury real estate assistant."),
@@ -843,23 +727,19 @@ def create_agency():
         subscription_type=data.get("subscription_type", "Basic"),
         status="Active"
     )
-
     agency.set_password("admin123")
     db.session.add(agency)
     db.session.commit()
-
     return jsonify({"agency_id": agency.id, "message": "Agency created"})
 
 @app.route("/agencies")
 def get_agencies():
     agencies = Agency.query.all()
     return jsonify([{
-        "id": a.id,
-        "name": a.name,
+        "id": a.id, "name": a.name,
         "assistant_name": a.assistant_name or "AI Assistant",
         "owner_name": a.owner_name or "—",
-        "email": a.email,
-        "status": a.status,
+        "email": a.email, "status": a.status,
         "created_at": a.created_at.isoformat()
     } for a in agencies])
 
@@ -868,7 +748,6 @@ def delete_agency(agency_id):
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return jsonify({"error": "Agency not found"}), 404
-
     Lead.query.filter_by(agency_id=agency_id).delete()
     db.session.delete(agency)
     db.session.commit()
@@ -879,33 +758,163 @@ def agency_info(agency_id):
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return jsonify({"error": "Invalid agency ID"}), 404
+    return jsonify({"name": agency.name, "assistant": agency.assistant_name or "AI Assistant"})
 
-    return jsonify({
-        "name": agency.name,
-        "assistant": agency.assistant_name or "AI Assistant"
-    })
+# ─────────────────────────────────────────────────────
+# NEW PHASE 2B ROUTES
+# ─────────────────────────────────────────────────────
+
+@app.route("/update-lead-status/<int:lead_id>", methods=["POST"])
+def update_lead_status(lead_id):
+    """Update lead status: new / contacted / meeting / closed / lost"""
+    try:
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({"error": "Lead not found"}), 404
+        data = request.get_json(force=True)
+        new_status = data.get("status", "new")
+        valid_statuses = ['new', 'contacted', 'meeting', 'closed', 'lost']
+        if new_status not in valid_statuses:
+            return jsonify({"error": "Invalid status"}), 400
+        lead.lead_status = new_status
+        db.session.commit()
+        print(f"✅ Lead {lead_id} status → {new_status}")
+        return jsonify({"success": True, "status": new_status})
+    except Exception as e:
+        print(f"❌ Status update error: {e}")
+        return jsonify({"error": "Failed to update status"}), 500
+
+
+@app.route("/add-lead-note/<int:lead_id>", methods=["POST"])
+def add_lead_note(lead_id):
+    """Add a timestamped note to a lead"""
+    try:
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({"error": "Lead not found"}), 404
+        data = request.get_json(force=True)
+        note_text = data.get("note", "").strip()
+        if not note_text:
+            return jsonify({"error": "Note cannot be empty"}), 400
+        # Load existing notes
+        try:
+            notes = json.loads(lead.notes or '[]')
+        except:
+            notes = []
+        # Add new note with timestamp
+        new_note = {
+            "id": len(notes) + 1,
+            "text": note_text,
+            "timestamp": datetime.now(pytz.timezone('Asia/Karachi')).strftime('%B %d, %Y at %I:%M %p')
+        }
+        notes.append(new_note)
+        lead.notes = json.dumps(notes)
+        db.session.commit()
+        print(f"✅ Note added to lead {lead_id}")
+        return jsonify({"success": True, "note": new_note, "total_notes": len(notes)})
+    except Exception as e:
+        print(f"❌ Add note error: {e}")
+        return jsonify({"error": "Failed to add note"}), 500
+
+
+@app.route("/delete-lead-note/<int:lead_id>/<int:note_id>", methods=["DELETE"])
+def delete_lead_note(lead_id, note_id):
+    """Delete a specific note from a lead"""
+    try:
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({"error": "Lead not found"}), 404
+        try:
+            notes = json.loads(lead.notes or '[]')
+        except:
+            notes = []
+        notes = [n for n in notes if n.get('id') != note_id]
+        lead.notes = json.dumps(notes)
+        db.session.commit()
+        return jsonify({"success": True, "total_notes": len(notes)})
+    except Exception as e:
+        print(f"❌ Delete note error: {e}")
+        return jsonify({"error": "Failed to delete note"}), 500
+
+
+@app.route("/get-lead-detail/<int:lead_id>")
+def get_lead_detail(lead_id):
+    """Get full lead details including notes for modal"""
+    try:
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({"error": "Lead not found"}), 404
+        try:
+            notes = json.loads(lead.notes or '[]')
+        except:
+            notes = []
+        clean_num = clean_whatsapp_number(lead.whatsapp_number)
+        wa_link = f"https://wa.me/{clean_num}" if clean_num else None
+        return jsonify({
+            "id": lead.id,
+            "name": lead.name or "—",
+            "email": lead.email or "—",
+            "phone": lead.phone or None,
+            "whatsapp_number": lead.whatsapp_number or None,
+            "whatsapp_link": wa_link,
+            "contact_preference": lead.contact_preference or "email",
+            "budget": lead.budget or "—",
+            "message": lead.message or "—",
+            "intent_score": lead.intent_score or 1,
+            "lead_status": lead.lead_status or "new",
+            "notes": notes,
+            "created_at": lead.created_at.strftime('%B %d, %Y at %I:%M %p') if lead.created_at else "—"
+        })
+    except Exception as e:
+        print(f"❌ Get lead detail error: {e}")
+        return jsonify({"error": "Failed to get lead"}), 500
+
+
+@app.route("/bulk-delete-leads", methods=["POST"])
+def bulk_delete_leads():
+    """Delete multiple leads at once"""
+    try:
+        data = request.get_json(force=True)
+        lead_ids = data.get("lead_ids", [])
+        if not lead_ids:
+            return jsonify({"error": "No leads selected"}), 400
+        deleted = 0
+        for lead_id in lead_ids:
+            lead = db.session.get(Lead, int(lead_id))
+            if lead:
+                # Clear memory for this lead's agency
+                for key in list(conversation_memory.keys()):
+                    if key.startswith(f"{lead.agency_id}_"):
+                        del conversation_memory[key]
+                        if key in session_timestamps:
+                            del session_timestamps[key]
+                db.session.delete(lead)
+                deleted += 1
+        db.session.commit()
+        print(f"🗑️ Bulk deleted {deleted} leads")
+        return jsonify({"success": True, "deleted": deleted})
+    except Exception as e:
+        print(f"❌ Bulk delete error: {e}")
+        return jsonify({"error": "Failed to bulk delete"}), 500
+
+# ─────────────────────────────────────────────────────
 
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
     """PRODUCTION CHAT WITH SESSION EXPIRATION + OBJECTION HANDLING"""
     if request.method == "OPTIONS":
         return "", 200
-
     clean_expired_sessions()
-
     try:
         data = request.get_json(force=True)
         user_message = data.get("message", "").strip()
         agency_id = int(data.get("agency_id"))
-        
         visitor_ip = request.remote_addr or "unknown"
         user_agent = request.headers.get('User-Agent', '')
         session_hash = hashlib.md5(f"{visitor_ip}{user_agent}".encode()).hexdigest()[:12]
         session_key = f"{agency_id}_{session_hash}"
-
         if not user_message:
             return jsonify({"error": "Message required"}), 400
-
         agency = db.session.get(Agency, agency_id)
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
@@ -974,9 +983,7 @@ Respond naturally in plain text only:"""
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
             print(f"🆕 New session started: {session_key}")
-
         session_timestamps[session_key] = datetime.utcnow()
-
         history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
 
@@ -988,7 +995,6 @@ Respond naturally in plain text only:"""
                 objection_context = f"\n\nNOTE: User expressed a '{objection}' concern. Respond with empathy: '{suggested_response}'"
 
         messages = [{"role": "system", "content": system_prompt + objection_context}] + history[-20:]
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
@@ -997,54 +1003,39 @@ Respond naturally in plain text only:"""
             presence_penalty=0.8,
             frequency_penalty=0.5
         )
-
         ai_reply = response.choices[0].message.content.strip()
-        
-        history.append({
-            "role": "assistant",
-            "content": ai_reply,
-            "name": agency.assistant_name
-        })
-
+        history.append({"role": "assistant", "content": ai_reply, "name": agency.assistant_name})
         lead_data = extract_lead_data(history)
 
         if is_lead_qualified(lead_data, history):
             try:
                 existing_lead = Lead.query.filter_by(
-                    agency_id=agency_id,
-                    email=lead_data['email']
+                    agency_id=agency_id, email=lead_data['email']
                 ).first()
-
                 if existing_lead:
                     updated = False
-
                     if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
                         existing_lead.whatsapp_number = lead_data['whatsapp_number']
                         existing_lead.contact_preference = lead_data['contact_preference']
                         updated = True
                         print(f"✅ Updated WhatsApp for lead {existing_lead.id}: {lead_data['whatsapp_number']}")
-
                     if not existing_lead.phone and lead_data.get('phone'):
                         existing_lead.phone = lead_data['phone']
                         existing_lead.contact_preference = lead_data['contact_preference']
                         updated = True
                         print(f"✅ Updated Phone for lead {existing_lead.id}: {lead_data['phone']}")
-
                     if not existing_lead.name and lead_data.get('name'):
                         existing_lead.name = lead_data['name']
                         updated = True
                         print(f"✅ Updated Name for lead {existing_lead.id}: {lead_data['name']}")
-
                     if updated:
                         db.session.commit()
-                        print(f"✅ Lead {existing_lead.id} silently updated (no duplicate email)")
+                        print(f"✅ Lead {existing_lead.id} silently updated")
                     else:
                         print(f"⚠️ Duplicate (no new info): {lead_data['email']}")
-
                 else:
                     ai_summary = generate_lead_summary(history, agency.name)
                     quality_score = analyze_lead_quality(lead_data, history)
-
                     lead = Lead(
                         agency_id=agency_id,
                         name=lead_data['name'],
@@ -1054,26 +1045,24 @@ Respond naturally in plain text only:"""
                         contact_preference=lead_data.get('contact_preference', 'email'),
                         budget=lead_data['budget'],
                         message=ai_summary,
-                        intent_score=quality_score
+                        intent_score=quality_score,
+                        lead_status='new',
+                        notes='[]'
                     )
-
                     db.session.add(lead)
                     db.session.commit()
-
                     print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
-
                     send_lead_email(agency, lead)
                     send_crm_webhook(agency, lead)
-
             except Exception as save_err:
                 print(f"❌ Lead save error: {save_err}")
                 db.session.rollback()
 
         return jsonify({"reply": ai_reply})
-
     except Exception as e:
         print(f"❌ CHAT ERROR: {e}")
         return jsonify({"error": "Connection issue"}), 500
+
 
 @app.route("/delete-lead/<int:lead_id>", methods=["DELETE"])
 def delete_lead(lead_id):
@@ -1081,20 +1070,19 @@ def delete_lead(lead_id):
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
-        
         for key in list(conversation_memory.keys()):
             if key.startswith(f"{lead.agency_id}_"):
                 del conversation_memory[key]
                 if key in session_timestamps:
                     del session_timestamps[key]
-        
         db.session.delete(lead)
         db.session.commit()
-        print(f"🗑️ Lead deleted: ID {lead_id} + memory cleared")
+        print(f"🗑️ Lead deleted: ID {lead_id}")
         return jsonify({"message": "Lead deleted"})
     except Exception as e:
         print(f"❌ DELETE ERROR: {e}")
         return jsonify({"error": "Failed to delete"}), 500
+
 
 @app.route("/clear-all-leads/<int:agency_id>", methods=["DELETE"])
 def clear_all_leads(agency_id):
@@ -1104,14 +1092,14 @@ def clear_all_leads(agency_id):
             del conversation_memory[key]
             if key in session_timestamps:
                 del session_timestamps[key]
-        
         deleted_count = Lead.query.filter_by(agency_id=agency_id).delete()
         db.session.commit()
-        print(f"🗑️ Cleared {deleted_count} leads + memory for agency {agency_id}")
+        print(f"🗑️ Cleared {deleted_count} leads for agency {agency_id}")
         return jsonify({"message": f"{deleted_count} leads deleted"})
     except Exception as e:
         print(f"❌ CLEAR ERROR: {e}")
         return jsonify({"error": "Failed to clear"}), 500
+
 
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
@@ -1119,34 +1107,25 @@ def export_leads(agency_id):
         leads = Lead.query.filter_by(
             agency_id=agency_id
         ).order_by(Lead.intent_score.desc(), Lead.created_at.desc()).all()
-
         wb = Workbook()
         ws = wb.active
         ws.title = "Leads"
-
-        headers = ["Sr #", "Quality", "Name", "Email", "Contact", "Preference", "Budget", "Customer Insights", "Date"]
+        headers = ["Sr #", "Quality", "Status", "Name", "Email", "Contact", "Preference", "Budget", "Customer Insights", "Date"]
         ws.append(headers)
-
         for cell in ws[1]:
             cell.font = Font(bold=True)
-
         for i, lead in enumerate(leads, start=1):
             quality_stars = "⭐" * (lead.intent_score or 1)
             contact = lead.whatsapp_number if lead.whatsapp_number else (lead.phone if lead.phone else "—")
             preference = lead.contact_preference.replace('_', ' ').title() if lead.contact_preference else "Email"
-            
+            status = (lead.lead_status or 'new').title()
             ws.append([
-                i,
-                quality_stars,
-                lead.name or "—",
-                lead.email or "—",
-                contact,
-                preference,
-                lead.budget or "—",
+                i, quality_stars, status,
+                lead.name or "—", lead.email or "—",
+                contact, preference, lead.budget or "—",
                 lead.message or "—",
                 lead.created_at.strftime('%Y-%m-%d') if lead.created_at else "—"
             ])
-
         for column in ws.columns:
             max_length = 0
             column_letter = column[0].column_letter
@@ -1157,20 +1136,18 @@ def export_leads(agency_id):
                 except:
                     pass
             ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
-
         buffer = BytesIO()
         wb.save(buffer)
         buffer.seek(0)
-
         return Response(
             buffer,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename=leads_agency_{agency_id}.xlsx"}
         )
-
     except Exception as e:
         print(f"❌ EXPORT ERROR: {e}")
         return jsonify({"error": "Export failed"}), 500
+
 
 @app.route("/terms")
 def terms():
@@ -1194,16 +1171,13 @@ def analytics(agency_id):
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
-
     leads = Lead.query.filter_by(agency_id=agency_id).all()
     now = datetime.utcnow()
-
     total = len(leads)
     hot = sum(1 for l in leads if l.intent_score == 5)
     high = sum(1 for l in leads if (l.intent_score or 1) >= 4)
     avg_score = round(sum(l.intent_score or 1 for l in leads) / total, 1) if total else 0.0
     quality_dist = {i: sum(1 for l in leads if (l.intent_score or 1) == i) for i in range(1, 6)}
-
     thirty_days_ago = now - timedelta(days=30)
     daily_counts = defaultdict(int)
     for lead in leads:
@@ -1216,37 +1190,24 @@ def analytics(agency_id):
                     daily_counts[dt.strftime('%Y-%m-%d')] += 1
             except Exception:
                 pass
-
     date_labels, date_values = [], []
     for i in range(29, -1, -1):
         day = now - timedelta(days=i)
         date_labels.append(day.strftime('%b %d'))
         date_values.append(daily_counts.get(day.strftime('%Y-%m-%d'), 0))
-
     this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     last_month_end = this_month_start - timedelta(seconds=1)
     last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
     def naive(dt):
         if dt and hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
             return dt.replace(tzinfo=None)
         return dt
-
     this_month = sum(1 for l in leads if naive(l.created_at) and naive(l.created_at) >= this_month_start)
     last_month = sum(1 for l in leads if naive(l.created_at) and last_month_start <= naive(l.created_at) <= last_month_end)
-
     return render_template("analytics.html",
-        agency=agency,
-        agency_id=agency_id,
-        total=total,
-        hot=hot,
-        high=high,
-        avg_score=avg_score,
-        quality_dist=quality_dist,
-        date_labels=date_labels,
-        date_values=date_values,
-        this_month=this_month,
-        last_month=last_month
+        agency=agency, agency_id=agency_id, total=total, hot=hot, high=high,
+        avg_score=avg_score, quality_dist=quality_dist, date_labels=date_labels,
+        date_values=date_values, this_month=this_month, last_month=last_month
     )
 
 
@@ -1255,7 +1216,6 @@ def update_agency_webhook(agency_id):
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return jsonify({"error": "Agency not found"}), 404
-
     webhook_url = request.form.get("webhook_url", "").strip()
     agency.webhook_url = webhook_url if webhook_url else None
     db.session.commit()
@@ -1275,7 +1235,6 @@ def send_followups():
 with app.app_context():
     db.create_all()
     print("✅ Database ready")
-    
     try:
         from sqlalchemy import text, inspect
         inspector = inspect(db.engine)
@@ -1286,34 +1245,38 @@ with app.app_context():
             db.session.execute(text("ALTER TABLE lead ADD COLUMN intent_score INTEGER DEFAULT 1;"))
             db.session.commit()
             print("✅ Migration: intent_score added")
-
         if 'whatsapp_number' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN whatsapp_number VARCHAR(50);"))
             db.session.commit()
             print("✅ Migration: whatsapp_number added")
-
         if 'contact_preference' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN contact_preference VARCHAR(20) DEFAULT 'email';"))
             db.session.commit()
             print("✅ Migration: contact_preference added")
-
         if 'follow_up_1_sent' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_1_sent INTEGER DEFAULT 0;"))
             db.session.commit()
             print("✅ Migration: follow_up_1_sent added")
-
         if 'follow_up_7_sent' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_7_sent INTEGER DEFAULT 0;"))
             db.session.commit()
             print("✅ Migration: follow_up_7_sent added")
-
         if 'webhook_url' not in agency_cols:
             db.session.execute(text("ALTER TABLE agency ADD COLUMN webhook_url VARCHAR(500);"))
             db.session.commit()
             print("✅ Migration: webhook_url added")
 
-        print("✅ All migrations complete")
+        # NEW PHASE 2B MIGRATIONS
+        if 'lead_status' not in lead_cols:
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN lead_status VARCHAR(20) DEFAULT 'new';"))
+            db.session.commit()
+            print("✅ Migration: lead_status added")
+        if 'notes' not in lead_cols:
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN notes TEXT DEFAULT '[]';"))
+            db.session.commit()
+            print("✅ Migration: notes added")
 
+        print("✅ All migrations complete")
     except Exception as e:
         print(f"⚠️ Migration error: {e}")
         db.session.rollback()
