@@ -41,6 +41,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 import re as _re
 app.jinja_env.filters['regex_replace'] = lambda s, find, replace: _re.sub(find, replace, s)
+
 # -------------------------
 # DATABASE URL FIX
 # -------------------------
@@ -80,9 +81,7 @@ def clean_whatsapp_number(number):
     """Clean WhatsApp number for wa.me URL - digits only, no leading zeros"""
     if not number:
         return None
-    # Remove all non-digit characters
     cleaned = re.sub(r'\D', '', number)
-    # Remove leading zeros
     cleaned = cleaned.lstrip('0')
     return cleaned if len(cleaned) >= 9 else None
 
@@ -96,11 +95,21 @@ def send_lead_email(agency, lead):
     if lead.whatsapp_number:
         clean_num = clean_whatsapp_number(lead.whatsapp_number)
         wa_link = f"https://wa.me/{clean_num}" if clean_num else "N/A"
-        contact_info = f"💬 WhatsApp: {lead.whatsapp_number}\n🔗 WhatsApp Link: {wa_link}"
+        contact_info = f"💬 WhatsApp: {lead.whatsapp_number}\n🔗 Click to Chat: {wa_link}"
     elif lead.phone:
         contact_info = f"📱 Phone:    {lead.phone}"
     else:
         contact_info = "📱 Phone:    Not provided"
+
+    # Format contact preference nicely
+    pref = lead.contact_preference or 'email'
+    pref_display = {
+        'email': 'Email',
+        'whatsapp': 'WhatsApp',
+        'phone': 'Phone',
+        'email_and_whatsapp': 'Email & WhatsApp',
+        'email_and_phone': 'Email & Phone'
+    }.get(pref, pref.title())
 
     body = f"""
 New QUALIFIED Lead Received from {agency.name}
@@ -110,7 +119,7 @@ New QUALIFIED Lead Received from {agency.name}
 📧 Email:   {lead.email or 'Not provided'}
 {contact_info}
 💰 Budget:  {lead.budget or 'Not provided'}
-📞 Prefers: {lead.contact_preference.title() if lead.contact_preference else 'Email'}
+📞 Prefers: {pref_display}
 
 📝 CUSTOMER INSIGHTS:
 {lead.message or 'No summary available'}
@@ -346,70 +355,127 @@ Write summary:"""
         return "Customer engaged in property conversation."
 
 
+def extract_name_from_context(conversation_history):
+    """
+    PERMANENT NAME FIX: Context-aware extraction.
+    Look for the message AFTER the AI asked for the name.
+    This eliminates false positives completely.
+    """
+    name_question_patterns = [
+        "what's your name",
+        "what is your name",
+        "your name",
+        "may i have your name",
+        "can i get your name",
+        "could i get your name",
+        "mind sharing your name",
+        "first name"
+    ]
+
+    for i, msg in enumerate(conversation_history):
+        # Check if this is an AI message asking for name
+        if msg['role'] == 'assistant':
+            ai_text = msg['content'].lower()
+            if any(pattern in ai_text for pattern in name_question_patterns):
+                # Look for the very next user message
+                if i + 1 < len(conversation_history):
+                    next_msg = conversation_history[i + 1]
+                    if next_msg['role'] == 'user':
+                        candidate = next_msg['content'].strip()
+                        
+                        # Clean up the candidate
+                        # Remove common prefixes like "I am", "My name is", "It's"
+                        candidate = re.sub(
+                            r"^(i\s+am|i'm|my\s+name\s+is|name\s+is|it's|its|call\s+me|this\s+is)\s+",
+                            "", candidate, flags=re.IGNORECASE
+                        ).strip()
+                        
+                        # Take only the first word (first name)
+                        first_word = candidate.split()[0] if candidate.split() else ""
+                        
+                        # Validate: must be letters only, 2-30 chars
+                        if (first_word 
+                            and re.match(r'^[a-zA-Z]{2,30}$', first_word)
+                            and first_word.lower() not in {
+                                'yes', 'no', 'ok', 'okay', 'sure', 'fine',
+                                'hello', 'hi', 'hey', 'thanks', 'thank',
+                                'email', 'phone', 'whatsapp', 'call'
+                            }):
+                            print(f"✅ Name (context): {first_word.title()}")
+                            return first_word.title()
+    return None
+
+
 def extract_lead_data(conversation_history):
-    """PRODUCTION: Ultra-strict extraction + WhatsApp support"""
-    full_conversation = " ".join([msg['content'] for msg in conversation_history if msg['role'] == 'user'])
+    """PRODUCTION: Context-aware name extraction + WhatsApp support"""
+    full_conversation_user = " ".join([
+        msg['content'] for msg in conversation_history if msg['role'] == 'user'
+    ])
     
     lead_data = {
-        'name': None, 
-        'email': None, 
-        'phone': None, 
+        'name': None,
+        'email': None,
+        'phone': None,
         'whatsapp_number': None,
         'contact_preference': 'email',
         'budget': None
     }
     
     # EMAIL
-    email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", full_conversation)
+    email_match = re.search(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+        full_conversation_user
+    )
     if email_match:
         lead_data['email'] = email_match.group(0)
-    
-    # NAME - ULTRA-STRICT BLOCKLIST
-    name_blocklist = {
-        'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must',
-        'looking', 'interested', 'want', 'need', 'like', 'going', 'trying',
-        'searching', 'seeking', 'finding', 'buying', 'renting', 'moving',
-        'not', 'sure', 'idea', 'just', 'also', 'here', 'there', 'then',
-        'know', 'think', 'feel', 'seem', 'show', 'come', 'give', 'take',
-        'okay', 'note', 'info', 'area', 'more', 'some', 'very', 'even',
-        'asking', 'saying', 'telling', 'checking', 'getting', 'making',
-        'coconut', 'grove', 'hilton', 'santa', 'monica', 'myrtle', 'island',
-        'south', 'north', 'east', 'west', 'central', 'downtown', 'uptown',
-        'am', 'is', 'are', 'was', 'were', 'have', 'has', 'been', 'being',
-        'villa', 'house', 'apartment', 'property', 'condo', 'flat', 'home',
-        'bedroom', 'bathroom', 'kitchen', 'garage', 'living', 'drawing',
-        'beach', 'side', 'miami', 'york', 'washington', 'angeles', 'newyork',
-        'malibu', 'florida', 'california', 'usa', 'location', 'cape', 'keys',
-        'buy', 'rent', 'purchase', 'move', 'find', 'search', 'prefer', 'suggest',
-        'perfect', 'great', 'nice', 'good', 'suitable', 'new', 'old', 'popular',
-        'for', 'to', 'in', 'at', 'on', 'with', 'from', 'by', 'an', 'a', 'the',
-        'what', 'where', 'when', 'why', 'how', 'which', 'who'
-    }
 
-    # Pattern 1: Explicit name introductions — prefer latest match
-    explicit_pattern = r"(?:i\s+am|i'm|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{3,})(?:\s|\.|\,|!|\?|$)"
+    # NAME - PERMANENT FIX: Context-aware extraction
+    lead_data['name'] = extract_name_from_context(conversation_history)
 
-    name_matches = list(re.finditer(explicit_pattern, full_conversation, re.IGNORECASE))
-    for match in reversed(name_matches):
-        potential_name = match.group(1).strip()
-        if potential_name.lower() not in name_blocklist and len(potential_name) >= 3:
-            lead_data['name'] = potential_name.title()
-            print(f"✅ Name: {potential_name.title()}")
-            break
+    # CONTACT PREFERENCE DETECTION
+    # Look at user message after AI asks about contact preference
+    contact_question_patterns = [
+        "best way to reach you",
+        "how can i reach you",
+        "reach you",
+        "contact you",
+        "whatsapp, phone, or email",
+        "phone, or email"
+    ]
 
-    # Pattern 2: Standalone capitalized words (fallback)
-    if not lead_data['name']:
-        standalone_matches = re.findall(r"\b([A-Z][a-z]{3,})\b", full_conversation)
-        for match in standalone_matches:
-            if match.lower() not in name_blocklist and len(match) >= 4:
-                lead_data['name'] = match.title()
-                print(f"✅ Name: {match.title()} (standalone)")
-                break
-    
+    for i, msg in enumerate(conversation_history):
+        if msg['role'] == 'assistant':
+            ai_text = msg['content'].lower()
+            if any(pattern in ai_text for pattern in contact_question_patterns):
+                if i + 1 < len(conversation_history):
+                    next_msg = conversation_history[i + 1]
+                    if next_msg['role'] == 'user':
+                        user_pref = next_msg['content'].lower()
+                        has_email = 'email' in user_pref
+                        has_whatsapp = 'whatsapp' in user_pref or 'wa' in user_pref
+                        has_phone = 'phone' in user_pref or 'call' in user_pref
+
+                        if has_email and has_whatsapp:
+                            lead_data['contact_preference'] = 'email_and_whatsapp'
+                        elif has_email and has_phone:
+                            lead_data['contact_preference'] = 'email_and_phone'
+                        elif has_whatsapp:
+                            lead_data['contact_preference'] = 'whatsapp'
+                        elif has_phone:
+                            lead_data['contact_preference'] = 'phone'
+                        elif has_email:
+                            lead_data['contact_preference'] = 'email'
+                        break
+
     # WHATSAPP vs PHONE DETECTION
-    whatsapp_keywords = ['whatsapp', 'wa', 'whats app']
-    mentions_whatsapp = any(kw in full_conversation.lower() for kw in whatsapp_keywords)
+    whatsapp_keywords = ['whatsapp', 'whats app']
+    full_lower = full_conversation_user.lower()
+    mentions_whatsapp = any(kw in full_lower for kw in whatsapp_keywords)
     
+    # Also check contact preference
+    if lead_data['contact_preference'] in ('whatsapp', 'email_and_whatsapp'):
+        mentions_whatsapp = True
+
     phone_patterns = [
         r"\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{2,4}",
         r"\+?\d{9,15}",
@@ -417,21 +483,19 @@ def extract_lead_data(conversation_history):
     ]
     
     for pattern in phone_patterns:
-        phone_match = re.search(pattern, full_conversation)
+        phone_match = re.search(pattern, full_conversation_user)
         if phone_match:
             phone = phone_match.group(0).strip()
             clean = phone.replace('+', '').replace('-', '').replace(' ', '')
             if len(clean) >= 9:
                 if mentions_whatsapp:
                     lead_data['whatsapp_number'] = phone
-                    lead_data['contact_preference'] = 'whatsapp'
                     print(f"✅ WhatsApp: {phone}")
                 else:
                     lead_data['phone'] = phone
-                    lead_data['contact_preference'] = 'phone'
                     print(f"✅ Phone: {phone}")
                 break
-    
+
     # BUDGET - All formats
     budget_patterns = [
         r"(\d+(?:\.\d+)?)\s*([MmKk])\s*(?:\$|dollars?)?",
@@ -441,7 +505,7 @@ def extract_lead_data(conversation_history):
     ]
     
     for pattern in budget_patterns:
-        budget_match = re.search(pattern, full_conversation, re.IGNORECASE)
+        budget_match = re.search(pattern, full_conversation_user, re.IGNORECASE)
         if budget_match:
             amount = budget_match.group(1)
             unit = budget_match.group(2) if len(budget_match.groups()) > 1 and budget_match.group(2) else ''
@@ -454,9 +518,9 @@ def extract_lead_data(conversation_history):
                     unit = 'thousand'
             
             currency = ''
-            if '$' in full_conversation or 'dollar' in full_conversation.lower():
+            if '$' in full_conversation_user or 'dollar' in full_conversation_user.lower():
                 currency = 'USD'
-            elif 'aed' in full_conversation.lower():
+            elif 'aed' in full_conversation_user.lower():
                 currency = 'AED'
             
             lead_data['budget'] = f"{amount} {unit} {currency}".strip() if unit else f"{amount} {currency}".strip()
@@ -464,6 +528,87 @@ def extract_lead_data(conversation_history):
             break
     
     return lead_data
+
+
+def contact_step_completed(conversation_history):
+    """
+    Check if the contact preference step is fully completed.
+    Email is only sent AFTER this step is done.
+    Returns True when:
+    - User said email only (no number needed)
+    - User gave WhatsApp/phone number
+    - User declined to share number
+    """
+    contact_question_patterns = [
+        "best way to reach you",
+        "how can i reach you",
+        "reach you",
+        "contact you",
+        "whatsapp, phone, or email",
+        "phone, or email"
+    ]
+
+    number_question_patterns = [
+        "whatsapp number",
+        "phone number",
+        "your number",
+        "share your number",
+        "what's your"
+    ]
+
+    asked_contact_pref = False
+    asked_number = False
+    gave_number = False
+    user_said_email_only = False
+    user_declined_number = False
+
+    for i, msg in enumerate(conversation_history):
+        if msg['role'] == 'assistant':
+            ai_text = msg['content'].lower()
+
+            # Check if AI asked for contact preference
+            if any(p in ai_text for p in contact_question_patterns):
+                asked_contact_pref = True
+                # Check next user message
+                if i + 1 < len(conversation_history):
+                    next_msg = conversation_history[i + 1]
+                    if next_msg['role'] == 'user':
+                        user_text = next_msg['content'].lower()
+                        # User chose email only
+                        if 'email' in user_text and 'whatsapp' not in user_text and 'phone' not in user_text:
+                            user_said_email_only = True
+
+            # Check if AI asked for WhatsApp/phone number
+            if any(p in ai_text for p in number_question_patterns):
+                asked_number = True
+                # Check next user message
+                if i + 1 < len(conversation_history):
+                    next_msg = conversation_history[i + 1]
+                    if next_msg['role'] == 'user':
+                        user_text = next_msg['content'].strip()
+                        # Check if user gave a number
+                        if re.search(r'\+?\d{9,15}', user_text.replace(' ', '').replace('-', '')):
+                            gave_number = True
+                        # Check if user declined
+                        decline_words = ['no', 'nope', 'skip', 'pass', 'later', 'not now', "don't", 'prefer not']
+                        if any(w in user_text.lower() for w in decline_words):
+                            user_declined_number = True
+
+    # Email should be sent when:
+    # 1. User said email only
+    # 2. User gave a number (WhatsApp or phone)
+    # 3. User declined to share number
+    # 4. Contact preference was asked but no number was requested (email only path)
+    if user_said_email_only:
+        return True
+    if asked_number and (gave_number or user_declined_number):
+        return True
+    # Fallback: if we have 10+ messages and contact pref was asked, send anyway
+    user_msg_count = len([m for m in conversation_history if m['role'] == 'user'])
+    if asked_contact_pref and user_msg_count >= 10:
+        return True
+
+    return False
 
 
 def detect_objection(user_message):
@@ -492,7 +637,6 @@ def generate_objection_response(objection_type, agency_name):
         'indecision': "I get that – it's a big decision! Let's try this: if you had to pick just ONE thing that matters most to you, what would it be?",
         'trust': f"I understand the concern. {agency_name} is a licensed real estate agency. Would you like to know more about us, or would you prefer to just explore properties for now?"
     }
-    
     return responses.get(objection_type, None)
 
 
@@ -523,25 +667,26 @@ def analyze_lead_quality(lead_data, conversation_history):
 
 
 def is_lead_qualified(lead_data, conversation_history):
-    """PRODUCTION: Email + Name + Budget + 7+ messages"""
+    """PRODUCTION: Email + Name + Budget + 7+ messages + contact step done"""
     has_email = bool(lead_data.get('email'))
     has_name = bool(lead_data.get('name'))
     has_budget = bool(lead_data.get('budget'))
-    
     message_count = len([msg for msg in conversation_history if msg['role'] == 'user'])
-    
+    contact_done = contact_step_completed(conversation_history)
+
     is_qualified = (
-        has_email and 
-        has_name and 
+        has_email and
+        has_name and
         has_budget and
-        message_count >= 7
+        message_count >= 7 and
+        contact_done
     )
-    
+
     if is_qualified:
-        print(f"✅ QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}")
+        print(f"✅ QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}, ContactDone={contact_done}")
     else:
-        print(f"⚠️ Not yet: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}/7")
-    
+        print(f"⚠️ Not yet: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}/7, ContactDone={contact_done}")
+
     return is_qualified
 
 
@@ -751,7 +896,7 @@ CRITICAL FORMATTING RULES - MUST FOLLOW:
 
 GREETING RULES:
 - Never start with the same greeting twice in a conversation
-- Vary your opening: "Hi there!", "Hey!", "Hello!", "Welcome!", "Hey, good to see you!"
+- Vary your opening: "Hi there!", "Hey!", "Hello!", "Welcome!"
 - After the first message, never use opening greetings again
 - Do not say "Perfect", "Great", "Nice", "Awesome" more than once per conversation
 - Do not say "Sounds good" repeatedly
@@ -767,12 +912,19 @@ PERSONALITY:
 CONVERSATION FLOW - COLLECT IN ORDER:
 1. Property type (villa, condo, apartment, etc.)
 2. Location preference
-3. Budget (ask gently: "What budget range are you working with?")
+3. Budget (ask: "What budget range are you working with?")
 4. Timeline ("When are you hoping to make a move?")
 5. Name ("What's your name?")
 6. Email
 7. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
-8. If WhatsApp/phone: ask for the number
+8. If WhatsApp or phone chosen: "What's your WhatsApp number?" or "What's your phone number?"
+9. If user declines number or says email only: thank them and wrap up
+
+IMPORTANT FOR CONTACT STEP:
+- Always ask the contact preference question before ending
+- If they say email only, that is fine - do not push for a number
+- If they say WhatsApp or phone, ask for the number
+- If they decline to share the number, that is fine too - thank them and end
 
 HANDLING HESITATION:
 - Price concern: "I hear you - even a rough range helps. What feels comfortable?"
@@ -839,18 +991,18 @@ Respond naturally in plain text only:"""
                 ).first()
 
                 if existing_lead:
+                    # Update silently - NO email resend
                     updated = False
 
                     if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
                         existing_lead.whatsapp_number = lead_data['whatsapp_number']
-                        existing_lead.contact_preference = 'whatsapp'
+                        existing_lead.contact_preference = lead_data['contact_preference']
                         updated = True
                         print(f"✅ Updated WhatsApp for lead {existing_lead.id}: {lead_data['whatsapp_number']}")
 
                     if not existing_lead.phone and lead_data.get('phone'):
                         existing_lead.phone = lead_data['phone']
-                        if existing_lead.contact_preference == 'email':
-                            existing_lead.contact_preference = 'phone'
+                        existing_lead.contact_preference = lead_data['contact_preference']
                         updated = True
                         print(f"✅ Updated Phone for lead {existing_lead.id}: {lead_data['phone']}")
 
@@ -861,10 +1013,7 @@ Respond naturally in plain text only:"""
 
                     if updated:
                         db.session.commit()
-                        # Resend email with updated contact info
-                        agency_obj = db.session.get(Agency, agency_id)
-                        send_lead_email(agency_obj, existing_lead)
-                        print(f"✅ Lead {existing_lead.id} updated + email resent with WhatsApp")
+                        print(f"✅ Lead {existing_lead.id} silently updated (no duplicate email)")
                     else:
                         print(f"⚠️ Duplicate (no new info): {lead_data['email']}")
 
@@ -889,6 +1038,7 @@ Respond naturally in plain text only:"""
 
                     print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
 
+                    # Single email sent once - after contact step is complete
                     send_lead_email(agency, lead)
                     send_crm_webhook(agency, lead)
 
@@ -960,7 +1110,7 @@ def export_leads(agency_id):
         for i, lead in enumerate(leads, start=1):
             quality_stars = "⭐" * (lead.intent_score or 1)
             contact = lead.whatsapp_number if lead.whatsapp_number else (lead.phone if lead.phone else "—")
-            preference = lead.contact_preference.title() if lead.contact_preference else "Email"
+            preference = lead.contact_preference.replace('_', ' ').title() if lead.contact_preference else "Email"
             
             ws.append([
                 i,
