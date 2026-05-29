@@ -90,7 +90,6 @@ def send_lead_email(agency, lead):
     """Send email notification - SendGrid primary, Gmail fallback"""
     subject = f"🎯 New Qualified Lead for {agency.name}"
     
-    # Determine contact method
     contact_info = ""
     if lead.whatsapp_number:
         clean_num = clean_whatsapp_number(lead.whatsapp_number)
@@ -101,7 +100,6 @@ def send_lead_email(agency, lead):
     else:
         contact_info = "📱 Phone:    Not provided"
 
-    # Format contact preference nicely
     pref = lead.contact_preference or 'email'
     pref_display = {
         'email': 'Email',
@@ -307,7 +305,6 @@ def clean_expired_sessions():
         for key in list(session_timestamps.keys()):
             last_activity = session_timestamps[key]
             time_diff = (current_time - last_activity).total_seconds()
-            
             if time_diff > 1800:
                 expired_keys.append(key)
         
@@ -357,57 +354,105 @@ Write summary:"""
 
 def extract_name_from_context(conversation_history):
     """
-    PERMANENT NAME FIX: Context-aware extraction.
-    Look for the message AFTER the AI asked for the name.
-    This eliminates false positives completely.
+    ROBUST NAME EXTRACTION - Three methods in priority order:
+
+    Method 1 (BEST): Context-aware - find user reply after AI asks "What's your name?"
+    Method 2 (FALLBACK): Explicit pattern - "My name is X", "I am X", "Call me X"
+    Method 3 (LAST RESORT): Not used - removed to avoid false positives
+
+    This handles ALL cases:
+    - User says name after AI asks
+    - User volunteers name early: "My name is Hassan"
+    - AI changes order unexpectedly
     """
+
+    # Words that are NOT names - shared by both methods
+    not_a_name = {
+        'yes', 'no', 'ok', 'okay', 'sure', 'fine', 'good', 'great',
+        'hello', 'hi', 'hey', 'thanks', 'thank', 'please', 'sorry',
+        'email', 'phone', 'whatsapp', 'call', 'text', 'message',
+        'looking', 'interested', 'want', 'need', 'like', 'going',
+        'villa', 'house', 'apartment', 'property', 'condo', 'flat', 'home',
+        'beach', 'miami', 'malibu', 'florida', 'california', 'usa',
+        'within', 'about', 'around', 'budget', 'price', 'cost',
+        'month', 'week', 'year', 'soon', 'asap', 'later', 'today',
+        'just', 'also', 'here', 'there', 'then', 'when', 'where',
+        'what', 'how', 'why', 'who', 'which', 'that', 'this', 'with',
+        'from', 'have', 'been', 'will', 'would', 'could', 'should',
+        'south', 'north', 'east', 'west', 'central', 'downtown',
+        'coconut', 'grove', 'hilton', 'santa', 'monica', 'myrtle',
+        'asking', 'checking', 'getting', 'making', 'looking', 'trying'
+    }
+
+    # ─────────────────────────────────────────────
+    # METHOD 1: Context-aware (AI asks → next reply)
+    # ─────────────────────────────────────────────
     name_question_patterns = [
         "what's your name",
         "what is your name",
-        "your name",
+        "whats your name",
+        "your name?",
         "may i have your name",
         "can i get your name",
         "could i get your name",
         "mind sharing your name",
-        "first name"
+        "first name",
+        "tell me your name",
+        "know your name"
     ]
 
     for i, msg in enumerate(conversation_history):
-        # Check if this is an AI message asking for name
         if msg['role'] == 'assistant':
             ai_text = msg['content'].lower()
             if any(pattern in ai_text for pattern in name_question_patterns):
-                # Look for the very next user message
                 if i + 1 < len(conversation_history):
                     next_msg = conversation_history[i + 1]
                     if next_msg['role'] == 'user':
                         candidate = next_msg['content'].strip()
-                        
-                        # Clean up the candidate
-                        # Remove common prefixes like "I am", "My name is", "It's"
+
+                        # Strip common prefixes
                         candidate = re.sub(
-                            r"^(i\s+am|i'm|my\s+name\s+is|name\s+is|it's|its|call\s+me|this\s+is)\s+",
-                            "", candidate, flags=re.IGNORECASE
+                            r'^(i\s+am|i\'m|my\s+name\s+is|name\s+is|it\'s|its|call\s+me|this\s+is)\s+',
+                            '', candidate, flags=re.IGNORECASE
                         ).strip()
-                        
-                        # Take only the first word (first name)
-                        first_word = candidate.split()[0] if candidate.split() else ""
-                        
-                        # Validate: must be letters only, 2-30 chars
-                        if (first_word 
-                            and re.match(r'^[a-zA-Z]{2,30}$', first_word)
-                            and first_word.lower() not in {
-                                'yes', 'no', 'ok', 'okay', 'sure', 'fine',
-                                'hello', 'hi', 'hey', 'thanks', 'thank',
-                                'email', 'phone', 'whatsapp', 'call'
-                            }):
+
+                        # Take first word only
+                        first_word = candidate.split()[0] if candidate.split() else ''
+
+                        if (first_word
+                                and re.match(r'^[a-zA-Z]{2,30}$', first_word)
+                                and first_word.lower() not in not_a_name):
                             print(f"✅ Name (context): {first_word.title()}")
                             return first_word.title()
+
+    # ─────────────────────────────────────────────
+    # METHOD 2: Explicit introduction anywhere in chat
+    # Handles: "My name is Javed", "I am Hassan", "Call me Sara"
+    # Uses ALL messages, prefers LATEST match (most recent = most reliable)
+    # ─────────────────────────────────────────────
+    explicit_pattern = r'(?:i\s+am|i\'m|my\s+name\s+is|name\s+is|call\s+me|this\s+is)\s+([a-zA-Z]{2,30})(?:\s|[.,!?]|$)'
+
+    found_names = []
+    for msg in conversation_history:
+        if msg['role'] == 'user':
+            matches = list(re.finditer(explicit_pattern, msg['content'], re.IGNORECASE))
+            for match in matches:
+                candidate = match.group(1).strip()
+                if (re.match(r'^[a-zA-Z]{2,30}$', candidate)
+                        and candidate.lower() not in not_a_name):
+                    found_names.append(candidate.title())
+
+    if found_names:
+        # Return the LAST found name (most recent in conversation)
+        print(f"✅ Name (explicit): {found_names[-1]}")
+        return found_names[-1]
+
+    print("⚠️ Name: Not found")
     return None
 
 
 def extract_lead_data(conversation_history):
-    """PRODUCTION: Context-aware name extraction + WhatsApp support"""
+    """PRODUCTION: Robust name extraction + WhatsApp support"""
     full_conversation_user = " ".join([
         msg['content'] for msg in conversation_history if msg['role'] == 'user'
     ])
@@ -429,11 +474,10 @@ def extract_lead_data(conversation_history):
     if email_match:
         lead_data['email'] = email_match.group(0)
 
-    # NAME - PERMANENT FIX: Context-aware extraction
+    # NAME - Robust extraction (context + explicit fallback)
     lead_data['name'] = extract_name_from_context(conversation_history)
 
     # CONTACT PREFERENCE DETECTION
-    # Look at user message after AI asks about contact preference
     contact_question_patterns = [
         "best way to reach you",
         "how can i reach you",
@@ -472,7 +516,6 @@ def extract_lead_data(conversation_history):
     full_lower = full_conversation_user.lower()
     mentions_whatsapp = any(kw in full_lower for kw in whatsapp_keywords)
     
-    # Also check contact preference
     if lead_data['contact_preference'] in ('whatsapp', 'email_and_whatsapp'):
         mentions_whatsapp = True
 
@@ -534,10 +577,6 @@ def contact_step_completed(conversation_history):
     """
     Check if the contact preference step is fully completed.
     Email is only sent AFTER this step is done.
-    Returns True when:
-    - User said email only (no number needed)
-    - User gave WhatsApp/phone number
-    - User declined to share number
     """
     contact_question_patterns = [
         "best way to reach you",
@@ -566,44 +605,31 @@ def contact_step_completed(conversation_history):
         if msg['role'] == 'assistant':
             ai_text = msg['content'].lower()
 
-            # Check if AI asked for contact preference
             if any(p in ai_text for p in contact_question_patterns):
                 asked_contact_pref = True
-                # Check next user message
                 if i + 1 < len(conversation_history):
                     next_msg = conversation_history[i + 1]
                     if next_msg['role'] == 'user':
                         user_text = next_msg['content'].lower()
-                        # User chose email only
                         if 'email' in user_text and 'whatsapp' not in user_text and 'phone' not in user_text:
                             user_said_email_only = True
 
-            # Check if AI asked for WhatsApp/phone number
             if any(p in ai_text for p in number_question_patterns):
                 asked_number = True
-                # Check next user message
                 if i + 1 < len(conversation_history):
                     next_msg = conversation_history[i + 1]
                     if next_msg['role'] == 'user':
                         user_text = next_msg['content'].strip()
-                        # Check if user gave a number
                         if re.search(r'\+?\d{9,15}', user_text.replace(' ', '').replace('-', '')):
                             gave_number = True
-                        # Check if user declined
                         decline_words = ['no', 'nope', 'skip', 'pass', 'later', 'not now', "don't", 'prefer not']
                         if any(w in user_text.lower() for w in decline_words):
                             user_declined_number = True
 
-    # Email should be sent when:
-    # 1. User said email only
-    # 2. User gave a number (WhatsApp or phone)
-    # 3. User declined to share number
-    # 4. Contact preference was asked but no number was requested (email only path)
     if user_said_email_only:
         return True
     if asked_number and (gave_number or user_declined_number):
         return True
-    # Fallback: if we have 10+ messages and contact pref was asked, send anyway
     user_msg_count = len([m for m in conversation_history if m['role'] == 'user'])
     if asked_contact_pref and user_msg_count >= 10:
         return True
@@ -954,7 +980,6 @@ Respond naturally in plain text only:"""
         history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
 
-        # Check for objections
         objection = detect_objection(user_message)
         objection_context = ""
         if objection:
@@ -991,7 +1016,6 @@ Respond naturally in plain text only:"""
                 ).first()
 
                 if existing_lead:
-                    # Update silently - NO email resend
                     updated = False
 
                     if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
@@ -1038,7 +1062,6 @@ Respond naturally in plain text only:"""
 
                     print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
 
-                    # Single email sent once - after contact step is complete
                     send_lead_email(agency, lead)
                     send_crm_webhook(agency, lead)
 
