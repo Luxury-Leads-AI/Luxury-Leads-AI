@@ -462,14 +462,15 @@
     <td>{% if lead.email %}{{ lead.email }}{% else %}<span class="no-data">—</span>{% endif %}</td>
     <td>
       {% if lead.whatsapp_number %}
-        <a href="https://wa.me/{{ lead.whatsapp_number.replace('+', '').replace('-', '').replace(' ', '') }}" 
-           target="_blank" 
+        {% set wa_clean = lead.whatsapp_number | regex_replace('[^0-9]', '') %}
+        <a href="https://wa.me/{{ wa_clean }}"
+           target="_blank"
            class="contact-link whatsapp-link"
            title="Open WhatsApp chat">
           💬 {{ lead.whatsapp_number }}
         </a>
       {% elif lead.phone %}
-        <a href="tel:{{ lead.phone }}" 
+        <a href="tel:{{ lead.phone }}"
            class="contact-link"
            title="Call this number">
           📱 {{ lead.phone }}
@@ -526,21 +527,16 @@ async function deleteLead(leadId) {
     });
     
     if (response.ok) {
-      // Remove row from table with animation
       const row = document.getElementById(`lead-${leadId}`);
       row.style.opacity = '0';
       row.style.transform = 'translateX(-20px)';
       setTimeout(() => {
         row.remove();
-        
-        // Check if table is now empty
         const remainingRows = document.querySelectorAll('.lead-row');
         if (remainingRows.length === 0) {
           location.reload();
         }
       }, 300);
-      
-      // Update stats
       updateStats();
     } else {
       alert('❌ Failed to delete lead. Please try again.');
@@ -582,8 +578,6 @@ async function clearAllLeads() {
 function updateStats() {
   const remainingRows = document.querySelectorAll('.lead-row');
   const totalLeads = remainingRows.length;
-  
-  // Update total leads counter
   document.querySelector('.stat-value').textContent = totalLeads;
 }
 
@@ -592,14 +586,11 @@ function filterLeads(quality) {
   const rows = document.querySelectorAll('.lead-row');
   const tabs = document.querySelectorAll('.filter-tab');
   
-  // Update active tab
   tabs.forEach(tab => tab.classList.remove('active'));
   event.target.classList.add('active');
   
-  // Filter rows
   rows.forEach(row => {
     const rowQuality = parseInt(row.getAttribute('data-quality'));
-    
     if (quality === 'all') {
       row.style.display = '';
     } else {
@@ -607,7 +598,6 @@ function filterLeads(quality) {
     }
   });
   
-  // Update empty state
   const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none');
   const tbody = document.querySelector('tbody');
   

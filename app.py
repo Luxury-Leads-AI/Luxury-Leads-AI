@@ -39,6 +39,8 @@ load_dotenv(dotenv_path=env_path)
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+import re as _re
+app.jinja_env.filters['regex_replace'] = lambda s, find, replace: _re.sub(find, replace, s)
 # -------------------------
 # DATABASE URL FIX
 # -------------------------
@@ -73,6 +75,18 @@ session_timestamps = {}
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
+
+def clean_whatsapp_number(number):
+    """Clean WhatsApp number for wa.me URL - digits only, no leading zeros"""
+    if not number:
+        return None
+    # Remove all non-digit characters
+    cleaned = re.sub(r'\D', '', number)
+    # Remove leading zeros
+    cleaned = cleaned.lstrip('0')
+    return cleaned if len(cleaned) >= 9 else None
+
+
 def send_lead_email(agency, lead):
     """Send email notification - SendGrid primary, Gmail fallback"""
     subject = f"🎯 New Qualified Lead for {agency.name}"
@@ -80,7 +94,9 @@ def send_lead_email(agency, lead):
     # Determine contact method
     contact_info = ""
     if lead.whatsapp_number:
-        contact_info = f"💬 WhatsApp: {lead.whatsapp_number}"
+        clean_num = clean_whatsapp_number(lead.whatsapp_number)
+        wa_link = f"https://wa.me/{clean_num}" if clean_num else "N/A"
+        contact_info = f"💬 WhatsApp: {lead.whatsapp_number}\n🔗 WhatsApp Link: {wa_link}"
     elif lead.phone:
         contact_info = f"📱 Phone:    {lead.phone}"
     else:
@@ -823,7 +839,6 @@ Respond naturally in plain text only:"""
                 ).first()
 
                 if existing_lead:
-                    # FIX: Update existing lead with new WhatsApp/phone if not already set
                     updated = False
 
                     if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
@@ -846,7 +861,10 @@ Respond naturally in plain text only:"""
 
                     if updated:
                         db.session.commit()
-                        print(f"✅ Lead {existing_lead.id} updated with new contact info")
+                        # Resend email with updated contact info
+                        agency_obj = db.session.get(Agency, agency_id)
+                        send_lead_email(agency_obj, existing_lead)
+                        print(f"✅ Lead {existing_lead.id} updated + email resent with WhatsApp")
                     else:
                         print(f"⚠️ Duplicate (no new info): {lead_data['email']}")
 
