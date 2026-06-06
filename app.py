@@ -79,7 +79,6 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 
 def clean_whatsapp_number(number):
-    """Clean WhatsApp number for wa.me URL - digits only, no leading zeros"""
     if not number:
         return None
     cleaned = re.sub(r'\D', '', number)
@@ -88,9 +87,7 @@ def clean_whatsapp_number(number):
 
 
 def send_lead_email(agency, lead):
-    """Send email notification - SendGrid primary, Gmail fallback"""
     subject = f"🎯 New Qualified Lead for {agency.name}"
-    
     contact_info = ""
     if lead.whatsapp_number:
         clean_num = clean_whatsapp_number(lead.whatsapp_number)
@@ -103,11 +100,8 @@ def send_lead_email(agency, lead):
 
     pref = lead.contact_preference or 'email'
     pref_display = {
-        'email': 'Email',
-        'whatsapp': 'WhatsApp',
-        'phone': 'Phone',
-        'email_and_whatsapp': 'Email & WhatsApp',
-        'email_and_phone': 'Email & Phone'
+        'email': 'Email', 'whatsapp': 'WhatsApp', 'phone': 'Phone',
+        'email_and_whatsapp': 'Email & WhatsApp', 'email_and_phone': 'Email & Phone'
     }.get(pref, pref.title())
 
     body = f"""
@@ -134,18 +128,12 @@ https://luxury-leads-ai.onrender.com/owner-login
 Agency ID: {agency.id}
 Default Password: admin123
 """
-    
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-    
     if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
         try:
             print(f"📧 Sending via SendGrid to: {agency.email}")
-            message = Mail(
-                from_email=SMTP_EMAIL,
-                to_emails=agency.email,
-                subject=subject,
-                plain_text_content=body
-            )
+            message = Mail(from_email=SMTP_EMAIL, to_emails=agency.email,
+                           subject=subject, plain_text_content=body)
             sg = SendGridAPIClient(SENDGRID_API_KEY)
             response = sg.send(message)
             print(f"✅ EMAIL SENT via SendGrid (Status: {response.status_code})")
@@ -154,12 +142,80 @@ Default Password: admin123
             print(f"⚠️ SendGrid failed: {e}")
             return False
     else:
-        print("⚠️ SendGrid not configured - email will NOT be sent on Render")
+        print("⚠️ SendGrid not configured")
         return False
 
 
+def send_appointment_confirmation(agency, appointment):
+    """Send confirmation email to customer + notification to agency"""
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+
+    # Email to CUSTOMER
+    customer_subject = f"✅ Appointment Confirmed - {agency.name}"
+    customer_body = f"""
+Dear {appointment.customer_name},
+
+Your property viewing appointment has been confirmed!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏠 Agency:       {agency.name}
+📅 Date:         {appointment.appointment_date}
+🕐 Time:         {appointment.appointment_time}
+🏡 Property:     {appointment.property_interest or 'To be discussed'}
+📋 Status:       Confirmed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+We look forward to meeting you! If you need to reschedule or have any questions, please reply to this email or contact us directly.
+
+Best regards,
+{agency.name} Team
+"""
+
+    # Email to AGENCY
+    agency_subject = f"📅 New Appointment Booked - {appointment.customer_name}"
+    agency_body = f"""
+New Appointment Booked!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 Customer:     {appointment.customer_name}
+📧 Email:        {appointment.customer_email}
+📅 Date:         {appointment.appointment_date}
+🕐 Time:         {appointment.appointment_time}
+🏡 Interested In: {appointment.property_interest or 'General viewing'}
+📋 Status:       {appointment.status.title()}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+View all appointments:
+https://luxury-leads-ai.onrender.com/appointments/{agency.id}
+
+Agency ID: {agency.id}
+Default Password: admin123
+"""
+
+    if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
+        try:
+            # Send to customer
+            if appointment.customer_email:
+                msg1 = Mail(from_email=SMTP_EMAIL, to_emails=appointment.customer_email,
+                            subject=customer_subject, plain_text_content=customer_body)
+                sg = SendGridAPIClient(SENDGRID_API_KEY)
+                sg.send(msg1)
+                print(f"✅ Appointment confirmation sent to customer: {appointment.customer_email}")
+
+            # Send to agency
+            msg2 = Mail(from_email=SMTP_EMAIL, to_emails=agency.email,
+                        subject=agency_subject, plain_text_content=agency_body)
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+            sg.send(msg2)
+            print(f"✅ Appointment notification sent to agency: {agency.email}")
+            return True
+        except Exception as e:
+            print(f"⚠️ Appointment email failed: {e}")
+            return False
+    return False
+
+
 def send_crm_webhook(agency, lead):
-    """POST lead data to agency's configured CRM webhook URL"""
     if not agency.webhook_url:
         return
     try:
@@ -168,14 +224,10 @@ def send_crm_webhook(agency, lead):
             "agency_id": agency.id,
             "agency_name": agency.name,
             "lead": {
-                "id": lead.id,
-                "name": lead.name,
-                "email": lead.email,
-                "phone": lead.phone,
-                "whatsapp_number": lead.whatsapp_number,
+                "id": lead.id, "name": lead.name, "email": lead.email,
+                "phone": lead.phone, "whatsapp_number": lead.whatsapp_number,
                 "contact_preference": lead.contact_preference,
-                "budget": lead.budget,
-                "summary": lead.message,
+                "budget": lead.budget, "summary": lead.message,
                 "intent_score": lead.intent_score,
                 "created_at": lead.created_at.isoformat() if lead.created_at else None
             }
@@ -188,10 +240,8 @@ def send_crm_webhook(agency, lead):
 
 
 def send_followup_email(agency, lead, day):
-    """Send a Day 1 or Day 7 follow-up reminder email to the agency"""
     contact = lead.whatsapp_number or lead.phone or "Not provided"
     stars = "⭐" * (lead.intent_score or 1)
-
     if day == 1:
         subject = f"⏰ Day 1 Follow-up: {lead.name or 'New Lead'} | {agency.name}"
         body = f"""
@@ -211,7 +261,6 @@ Time to follow up with your qualified lead from yesterday!
 {lead.message or 'No summary available'}
 
 🎯 Suggested Action: Reach out via {(lead.contact_preference or 'email').title()} within 24 hours.
-Hot leads respond best within the first 48 hours!
 
 Login to view: https://luxury-leads-ai.onrender.com/owner-login
 """
@@ -242,53 +291,39 @@ Login to view: https://luxury-leads-ai.onrender.com/owner-login
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
         try:
-            message = Mail(
-                from_email=SMTP_EMAIL,
-                to_emails=agency.email,
-                subject=subject,
-                plain_text_content=body
-            )
+            message = Mail(from_email=SMTP_EMAIL, to_emails=agency.email,
+                           subject=subject, plain_text_content=body)
             sg = SendGridAPIClient(SENDGRID_API_KEY)
             response = sg.send(message)
-            print(f"✅ Follow-up Day {day} sent to {agency.email} (Status: {response.status_code})")
+            print(f"✅ Follow-up Day {day} sent (Status: {response.status_code})")
             return True
         except Exception as e:
-            print(f"⚠️ Follow-up Day {day} email failed: {e}")
+            print(f"⚠️ Follow-up Day {day} failed: {e}")
             return False
     return False
 
 
 def process_pending_followups():
-    """Finds and sends all pending Day 1 and Day 7 follow-up emails"""
     try:
         now = datetime.utcnow()
         day1_count = 0
         day7_count = 0
-
         day1_cutoff = now - timedelta(hours=24)
-        day1_leads = Lead.query.filter(
-            Lead.follow_up_1_sent == 0,
-            Lead.created_at <= day1_cutoff
-        ).all()
+        day1_leads = Lead.query.filter(Lead.follow_up_1_sent == 0, Lead.created_at <= day1_cutoff).all()
         for lead in day1_leads:
             agency = db.session.get(Agency, lead.agency_id)
             if agency and send_followup_email(agency, lead, 1):
                 lead.follow_up_1_sent = 1
                 day1_count += 1
         db.session.commit()
-
         day7_cutoff = now - timedelta(days=7)
-        day7_leads = Lead.query.filter(
-            Lead.follow_up_7_sent == 0,
-            Lead.created_at <= day7_cutoff
-        ).all()
+        day7_leads = Lead.query.filter(Lead.follow_up_7_sent == 0, Lead.created_at <= day7_cutoff).all()
         for lead in day7_leads:
             agency = db.session.get(Agency, lead.agency_id)
             if agency and send_followup_email(agency, lead, 7):
                 lead.follow_up_7_sent = 1
                 day7_count += 1
         db.session.commit()
-
         print(f"✅ Follow-ups processed: D1={day1_count}, D7={day7_count}")
         return {"day1": day1_count, "day7": day7_count}
     except Exception as e:
@@ -298,27 +333,21 @@ def process_pending_followups():
 
 
 def clean_expired_sessions():
-    """Remove conversation sessions older than 30 minutes"""
     try:
         current_time = datetime.utcnow()
         expired_keys = []
         for key in list(session_timestamps.keys()):
-            last_activity = session_timestamps[key]
-            time_diff = (current_time - last_activity).total_seconds()
-            if time_diff > 1800:
+            if (current_time - session_timestamps[key]).total_seconds() > 1800:
                 expired_keys.append(key)
         for key in expired_keys:
-            if key in conversation_memory:
-                del conversation_memory[key]
-                print(f"🧹 Expired session cleared: {key}")
-            if key in session_timestamps:
-                del session_timestamps[key]
+            conversation_memory.pop(key, None)
+            session_timestamps.pop(key, None)
+            print(f"🧹 Expired session cleared: {key}")
     except Exception as e:
         print(f"⚠️ Session cleanup error: {e}")
 
 
 def generate_lead_summary(conversation_history, agency_name):
-    """AI summary"""
     try:
         conversation_text = "\n".join([
             f"{'Customer' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
@@ -334,8 +363,7 @@ Write summary:"""
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": analysis_prompt}],
-            temperature=0.3,
-            max_tokens=120
+            temperature=0.3, max_tokens=120
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -344,7 +372,6 @@ Write summary:"""
 
 
 def extract_name_from_context(conversation_history):
-    """ROBUST NAME EXTRACTION - Context-aware + explicit fallback"""
     not_a_name = {
         'yes', 'no', 'ok', 'okay', 'sure', 'fine', 'good', 'great',
         'hello', 'hi', 'hey', 'thanks', 'thank', 'please', 'sorry',
@@ -361,14 +388,12 @@ def extract_name_from_context(conversation_history):
         'coconut', 'grove', 'hilton', 'santa', 'monica', 'myrtle',
         'asking', 'checking', 'getting', 'making', 'looking', 'trying'
     }
-
     name_question_patterns = [
         "what's your name", "what is your name", "whats your name",
         "your name?", "may i have your name", "can i get your name",
         "could i get your name", "mind sharing your name",
         "first name", "tell me your name", "know your name"
     ]
-
     for i, msg in enumerate(conversation_history):
         if msg['role'] == 'assistant':
             ai_text = msg['content'].lower()
@@ -379,11 +404,9 @@ def extract_name_from_context(conversation_history):
                         candidate = next_msg['content'].strip()
                         candidate = re.sub(
                             r'^(i\s+am|i\'m|my\s+name\s+is|name\s+is|it\'s|its|call\s+me|this\s+is)\s+',
-                            '', candidate, flags=re.IGNORECASE
-                        ).strip()
+                            '', candidate, flags=re.IGNORECASE).strip()
                         first_word = candidate.split()[0] if candidate.split() else ''
-                        if (first_word
-                                and re.match(r'^[a-zA-Z]{2,30}$', first_word)
+                        if (first_word and re.match(r'^[a-zA-Z]{2,30}$', first_word)
                                 and first_word.lower() not in not_a_name):
                             print(f"✅ Name (context): {first_word.title()}")
                             return first_word.title()
@@ -392,23 +415,18 @@ def extract_name_from_context(conversation_history):
     found_names = []
     for msg in conversation_history:
         if msg['role'] == 'user':
-            matches = list(re.finditer(explicit_pattern, msg['content'], re.IGNORECASE))
-            for match in matches:
+            for match in re.finditer(explicit_pattern, msg['content'], re.IGNORECASE):
                 candidate = match.group(1).strip()
-                if (re.match(r'^[a-zA-Z]{2,30}$', candidate)
-                        and candidate.lower() not in not_a_name):
+                if re.match(r'^[a-zA-Z]{2,30}$', candidate) and candidate.lower() not in not_a_name:
                     found_names.append(candidate.title())
-
     if found_names:
         print(f"✅ Name (explicit): {found_names[-1]}")
         return found_names[-1]
-
     print("⚠️ Name: Not found")
     return None
 
 
 def extract_lead_data(conversation_history):
-    """PRODUCTION: Robust name extraction + WhatsApp support"""
     full_conversation_user = " ".join([
         msg['content'] for msg in conversation_history if msg['role'] == 'user'
     ])
@@ -450,8 +468,7 @@ def extract_lead_data(conversation_history):
                         break
 
     whatsapp_keywords = ['whatsapp', 'whats app']
-    full_lower = full_conversation_user.lower()
-    mentions_whatsapp = any(kw in full_lower for kw in whatsapp_keywords)
+    mentions_whatsapp = any(kw in full_conversation_user.lower() for kw in whatsapp_keywords)
     if lead_data['contact_preference'] in ('whatsapp', 'email_and_whatsapp'):
         mentions_whatsapp = True
 
@@ -486,10 +503,8 @@ def extract_lead_data(conversation_history):
             unit = budget_match.group(2) if len(budget_match.groups()) > 1 and budget_match.group(2) else ''
             if unit:
                 unit = unit.lower()
-                if unit in ['m', 'million']:
-                    unit = 'million'
-                elif unit in ['k', 'thousand']:
-                    unit = 'thousand'
+                if unit in ['m', 'million']: unit = 'million'
+                elif unit in ['k', 'thousand']: unit = 'thousand'
             currency = ''
             if '$' in full_conversation_user or 'dollar' in full_conversation_user.lower():
                 currency = 'USD'
@@ -501,8 +516,58 @@ def extract_lead_data(conversation_history):
     return lead_data
 
 
+def extract_appointment_data(conversation_history):
+    """
+    Extract appointment details from conversation.
+    Returns dict with day, time, property_interest or None if not found.
+    """
+    full_text = " ".join([
+        msg['content'] for msg in conversation_history
+    ]).lower()
+
+    appointment_data = {
+        'day': None,
+        'time': None,
+        'property_interest': None,
+        'requested': False
+    }
+
+    # Check if appointment was requested
+    booking_keywords = [
+        'schedule', 'appointment', 'viewing', 'visit', 'see the property',
+        'book a visit', 'arrange a viewing', 'show me', 'can i see',
+        'i would like to see', 'i want to see', 'visit the property'
+    ]
+    appointment_data['requested'] = any(kw in full_text for kw in booking_keywords)
+
+    # Extract day
+    days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+            'tomorrow', 'today', 'weekend', 'this week', 'next week']
+    for day in days:
+        if day in full_text:
+            appointment_data['day'] = day.title()
+            break
+
+    # Extract time slot
+    time_patterns = [
+        (r'\b(10\s*am|10\s*o\'?clock)\b', '10:00 AM'),
+        (r'\b(12\s*pm|noon|12\s*o\'?clock)\b', '12:00 PM'),
+        (r'\b(2\s*pm|2\s*o\'?clock)\b', '2:00 PM'),
+        (r'\b(4\s*pm|4\s*o\'?clock)\b', '4:00 PM'),
+        (r'\b(6\s*pm|6\s*o\'?clock)\b', '6:00 PM'),
+        (r'\bmorning\b', '10:00 AM'),
+        (r'\b(afternoon|midday)\b', '2:00 PM'),
+        (r'\b(evening|late afternoon)\b', '4:00 PM'),
+    ]
+    for pattern, time_label in time_patterns:
+        if re.search(pattern, full_text):
+            appointment_data['time'] = time_label
+            break
+
+    return appointment_data
+
+
 def contact_step_completed(conversation_history):
-    """Check if the contact preference step is fully completed"""
     contact_question_patterns = [
         "best way to reach you", "how can i reach you", "reach you",
         "contact you", "whatsapp, phone, or email", "phone, or email"
@@ -540,18 +605,14 @@ def contact_step_completed(conversation_history):
                         if any(w in user_text.lower() for w in decline_words):
                             user_declined_number = True
 
-    if user_said_email_only:
-        return True
-    if asked_number and (gave_number or user_declined_number):
-        return True
+    if user_said_email_only: return True
+    if asked_number and (gave_number or user_declined_number): return True
     user_msg_count = len([m for m in conversation_history if m['role'] == 'user'])
-    if asked_contact_pref and user_msg_count >= 10:
-        return True
+    if asked_contact_pref and user_msg_count >= 10: return True
     return False
 
 
 def detect_objection(user_message):
-    """Detect if user message contains an objection"""
     user_message_lower = user_message.lower()
     objections = {
         'price': ['expensive', 'too much', 'costly', 'afford', 'budget', 'high price', 'over budget'],
@@ -566,7 +627,6 @@ def detect_objection(user_message):
 
 
 def generate_objection_response(objection_type, agency_name):
-    """Generate contextual response to objection"""
     responses = {
         'price': "I hear you – budget is key. Even a rough range helps me point you in the right direction. What feels comfortable for you?",
         'timing': "Totally fair! No pressure at all. What's the main thing making you hesitant right now?",
@@ -577,7 +637,6 @@ def generate_objection_response(objection_type, agency_name):
 
 
 def analyze_lead_quality(lead_data, conversation_history):
-    """Timeline-aware scoring"""
     score = 1
     has_name = bool(lead_data.get('name'))
     has_phone = bool(lead_data.get('phone') or lead_data.get('whatsapp_number'))
@@ -587,15 +646,13 @@ def analyze_lead_quality(lead_data, conversation_history):
     if has_phone: score += 1
     full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
     urgency = ['asap', 'urgent', 'soon', 'quickly', 'this week', 'this month', 'within', 'month', 'week']
-    has_urgency = any(kw in full_text for kw in urgency)
-    if has_urgency:
+    if any(kw in full_text for kw in urgency):
         score = min(score + 1, 5)
-    print(f"📊 Quality: Name={has_name}, Phone={has_phone}, Budget={has_budget}, Timeline={has_urgency} → {score}/5")
+    print(f"📊 Quality: Name={has_name}, Phone={has_phone}, Budget={has_budget} → {score}/5")
     return min(score, 5)
 
 
 def is_lead_qualified(lead_data, conversation_history):
-    """PRODUCTION: Email + Name + Budget + 7+ messages + contact step done"""
     has_email = bool(lead_data.get('email'))
     has_name = bool(lead_data.get('name'))
     has_budget = bool(lead_data.get('budget'))
@@ -644,13 +701,26 @@ class Lead(db.Model):
     budget = db.Column(db.String(50))
     message = db.Column(db.Text)
     intent_score = db.Column(db.Integer, default=1)
-    # NEW: Status tracking
     lead_status = db.Column(db.String(20), default='new')
-    # NEW: Notes (JSON array stored as text)
     notes = db.Column(db.Text, default='[]')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
     follow_up_1_sent = db.Column(db.Integer, default=0)
     follow_up_7_sent = db.Column(db.Integer, default=0)
+
+
+class Appointment(db.Model):
+    """NEW: Appointment scheduling model"""
+    id = db.Column(db.Integer, primary_key=True)
+    agency_id = db.Column(db.Integer, nullable=False)
+    lead_id = db.Column(db.Integer, nullable=True)  # Optional link to lead
+    customer_name = db.Column(db.String(100))
+    customer_email = db.Column(db.String(150))
+    appointment_date = db.Column(db.String(100))   # e.g. "Thursday, June 6"
+    appointment_time = db.Column(db.String(50))    # e.g. "2:00 PM"
+    property_interest = db.Column(db.String(200))  # What they want to see
+    status = db.Column(db.String(20), default='pending')  # pending/confirmed/cancelled
+    notes = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
 
 
 # -------------------------
@@ -749,6 +819,7 @@ def delete_agency(agency_id):
     if not agency:
         return jsonify({"error": "Agency not found"}), 404
     Lead.query.filter_by(agency_id=agency_id).delete()
+    Appointment.query.filter_by(agency_id=agency_id).delete()
     db.session.delete(agency)
     db.session.commit()
     return jsonify({"message": "Agency deleted"})
@@ -760,34 +831,30 @@ def agency_info(agency_id):
         return jsonify({"error": "Invalid agency ID"}), 404
     return jsonify({"name": agency.name, "assistant": agency.assistant_name or "AI Assistant"})
 
+
 # ─────────────────────────────────────────────────────
-# NEW PHASE 2B ROUTES
+# PHASE 2B ROUTES (unchanged)
 # ─────────────────────────────────────────────────────
 
 @app.route("/update-lead-status/<int:lead_id>", methods=["POST"])
 def update_lead_status(lead_id):
-    """Update lead status: new / contacted / meeting / closed / lost"""
     try:
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
         data = request.get_json(force=True)
         new_status = data.get("status", "new")
-        valid_statuses = ['new', 'contacted', 'meeting', 'closed', 'lost']
-        if new_status not in valid_statuses:
+        if new_status not in ['new', 'contacted', 'meeting', 'closed', 'lost']:
             return jsonify({"error": "Invalid status"}), 400
         lead.lead_status = new_status
         db.session.commit()
-        print(f"✅ Lead {lead_id} status → {new_status}")
         return jsonify({"success": True, "status": new_status})
     except Exception as e:
-        print(f"❌ Status update error: {e}")
         return jsonify({"error": "Failed to update status"}), 500
 
 
 @app.route("/add-lead-note/<int:lead_id>", methods=["POST"])
 def add_lead_note(lead_id):
-    """Add a timestamped note to a lead"""
     try:
         lead = db.session.get(Lead, lead_id)
         if not lead:
@@ -796,12 +863,10 @@ def add_lead_note(lead_id):
         note_text = data.get("note", "").strip()
         if not note_text:
             return jsonify({"error": "Note cannot be empty"}), 400
-        # Load existing notes
         try:
             notes = json.loads(lead.notes or '[]')
         except:
             notes = []
-        # Add new note with timestamp
         new_note = {
             "id": len(notes) + 1,
             "text": note_text,
@@ -810,16 +875,13 @@ def add_lead_note(lead_id):
         notes.append(new_note)
         lead.notes = json.dumps(notes)
         db.session.commit()
-        print(f"✅ Note added to lead {lead_id}")
         return jsonify({"success": True, "note": new_note, "total_notes": len(notes)})
     except Exception as e:
-        print(f"❌ Add note error: {e}")
         return jsonify({"error": "Failed to add note"}), 500
 
 
 @app.route("/delete-lead-note/<int:lead_id>/<int:note_id>", methods=["DELETE"])
 def delete_lead_note(lead_id, note_id):
-    """Delete a specific note from a lead"""
     try:
         lead = db.session.get(Lead, lead_id)
         if not lead:
@@ -833,13 +895,11 @@ def delete_lead_note(lead_id, note_id):
         db.session.commit()
         return jsonify({"success": True, "total_notes": len(notes)})
     except Exception as e:
-        print(f"❌ Delete note error: {e}")
         return jsonify({"error": "Failed to delete note"}), 500
 
 
 @app.route("/get-lead-detail/<int:lead_id>")
 def get_lead_detail(lead_id):
-    """Get full lead details including notes for modal"""
     try:
         lead = db.session.get(Lead, lead_id)
         if not lead:
@@ -851,28 +911,22 @@ def get_lead_detail(lead_id):
         clean_num = clean_whatsapp_number(lead.whatsapp_number)
         wa_link = f"https://wa.me/{clean_num}" if clean_num else None
         return jsonify({
-            "id": lead.id,
-            "name": lead.name or "—",
-            "email": lead.email or "—",
-            "phone": lead.phone or None,
+            "id": lead.id, "name": lead.name or "—",
+            "email": lead.email or "—", "phone": lead.phone or None,
             "whatsapp_number": lead.whatsapp_number or None,
             "whatsapp_link": wa_link,
             "contact_preference": lead.contact_preference or "email",
-            "budget": lead.budget or "—",
-            "message": lead.message or "—",
+            "budget": lead.budget or "—", "message": lead.message or "—",
             "intent_score": lead.intent_score or 1,
-            "lead_status": lead.lead_status or "new",
-            "notes": notes,
+            "lead_status": lead.lead_status or "new", "notes": notes,
             "created_at": lead.created_at.strftime('%B %d, %Y at %I:%M %p') if lead.created_at else "—"
         })
     except Exception as e:
-        print(f"❌ Get lead detail error: {e}")
         return jsonify({"error": "Failed to get lead"}), 500
 
 
 @app.route("/bulk-delete-leads", methods=["POST"])
 def bulk_delete_leads():
-    """Delete multiple leads at once"""
     try:
         data = request.get_json(force=True)
         lead_ids = data.get("lead_ids", [])
@@ -882,26 +936,122 @@ def bulk_delete_leads():
         for lead_id in lead_ids:
             lead = db.session.get(Lead, int(lead_id))
             if lead:
-                # Clear memory for this lead's agency
                 for key in list(conversation_memory.keys()):
                     if key.startswith(f"{lead.agency_id}_"):
-                        del conversation_memory[key]
-                        if key in session_timestamps:
-                            del session_timestamps[key]
+                        conversation_memory.pop(key, None)
+                        session_timestamps.pop(key, None)
                 db.session.delete(lead)
                 deleted += 1
         db.session.commit()
-        print(f"🗑️ Bulk deleted {deleted} leads")
         return jsonify({"success": True, "deleted": deleted})
     except Exception as e:
-        print(f"❌ Bulk delete error: {e}")
         return jsonify({"error": "Failed to bulk delete"}), 500
+
+
+# ─────────────────────────────────────────────────────
+# PHASE 2C ROUTES - APPOINTMENT SCHEDULING
+# ─────────────────────────────────────────────────────
+
+@app.route("/appointments/<int:agency_id>")
+def appointments(agency_id):
+    """Appointments dashboard page"""
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return redirect("/owner-login?error=Agency+not+found")
+    appts = Appointment.query.filter_by(
+        agency_id=agency_id
+    ).order_by(Appointment.created_at.desc()).all()
+    return render_template("appointments.html", agency=agency, appointments=appts)
+
+
+@app.route("/book-appointment", methods=["POST"])
+def book_appointment():
+    """Book a new appointment from chat or manual entry"""
+    try:
+        data = request.get_json(force=True)
+        agency_id = data.get("agency_id")
+        agency = db.session.get(Agency, int(agency_id))
+        if not agency:
+            return jsonify({"error": "Agency not found"}), 404
+
+        appt = Appointment(
+            agency_id=int(agency_id),
+            lead_id=data.get("lead_id"),
+            customer_name=data.get("customer_name", ""),
+            customer_email=data.get("customer_email", ""),
+            appointment_date=data.get("appointment_date", ""),
+            appointment_time=data.get("appointment_time", ""),
+            property_interest=data.get("property_interest", ""),
+            status="pending",
+            notes=data.get("notes", "")
+        )
+        db.session.add(appt)
+        db.session.commit()
+        print(f"✅ Appointment booked: ID {appt.id} for {appt.customer_name}")
+
+        # Send confirmation emails
+        send_appointment_confirmation(agency, appt)
+
+        return jsonify({
+            "success": True,
+            "appointment_id": appt.id,
+            "message": f"Appointment booked for {appt.appointment_date} at {appt.appointment_time}"
+        })
+    except Exception as e:
+        print(f"❌ Book appointment error: {e}")
+        db.session.rollback()
+        return jsonify({"error": "Failed to book appointment"}), 500
+
+
+@app.route("/update-appointment-status/<int:appt_id>", methods=["POST"])
+def update_appointment_status(appt_id):
+    """Update appointment status: pending / confirmed / cancelled"""
+    try:
+        appt = db.session.get(Appointment, appt_id)
+        if not appt:
+            return jsonify({"error": "Appointment not found"}), 404
+        data = request.get_json(force=True)
+        new_status = data.get("status", "pending")
+        if new_status not in ['pending', 'confirmed', 'cancelled']:
+            return jsonify({"error": "Invalid status"}), 400
+        appt.status = new_status
+        db.session.commit()
+        print(f"✅ Appointment {appt_id} → {new_status}")
+        return jsonify({"success": True, "status": new_status})
+    except Exception as e:
+        return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/delete-appointment/<int:appt_id>", methods=["DELETE"])
+def delete_appointment(appt_id):
+    """Delete an appointment"""
+    try:
+        appt = db.session.get(Appointment, appt_id)
+        if not appt:
+            return jsonify({"error": "Appointment not found"}), 404
+        db.session.delete(appt)
+        db.session.commit()
+        print(f"🗑️ Appointment deleted: ID {appt_id}")
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": "Failed to delete"}), 500
+
+
+@app.route("/get-appointments-count/<int:agency_id>")
+def get_appointments_count(agency_id):
+    """Get count of appointments for stats"""
+    try:
+        total = Appointment.query.filter_by(agency_id=agency_id).count()
+        pending = Appointment.query.filter_by(agency_id=agency_id, status='pending').count()
+        confirmed = Appointment.query.filter_by(agency_id=agency_id, status='confirmed').count()
+        return jsonify({"total": total, "pending": pending, "confirmed": confirmed})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────────────
 
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
-    """PRODUCTION CHAT WITH SESSION EXPIRATION + OBJECTION HANDLING"""
     if request.method == "OPTIONS":
         return "", 200
     clean_expired_sessions()
@@ -926,40 +1076,44 @@ CRITICAL FORMATTING RULES - MUST FOLLOW:
 - Never use bold or italic formatting of any kind
 - Write in plain conversational text only
 - If listing options, separate with commas or "or" not bullet points
-- Example WRONG: "Here are some options: **Miami**, **Malibu**"
-- Example RIGHT: "Some popular spots are Miami, Malibu, and Santa Monica."
 
 GREETING RULES:
 - Never start with the same greeting twice in a conversation
 - Vary your opening: "Hi there!", "Hey!", "Hello!", "Welcome!"
 - After the first message, never use opening greetings again
 - Do not say "Perfect", "Great", "Nice", "Awesome" more than once per conversation
-- Do not say "Sounds good" repeatedly
 
 PERSONALITY:
 - Warm and natural, like a knowledgeable friend
 - Short responses: 1-2 sentences only
 - Ask ONE question at a time
-- Use casual language and contractions: "it's", "that's", "you're", "we'll"
-- Show genuine interest without being over-enthusiastic
+- Use casual language and contractions
 - Acknowledge what they said before asking next question
 
 CONVERSATION FLOW - COLLECT IN ORDER:
 1. Property type (villa, condo, apartment, etc.)
 2. Location preference
-3. Budget (ask: "What budget range are you working with?")
-4. Timeline ("When are you hoping to make a move?")
-5. Name ("What's your name?")
+3. Budget
+4. Timeline
+5. Name
 6. Email
 7. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
-8. If WhatsApp or phone chosen: "What's your WhatsApp number?" or "What's your phone number?"
-9. If user declines number or says email only: thank them and wrap up
+8. If WhatsApp or phone chosen: ask for the number
+9. If user declines or email only: thank and wrap up
+
+APPOINTMENT SCHEDULING:
+- If customer asks to see a property, schedule a viewing
+- Available days: Monday to Saturday (Sunday closed)
+- Available slots: 10:00 AM, 12:00 PM, 2:00 PM, 4:00 PM, 6:00 PM
+- Ask preferred day first, then time slot
+- Confirm the booking: "You're booked for [Day] at [Time]. Confirmation will be sent to your email."
+- Example: "When would you like to come in for a viewing - any day Monday to Saturday works?"
+- After they choose: "We have slots at 10 AM, 12 PM, 2 PM, 4 PM or 6 PM - which works best?"
 
 IMPORTANT FOR CONTACT STEP:
 - Always ask the contact preference question before ending
-- If they say email only, that is fine - do not push for a number
-- If they say WhatsApp or phone, ask for the number
-- If they decline to share the number, that is fine too - thank them and end
+- If they say email only, that is fine
+- If they decline number, thank them and end
 
 HANDLING HESITATION:
 - Price concern: "I hear you - even a rough range helps. What feels comfortable?"
@@ -968,13 +1122,9 @@ HANDLING HESITATION:
 
 LANGUAGE:
 - Detect the visitor's language and respond in that same language throughout
-- Never switch back to English if they wrote in another language
 
 DECISION SUPPORT (when visitor seems stuck):
 - Readiness: "On a scale of 1-10, how ready do you feel to move forward?"
-  - 7+: Help take next step
-  - 4-6: "What would get you to a higher number?"
-  - 1-3: "Let's just explore together, no pressure."
 - Choice: "If you had to pick just one - location or size - which matters more?"
 - Future: "A year from now, would you regret waiting or regret acting?"
 
@@ -1005,7 +1155,39 @@ Respond naturally in plain text only:"""
         )
         ai_reply = response.choices[0].message.content.strip()
         history.append({"role": "assistant", "content": ai_reply, "name": agency.assistant_name})
+
         lead_data = extract_lead_data(history)
+
+        # Check for appointment booking in conversation
+        appt_data = extract_appointment_data(history)
+        if (appt_data['requested'] and appt_data['day'] and appt_data['time']
+                and lead_data.get('email')):
+            # Check if appointment already exists for this email + day + time
+            existing_appt = Appointment.query.filter_by(
+                agency_id=agency_id,
+                customer_email=lead_data['email'],
+                appointment_date=appt_data['day'],
+                appointment_time=appt_data['time']
+            ).first()
+
+            if not existing_appt:
+                try:
+                    new_appt = Appointment(
+                        agency_id=agency_id,
+                        customer_name=lead_data.get('name') or 'Guest',
+                        customer_email=lead_data['email'],
+                        appointment_date=appt_data['day'],
+                        appointment_time=appt_data['time'],
+                        property_interest=lead_data.get('budget', '') + ' property viewing',
+                        status='pending'
+                    )
+                    db.session.add(new_appt)
+                    db.session.commit()
+                    print(f"✅ Appointment auto-booked: {appt_data['day']} at {appt_data['time']}")
+                    send_appointment_confirmation(agency, new_appt)
+                except Exception as appt_err:
+                    print(f"⚠️ Auto-appointment error: {appt_err}")
+                    db.session.rollback()
 
         if is_lead_qualified(lead_data, history):
             try:
@@ -1018,21 +1200,18 @@ Respond naturally in plain text only:"""
                         existing_lead.whatsapp_number = lead_data['whatsapp_number']
                         existing_lead.contact_preference = lead_data['contact_preference']
                         updated = True
-                        print(f"✅ Updated WhatsApp for lead {existing_lead.id}: {lead_data['whatsapp_number']}")
                     if not existing_lead.phone and lead_data.get('phone'):
                         existing_lead.phone = lead_data['phone']
                         existing_lead.contact_preference = lead_data['contact_preference']
                         updated = True
-                        print(f"✅ Updated Phone for lead {existing_lead.id}: {lead_data['phone']}")
                     if not existing_lead.name and lead_data.get('name'):
                         existing_lead.name = lead_data['name']
                         updated = True
-                        print(f"✅ Updated Name for lead {existing_lead.id}: {lead_data['name']}")
                     if updated:
                         db.session.commit()
                         print(f"✅ Lead {existing_lead.id} silently updated")
                     else:
-                        print(f"⚠️ Duplicate (no new info): {lead_data['email']}")
+                        print(f"⚠️ Duplicate: {lead_data['email']}")
                 else:
                     ai_summary = generate_lead_summary(history, agency.name)
                     quality_score = analyze_lead_quality(lead_data, history)
@@ -1072,15 +1251,12 @@ def delete_lead(lead_id):
             return jsonify({"error": "Lead not found"}), 404
         for key in list(conversation_memory.keys()):
             if key.startswith(f"{lead.agency_id}_"):
-                del conversation_memory[key]
-                if key in session_timestamps:
-                    del session_timestamps[key]
+                conversation_memory.pop(key, None)
+                session_timestamps.pop(key, None)
         db.session.delete(lead)
         db.session.commit()
-        print(f"🗑️ Lead deleted: ID {lead_id}")
         return jsonify({"message": "Lead deleted"})
     except Exception as e:
-        print(f"❌ DELETE ERROR: {e}")
         return jsonify({"error": "Failed to delete"}), 500
 
 
@@ -1089,15 +1265,12 @@ def clear_all_leads(agency_id):
     try:
         keys_to_delete = [k for k in conversation_memory.keys() if k.startswith(f"{agency_id}_")]
         for key in keys_to_delete:
-            del conversation_memory[key]
-            if key in session_timestamps:
-                del session_timestamps[key]
+            conversation_memory.pop(key, None)
+            session_timestamps.pop(key, None)
         deleted_count = Lead.query.filter_by(agency_id=agency_id).delete()
         db.session.commit()
-        print(f"🗑️ Cleared {deleted_count} leads for agency {agency_id}")
         return jsonify({"message": f"{deleted_count} leads deleted"})
     except Exception as e:
-        print(f"❌ CLEAR ERROR: {e}")
         return jsonify({"error": "Failed to clear"}), 500
 
 
@@ -1110,7 +1283,8 @@ def export_leads(agency_id):
         wb = Workbook()
         ws = wb.active
         ws.title = "Leads"
-        headers = ["Sr #", "Quality", "Status", "Name", "Email", "Contact", "Preference", "Budget", "Customer Insights", "Date"]
+        headers = ["Sr #", "Quality", "Status", "Name", "Email", "Contact",
+                   "Preference", "Budget", "Customer Insights", "Date"]
         ws.append(headers)
         for cell in ws[1]:
             cell.font = Font(bold=True)
@@ -1120,10 +1294,8 @@ def export_leads(agency_id):
             preference = lead.contact_preference.replace('_', ' ').title() if lead.contact_preference else "Email"
             status = (lead.lead_status or 'new').title()
             ws.append([
-                i, quality_stars, status,
-                lead.name or "—", lead.email or "—",
-                contact, preference, lead.budget or "—",
-                lead.message or "—",
+                i, quality_stars, status, lead.name or "—", lead.email or "—",
+                contact, preference, lead.budget or "—", lead.message or "—",
                 lead.created_at.strftime('%Y-%m-%d') if lead.created_at else "—"
             ])
         for column in ws.columns:
@@ -1139,13 +1311,10 @@ def export_leads(agency_id):
         buffer = BytesIO()
         wb.save(buffer)
         buffer.seek(0)
-        return Response(
-            buffer,
+        return Response(buffer,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename=leads_agency_{agency_id}.xlsx"}
-        )
+            headers={"Content-Disposition": f"attachment; filename=leads_agency_{agency_id}.xlsx"})
     except Exception as e:
-        print(f"❌ EXPORT ERROR: {e}")
         return jsonify({"error": "Export failed"}), 500
 
 
@@ -1207,8 +1376,7 @@ def analytics(agency_id):
     return render_template("analytics.html",
         agency=agency, agency_id=agency_id, total=total, hot=hot, high=high,
         avg_score=avg_score, quality_dist=quality_dist, date_labels=date_labels,
-        date_values=date_values, this_month=this_month, last_month=last_month
-    )
+        date_values=date_values, this_month=this_month, last_month=last_month)
 
 
 @app.route("/update-agency-webhook/<int:agency_id>", methods=["POST"])
@@ -1219,7 +1387,6 @@ def update_agency_webhook(agency_id):
     webhook_url = request.form.get("webhook_url", "").strip()
     agency.webhook_url = webhook_url if webhook_url else None
     db.session.commit()
-    print(f"✅ Webhook URL updated for agency {agency_id}: {webhook_url or 'cleared'}")
     return redirect(f"/analytics/{agency_id}")
 
 
@@ -1265,8 +1432,6 @@ with app.app_context():
             db.session.execute(text("ALTER TABLE agency ADD COLUMN webhook_url VARCHAR(500);"))
             db.session.commit()
             print("✅ Migration: webhook_url added")
-
-        # NEW PHASE 2B MIGRATIONS
         if 'lead_status' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN lead_status VARCHAR(20) DEFAULT 'new';"))
             db.session.commit()
