@@ -7,10 +7,11 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from io import BytesIO
+from io import BytesIO, StringIO
 import os
 import re
 import json
+import csv
 import smtplib
 from email.mime.text import MIMEText
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -25,7 +26,7 @@ try:
     SENDGRID_AVAILABLE = True
 except ImportError:
     SENDGRID_AVAILABLE = False
-    print("⚠️ SendGrid not installed - email will use Gmail SMTP only")
+    print("⚠️ SendGrid not installed")
 
 # -------------------------
 # LOAD ENV VARIABLES
@@ -66,7 +67,7 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 
 # -------------------------
-# MEMORY STORE - PER VISITOR WITH EXPIRATION
+# MEMORY STORE
 # -------------------------
 conversation_memory = {}
 session_timestamps = {}
@@ -84,6 +85,49 @@ def clean_whatsapp_number(number):
     cleaned = re.sub(r'\D', '', number)
     cleaned = cleaned.lstrip('0')
     return cleaned if len(cleaned) >= 9 else None
+
+
+def get_listings_context(agency_id):
+    """
+    Build a listings context string to inject into the AI system prompt.
+    Returns empty string if no listings exist.
+    """
+    try:
+        listings = Listing.query.filter_by(
+            agency_id=agency_id,
+            status='available'
+        ).order_by(Listing.price_numeric.asc()).all()
+
+        if not listings:
+            return ""
+
+        lines = ["\n\nAVAILABLE PROPERTIES AT YOUR AGENCY (use these when recommending):"]
+        for i, l in enumerate(listings, 1):
+            bed_bath = ""
+            if l.bedrooms:
+                bed_bath += f"{l.bedrooms}bed"
+            if l.bathrooms:
+                bed_bath += f"/{l.bathrooms}bath"
+
+            price_str = f"${l.price:,.0f}" if l.price else l.price_raw or "Price on request"
+            features_str = f" | {l.features}" if l.features else ""
+            desc_str = f" - {l.description[:80]}..." if l.description and len(l.description) > 30 else (f" - {l.description}" if l.description else "")
+
+            lines.append(
+                f"{i}. {l.title} | {l.location} | {price_str}"
+                f"{' | ' + bed_bath if bed_bath else ''}"
+                f"{features_str}"
+                f"{desc_str}"
+            )
+
+        lines.append(
+            "\nWhen customer mentions budget or preferences, recommend matching properties by name. "
+            "Be specific: mention price, bedrooms, location. Create mild urgency naturally."
+        )
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"⚠️ Listings context error: {e}")
+        return ""
 
 
 def send_lead_email(agency, lead):
@@ -147,10 +191,7 @@ Default Password: admin123
 
 
 def send_appointment_confirmation(agency, appointment):
-    """Send confirmation email to customer + notification to agency"""
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-
-    # Email to CUSTOMER
     customer_subject = f"✅ Appointment Confirmed - {agency.name}"
     customer_body = f"""
 Dear {appointment.customer_name},
@@ -165,13 +206,11 @@ Your property viewing appointment has been confirmed!
 📋 Status:       Confirmed
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-We look forward to meeting you! If you need to reschedule or have any questions, please reply to this email or contact us directly.
+We look forward to meeting you!
 
 Best regards,
 {agency.name} Team
 """
-
-    # Email to AGENCY
     agency_subject = f"📅 New Appointment Booked - {appointment.customer_name}"
     agency_body = f"""
 New Appointment Booked!
@@ -187,22 +226,15 @@ New Appointment Booked!
 
 View all appointments:
 https://luxury-leads-ai.onrender.com/appointments/{agency.id}
-
-Agency ID: {agency.id}
-Default Password: admin123
 """
-
     if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
         try:
-            # Send to customer
             if appointment.customer_email:
                 msg1 = Mail(from_email=SMTP_EMAIL, to_emails=appointment.customer_email,
                             subject=customer_subject, plain_text_content=customer_body)
                 sg = SendGridAPIClient(SENDGRID_API_KEY)
                 sg.send(msg1)
-                print(f"✅ Appointment confirmation sent to customer: {appointment.customer_email}")
-
-            # Send to agency
+                print(f"✅ Appointment confirmation sent to: {appointment.customer_email}")
             msg2 = Mail(from_email=SMTP_EMAIL, to_emails=agency.email,
                         subject=agency_subject, plain_text_content=agency_body)
             sg = SendGridAPIClient(SENDGRID_API_KEY)
@@ -221,8 +253,7 @@ def send_crm_webhook(agency, lead):
     try:
         payload = {
             "event": "lead_qualified",
-            "agency_id": agency.id,
-            "agency_name": agency.name,
+            "agency_id": agency.id, "agency_name": agency.name,
             "lead": {
                 "id": lead.id, "name": lead.name, "email": lead.email,
                 "phone": lead.phone, "whatsapp_number": lead.whatsapp_number,
@@ -234,7 +265,7 @@ def send_crm_webhook(agency, lead):
         }
         import httpx
         response = httpx.post(agency.webhook_url, json=payload, timeout=5)
-        print(f"✅ Webhook sent to {agency.webhook_url} (Status: {response.status_code})")
+        print(f"✅ Webhook sent (Status: {response.status_code})")
     except Exception as e:
         print(f"⚠️ Webhook failed: {e}")
 
@@ -335,10 +366,10 @@ def process_pending_followups():
 def clean_expired_sessions():
     try:
         current_time = datetime.utcnow()
-        expired_keys = []
-        for key in list(session_timestamps.keys()):
-            if (current_time - session_timestamps[key]).total_seconds() > 1800:
-                expired_keys.append(key)
+        expired_keys = [
+            key for key in list(session_timestamps.keys())
+            if (current_time - session_timestamps[key]).total_seconds() > 1800
+        ]
         for key in expired_keys:
             conversation_memory.pop(key, None)
             session_timestamps.pop(key, None)
@@ -517,38 +548,20 @@ def extract_lead_data(conversation_history):
 
 
 def extract_appointment_data(conversation_history):
-    """
-    Extract appointment details from conversation.
-    Returns dict with day, time, property_interest or None if not found.
-    """
-    full_text = " ".join([
-        msg['content'] for msg in conversation_history
-    ]).lower()
-
-    appointment_data = {
-        'day': None,
-        'time': None,
-        'property_interest': None,
-        'requested': False
-    }
-
-    # Check if appointment was requested
+    full_text = " ".join([msg['content'] for msg in conversation_history]).lower()
+    appointment_data = {'day': None, 'time': None, 'property_interest': None, 'requested': False}
     booking_keywords = [
         'schedule', 'appointment', 'viewing', 'visit', 'see the property',
         'book a visit', 'arrange a viewing', 'show me', 'can i see',
         'i would like to see', 'i want to see', 'visit the property'
     ]
     appointment_data['requested'] = any(kw in full_text for kw in booking_keywords)
-
-    # Extract day
     days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
             'tomorrow', 'today', 'weekend', 'this week', 'next week']
     for day in days:
         if day in full_text:
             appointment_data['day'] = day.title()
             break
-
-    # Extract time slot
     time_patterns = [
         (r'\b(10\s*am|10\s*o\'?clock)\b', '10:00 AM'),
         (r'\b(12\s*pm|noon|12\s*o\'?clock)\b', '12:00 PM'),
@@ -563,7 +576,6 @@ def extract_appointment_data(conversation_history):
         if re.search(pattern, full_text):
             appointment_data['time'] = time_label
             break
-
     return appointment_data
 
 
@@ -709,17 +721,34 @@ class Lead(db.Model):
 
 
 class Appointment(db.Model):
-    """NEW: Appointment scheduling model"""
     id = db.Column(db.Integer, primary_key=True)
     agency_id = db.Column(db.Integer, nullable=False)
-    lead_id = db.Column(db.Integer, nullable=True)  # Optional link to lead
+    lead_id = db.Column(db.Integer, nullable=True)
     customer_name = db.Column(db.String(100))
     customer_email = db.Column(db.String(150))
-    appointment_date = db.Column(db.String(100))   # e.g. "Thursday, June 6"
-    appointment_time = db.Column(db.String(50))    # e.g. "2:00 PM"
-    property_interest = db.Column(db.String(200))  # What they want to see
-    status = db.Column(db.String(20), default='pending')  # pending/confirmed/cancelled
+    appointment_date = db.Column(db.String(100))
+    appointment_time = db.Column(db.String(50))
+    property_interest = db.Column(db.String(200))
+    status = db.Column(db.String(20), default='pending')
     notes = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
+
+
+class Listing(db.Model):
+    """PHASE 2D: Property listings model"""
+    id = db.Column(db.Integer, primary_key=True)
+    agency_id = db.Column(db.Integer, nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    location = db.Column(db.String(200))
+    price_raw = db.Column(db.String(100))           # Raw string e.g. "$8,500,000"
+    price = db.Column(db.Float, nullable=True)       # Numeric for sorting/filtering
+    price_numeric = db.Column(db.Float, nullable=True)  # Same as price, for clarity
+    bedrooms = db.Column(db.Integer, nullable=True)
+    bathrooms = db.Column(db.Integer, nullable=True)
+    property_type = db.Column(db.String(50))         # villa, condo, apartment, etc.
+    features = db.Column(db.String(500))             # Pool, Ocean View, Gym
+    description = db.Column(db.Text)
+    status = db.Column(db.String(20), default='available')  # available/sold/pending
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
 
 
@@ -820,6 +849,7 @@ def delete_agency(agency_id):
         return jsonify({"error": "Agency not found"}), 404
     Lead.query.filter_by(agency_id=agency_id).delete()
     Appointment.query.filter_by(agency_id=agency_id).delete()
+    Listing.query.filter_by(agency_id=agency_id).delete()
     db.session.delete(agency)
     db.session.commit()
     return jsonify({"message": "Agency deleted"})
@@ -833,7 +863,7 @@ def agency_info(agency_id):
 
 
 # ─────────────────────────────────────────────────────
-# PHASE 2B ROUTES (unchanged)
+# PHASE 2B ROUTES
 # ─────────────────────────────────────────────────────
 
 @app.route("/update-lead-status/<int:lead_id>", methods=["POST"])
@@ -949,12 +979,11 @@ def bulk_delete_leads():
 
 
 # ─────────────────────────────────────────────────────
-# PHASE 2C ROUTES - APPOINTMENT SCHEDULING
+# PHASE 2C ROUTES
 # ─────────────────────────────────────────────────────
 
 @app.route("/appointments/<int:agency_id>")
 def appointments(agency_id):
-    """Appointments dashboard page"""
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
@@ -966,14 +995,12 @@ def appointments(agency_id):
 
 @app.route("/book-appointment", methods=["POST"])
 def book_appointment():
-    """Book a new appointment from chat or manual entry"""
     try:
         data = request.get_json(force=True)
         agency_id = data.get("agency_id")
         agency = db.session.get(Agency, int(agency_id))
         if not agency:
             return jsonify({"error": "Agency not found"}), 404
-
         appt = Appointment(
             agency_id=int(agency_id),
             lead_id=data.get("lead_id"),
@@ -988,13 +1015,9 @@ def book_appointment():
         db.session.add(appt)
         db.session.commit()
         print(f"✅ Appointment booked: ID {appt.id} for {appt.customer_name}")
-
-        # Send confirmation emails
         send_appointment_confirmation(agency, appt)
-
         return jsonify({
-            "success": True,
-            "appointment_id": appt.id,
+            "success": True, "appointment_id": appt.id,
             "message": f"Appointment booked for {appt.appointment_date} at {appt.appointment_time}"
         })
     except Exception as e:
@@ -1005,7 +1028,6 @@ def book_appointment():
 
 @app.route("/update-appointment-status/<int:appt_id>", methods=["POST"])
 def update_appointment_status(appt_id):
-    """Update appointment status: pending / confirmed / cancelled"""
     try:
         appt = db.session.get(Appointment, appt_id)
         if not appt:
@@ -1016,7 +1038,6 @@ def update_appointment_status(appt_id):
             return jsonify({"error": "Invalid status"}), 400
         appt.status = new_status
         db.session.commit()
-        print(f"✅ Appointment {appt_id} → {new_status}")
         return jsonify({"success": True, "status": new_status})
     except Exception as e:
         return jsonify({"error": "Failed to update"}), 500
@@ -1024,14 +1045,12 @@ def update_appointment_status(appt_id):
 
 @app.route("/delete-appointment/<int:appt_id>", methods=["DELETE"])
 def delete_appointment(appt_id):
-    """Delete an appointment"""
     try:
         appt = db.session.get(Appointment, appt_id)
         if not appt:
             return jsonify({"error": "Appointment not found"}), 404
         db.session.delete(appt)
         db.session.commit()
-        print(f"🗑️ Appointment deleted: ID {appt_id}")
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": "Failed to delete"}), 500
@@ -1039,12 +1058,224 @@ def delete_appointment(appt_id):
 
 @app.route("/get-appointments-count/<int:agency_id>")
 def get_appointments_count(agency_id):
-    """Get count of appointments for stats"""
     try:
         total = Appointment.query.filter_by(agency_id=agency_id).count()
         pending = Appointment.query.filter_by(agency_id=agency_id, status='pending').count()
         confirmed = Appointment.query.filter_by(agency_id=agency_id, status='confirmed').count()
         return jsonify({"total": total, "pending": pending, "confirmed": confirmed})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────
+# PHASE 2D ROUTES - PROPERTY LISTINGS
+# ─────────────────────────────────────────────────────
+
+def parse_price(price_str):
+    """Convert price string to float for sorting/filtering"""
+    if not price_str:
+        return None
+    try:
+        # Remove $, commas, spaces
+        clean = re.sub(r'[\$,\s]', '', str(price_str))
+        # Handle M/K suffixes
+        if clean.lower().endswith('m'):
+            return float(clean[:-1]) * 1_000_000
+        elif clean.lower().endswith('k'):
+            return float(clean[:-1]) * 1_000
+        return float(clean)
+    except:
+        return None
+
+
+@app.route("/listings/<int:agency_id>")
+def listings(agency_id):
+    """Listings management page"""
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return redirect("/owner-login?error=Agency+not+found")
+    all_listings = Listing.query.filter_by(
+        agency_id=agency_id
+    ).order_by(Listing.status.asc(), Listing.price_numeric.asc()).all()
+    return render_template("listings.html", agency=agency, listings=all_listings)
+
+
+@app.route("/add-listing/<int:agency_id>", methods=["POST"])
+def add_listing(agency_id):
+    """Add a single listing manually"""
+    try:
+        agency = db.session.get(Agency, agency_id)
+        if not agency:
+            return jsonify({"error": "Agency not found"}), 404
+        data = request.get_json(force=True)
+        price_numeric = parse_price(data.get("price", ""))
+        listing = Listing(
+            agency_id=agency_id,
+            title=data.get("title", "").strip(),
+            location=data.get("location", "").strip(),
+            price_raw=data.get("price", "").strip(),
+            price=price_numeric,
+            price_numeric=price_numeric,
+            bedrooms=int(data["bedrooms"]) if data.get("bedrooms") else None,
+            bathrooms=int(data["bathrooms"]) if data.get("bathrooms") else None,
+            property_type=data.get("property_type", "").strip(),
+            features=data.get("features", "").strip(),
+            description=data.get("description", "").strip(),
+            status="available"
+        )
+        db.session.add(listing)
+        db.session.commit()
+        print(f"✅ Listing added: {listing.title} (ID {listing.id})")
+        return jsonify({"success": True, "listing_id": listing.id, "title": listing.title})
+    except Exception as e:
+        print(f"❌ Add listing error: {e}")
+        db.session.rollback()
+        return jsonify({"error": "Failed to add listing"}), 500
+
+
+@app.route("/upload-listings/<int:agency_id>", methods=["POST"])
+def upload_listings(agency_id):
+    """Upload listings via CSV file"""
+    try:
+        agency = db.session.get(Agency, agency_id)
+        if not agency:
+            return jsonify({"error": "Agency not found"}), 404
+
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        file = request.files['file']
+        if not file.filename.endswith('.csv'):
+            return jsonify({"error": "Only CSV files are supported"}), 400
+
+        content = file.read().decode('utf-8-sig')  # utf-8-sig handles BOM
+        reader = csv.DictReader(StringIO(content))
+
+        added = 0
+        errors = []
+
+        for i, row in enumerate(reader, 1):
+            try:
+                # Normalize keys (lowercase, strip spaces)
+                row = {k.lower().strip(): v.strip() for k, v in row.items() if k}
+                title = row.get('title', '').strip()
+                if not title:
+                    errors.append(f"Row {i}: Missing title, skipped")
+                    continue
+
+                price_str = row.get('price', '')
+                price_numeric = parse_price(price_str)
+
+                beds = None
+                baths = None
+                try:
+                    if row.get('bedrooms'):
+                        beds = int(float(row['bedrooms']))
+                except:
+                    pass
+                try:
+                    if row.get('bathrooms'):
+                        baths = int(float(row['bathrooms']))
+                except:
+                    pass
+
+                listing = Listing(
+                    agency_id=agency_id,
+                    title=title,
+                    location=row.get('location', ''),
+                    price_raw=price_str,
+                    price=price_numeric,
+                    price_numeric=price_numeric,
+                    bedrooms=beds,
+                    bathrooms=baths,
+                    property_type=row.get('type', row.get('property_type', '')),
+                    features=row.get('features', ''),
+                    description=row.get('description', ''),
+                    status='available'
+                )
+                db.session.add(listing)
+                added += 1
+            except Exception as row_err:
+                errors.append(f"Row {i}: {str(row_err)}")
+                continue
+
+        db.session.commit()
+        print(f"✅ CSV upload: {added} listings added for agency {agency_id}")
+        return jsonify({
+            "success": True,
+            "added": added,
+            "errors": errors,
+            "message": f"{added} listings imported successfully"
+        })
+    except Exception as e:
+        print(f"❌ CSV upload error: {e}")
+        db.session.rollback()
+        return jsonify({"error": f"Upload failed: {str(e)}"}), 500
+
+
+@app.route("/toggle-listing-status/<int:listing_id>", methods=["POST"])
+def toggle_listing_status(listing_id):
+    """Toggle listing between available / sold / pending"""
+    try:
+        listing = db.session.get(Listing, listing_id)
+        if not listing:
+            return jsonify({"error": "Listing not found"}), 404
+        data = request.get_json(force=True)
+        new_status = data.get("status", "available")
+        if new_status not in ['available', 'sold', 'pending']:
+            return jsonify({"error": "Invalid status"}), 400
+        listing.status = new_status
+        db.session.commit()
+        print(f"✅ Listing {listing_id} → {new_status}")
+        return jsonify({"success": True, "status": new_status})
+    except Exception as e:
+        return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/delete-listing/<int:listing_id>", methods=["DELETE"])
+def delete_listing(listing_id):
+    """Delete a listing"""
+    try:
+        listing = db.session.get(Listing, listing_id)
+        if not listing:
+            return jsonify({"error": "Listing not found"}), 404
+        db.session.delete(listing)
+        db.session.commit()
+        print(f"🗑️ Listing deleted: ID {listing_id}")
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": "Failed to delete"}), 500
+
+
+@app.route("/delete-all-listings/<int:agency_id>", methods=["DELETE"])
+def delete_all_listings(agency_id):
+    """Delete all listings for an agency"""
+    try:
+        count = Listing.query.filter_by(agency_id=agency_id).delete()
+        db.session.commit()
+        print(f"🗑️ Deleted {count} listings for agency {agency_id}")
+        return jsonify({"success": True, "deleted": count})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to delete listings"}), 500
+
+
+@app.route("/get-listings/<int:agency_id>")
+def get_listings_api(agency_id):
+    """API endpoint to get listings as JSON"""
+    try:
+        status_filter = request.args.get('status', 'all')
+        query = Listing.query.filter_by(agency_id=agency_id)
+        if status_filter != 'all':
+            query = query.filter_by(status=status_filter)
+        all_listings = query.order_by(Listing.price_numeric.asc()).all()
+        return jsonify([{
+            "id": l.id, "title": l.title, "location": l.location,
+            "price": l.price_raw, "price_numeric": l.price_numeric,
+            "bedrooms": l.bedrooms, "bathrooms": l.bathrooms,
+            "type": l.property_type, "features": l.features,
+            "description": l.description, "status": l.status
+        } for l in all_listings])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1068,6 +1299,9 @@ def chat():
         agency = db.session.get(Agency, agency_id)
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
+
+        # ── Get listings context for this agency ──
+        listings_context = get_listings_context(agency_id)
 
         system_prompt = f"""You are {agency.assistant_name}, a real estate consultant at {agency.name}.
 
@@ -1107,8 +1341,6 @@ APPOINTMENT SCHEDULING:
 - Available slots: 10:00 AM, 12:00 PM, 2:00 PM, 4:00 PM, 6:00 PM
 - Ask preferred day first, then time slot
 - Confirm the booking: "You're booked for [Day] at [Time]. Confirmation will be sent to your email."
-- Example: "When would you like to come in for a viewing - any day Monday to Saturday works?"
-- After they choose: "We have slots at 10 AM, 12 PM, 2 PM, 4 PM or 6 PM - which works best?"
 
 IMPORTANT FOR CONTACT STEP:
 - Always ask the contact preference question before ending
@@ -1127,7 +1359,7 @@ DECISION SUPPORT (when visitor seems stuck):
 - Readiness: "On a scale of 1-10, how ready do you feel to move forward?"
 - Choice: "If you had to pick just one - location or size - which matters more?"
 - Future: "A year from now, would you regret waiting or regret acting?"
-
+{listings_context}
 Respond naturally in plain text only:"""
 
         if session_key not in conversation_memory:
@@ -1158,18 +1390,16 @@ Respond naturally in plain text only:"""
 
         lead_data = extract_lead_data(history)
 
-        # Check for appointment booking in conversation
+        # Auto-appointment booking
         appt_data = extract_appointment_data(history)
         if (appt_data['requested'] and appt_data['day'] and appt_data['time']
                 and lead_data.get('email')):
-            # Check if appointment already exists for this email + day + time
             existing_appt = Appointment.query.filter_by(
                 agency_id=agency_id,
                 customer_email=lead_data['email'],
                 appointment_date=appt_data['day'],
                 appointment_time=appt_data['time']
             ).first()
-
             if not existing_appt:
                 try:
                     new_appt = Appointment(
@@ -1411,35 +1641,27 @@ with app.app_context():
         if 'intent_score' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN intent_score INTEGER DEFAULT 1;"))
             db.session.commit()
-            print("✅ Migration: intent_score added")
         if 'whatsapp_number' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN whatsapp_number VARCHAR(50);"))
             db.session.commit()
-            print("✅ Migration: whatsapp_number added")
         if 'contact_preference' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN contact_preference VARCHAR(20) DEFAULT 'email';"))
             db.session.commit()
-            print("✅ Migration: contact_preference added")
         if 'follow_up_1_sent' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_1_sent INTEGER DEFAULT 0;"))
             db.session.commit()
-            print("✅ Migration: follow_up_1_sent added")
         if 'follow_up_7_sent' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN follow_up_7_sent INTEGER DEFAULT 0;"))
             db.session.commit()
-            print("✅ Migration: follow_up_7_sent added")
         if 'webhook_url' not in agency_cols:
             db.session.execute(text("ALTER TABLE agency ADD COLUMN webhook_url VARCHAR(500);"))
             db.session.commit()
-            print("✅ Migration: webhook_url added")
         if 'lead_status' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN lead_status VARCHAR(20) DEFAULT 'new';"))
             db.session.commit()
-            print("✅ Migration: lead_status added")
         if 'notes' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN notes TEXT DEFAULT '[]';"))
             db.session.commit()
-            print("✅ Migration: notes added")
 
         print("✅ All migrations complete")
     except Exception as e:
