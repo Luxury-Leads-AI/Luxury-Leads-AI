@@ -88,10 +88,6 @@ def clean_whatsapp_number(number):
 
 
 def get_listings_context(agency_id):
-    """
-    Build a listings context string to inject into the AI system prompt.
-    Returns empty string if no listings exist.
-    """
     try:
         listings = Listing.query.filter_by(
             agency_id=agency_id,
@@ -735,20 +731,19 @@ class Appointment(db.Model):
 
 
 class Listing(db.Model):
-    """PHASE 2D: Property listings model"""
     id = db.Column(db.Integer, primary_key=True)
     agency_id = db.Column(db.Integer, nullable=False)
     title = db.Column(db.String(200), nullable=False)
     location = db.Column(db.String(200))
-    price_raw = db.Column(db.String(100))           # Raw string e.g. "$8,500,000"
-    price = db.Column(db.Float, nullable=True)       # Numeric for sorting/filtering
-    price_numeric = db.Column(db.Float, nullable=True)  # Same as price, for clarity
+    price_raw = db.Column(db.String(100))
+    price = db.Column(db.Float, nullable=True)
+    price_numeric = db.Column(db.Float, nullable=True)
     bedrooms = db.Column(db.Integer, nullable=True)
     bathrooms = db.Column(db.Integer, nullable=True)
-    property_type = db.Column(db.String(50))         # villa, condo, apartment, etc.
-    features = db.Column(db.String(500))             # Pool, Ocean View, Gym
+    property_type = db.Column(db.String(50))
+    features = db.Column(db.String(500))
     description = db.Column(db.Text)
-    status = db.Column(db.String(20), default='available')  # available/sold/pending
+    status = db.Column(db.String(20), default='available')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
 
 
@@ -1072,13 +1067,10 @@ def get_appointments_count(agency_id):
 # ─────────────────────────────────────────────────────
 
 def parse_price(price_str):
-    """Convert price string to float for sorting/filtering"""
     if not price_str:
         return None
     try:
-        # Remove $, commas, spaces
         clean = re.sub(r'[\$,\s]', '', str(price_str))
-        # Handle M/K suffixes
         if clean.lower().endswith('m'):
             return float(clean[:-1]) * 1_000_000
         elif clean.lower().endswith('k'):
@@ -1090,7 +1082,6 @@ def parse_price(price_str):
 
 @app.route("/listings/<int:agency_id>")
 def listings(agency_id):
-    """Listings management page"""
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
@@ -1102,7 +1093,6 @@ def listings(agency_id):
 
 @app.route("/add-listing/<int:agency_id>", methods=["POST"])
 def add_listing(agency_id):
-    """Add a single listing manually"""
     try:
         agency = db.session.get(Agency, agency_id)
         if not agency:
@@ -1135,37 +1125,28 @@ def add_listing(agency_id):
 
 @app.route("/upload-listings/<int:agency_id>", methods=["POST"])
 def upload_listings(agency_id):
-    """Upload listings via CSV file"""
     try:
         agency = db.session.get(Agency, agency_id)
         if not agency:
             return jsonify({"error": "Agency not found"}), 404
-
         if 'file' not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
-
         file = request.files['file']
         if not file.filename.endswith('.csv'):
             return jsonify({"error": "Only CSV files are supported"}), 400
-
-        content = file.read().decode('utf-8-sig')  # utf-8-sig handles BOM
+        content = file.read().decode('utf-8-sig')
         reader = csv.DictReader(StringIO(content))
-
         added = 0
         errors = []
-
         for i, row in enumerate(reader, 1):
             try:
-                # Normalize keys (lowercase, strip spaces)
                 row = {k.lower().strip(): v.strip() for k, v in row.items() if k}
                 title = row.get('title', '').strip()
                 if not title:
                     errors.append(f"Row {i}: Missing title, skipped")
                     continue
-
                 price_str = row.get('price', '')
                 price_numeric = parse_price(price_str)
-
                 beds = None
                 baths = None
                 try:
@@ -1178,7 +1159,6 @@ def upload_listings(agency_id):
                         baths = int(float(row['bathrooms']))
                 except:
                     pass
-
                 listing = Listing(
                     agency_id=agency_id,
                     title=title,
@@ -1198,12 +1178,10 @@ def upload_listings(agency_id):
             except Exception as row_err:
                 errors.append(f"Row {i}: {str(row_err)}")
                 continue
-
         db.session.commit()
         print(f"✅ CSV upload: {added} listings added for agency {agency_id}")
         return jsonify({
-            "success": True,
-            "added": added,
+            "success": True, "added": added,
             "errors": errors,
             "message": f"{added} listings imported successfully"
         })
@@ -1215,7 +1193,6 @@ def upload_listings(agency_id):
 
 @app.route("/toggle-listing-status/<int:listing_id>", methods=["POST"])
 def toggle_listing_status(listing_id):
-    """Toggle listing between available / sold / pending"""
     try:
         listing = db.session.get(Listing, listing_id)
         if not listing:
@@ -1226,7 +1203,6 @@ def toggle_listing_status(listing_id):
             return jsonify({"error": "Invalid status"}), 400
         listing.status = new_status
         db.session.commit()
-        print(f"✅ Listing {listing_id} → {new_status}")
         return jsonify({"success": True, "status": new_status})
     except Exception as e:
         return jsonify({"error": "Failed to update"}), 500
@@ -1234,14 +1210,12 @@ def toggle_listing_status(listing_id):
 
 @app.route("/delete-listing/<int:listing_id>", methods=["DELETE"])
 def delete_listing(listing_id):
-    """Delete a listing"""
     try:
         listing = db.session.get(Listing, listing_id)
         if not listing:
             return jsonify({"error": "Listing not found"}), 404
         db.session.delete(listing)
         db.session.commit()
-        print(f"🗑️ Listing deleted: ID {listing_id}")
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": "Failed to delete"}), 500
@@ -1249,11 +1223,9 @@ def delete_listing(listing_id):
 
 @app.route("/delete-all-listings/<int:agency_id>", methods=["DELETE"])
 def delete_all_listings(agency_id):
-    """Delete all listings for an agency"""
     try:
         count = Listing.query.filter_by(agency_id=agency_id).delete()
         db.session.commit()
-        print(f"🗑️ Deleted {count} listings for agency {agency_id}")
         return jsonify({"success": True, "deleted": count})
     except Exception as e:
         db.session.rollback()
@@ -1262,7 +1234,6 @@ def delete_all_listings(agency_id):
 
 @app.route("/get-listings/<int:agency_id>")
 def get_listings_api(agency_id):
-    """API endpoint to get listings as JSON"""
     try:
         status_filter = request.args.get('status', 'all')
         query = Listing.query.filter_by(agency_id=agency_id)
@@ -1300,7 +1271,6 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
-        # ── Get listings context for this agency ──
         listings_context = get_listings_context(agency_id)
 
         system_prompt = f"""You are {agency.assistant_name}, a real estate consultant at {agency.name}.
@@ -1374,11 +1344,29 @@ DECISION SUPPORT (when visitor seems stuck):
 - Readiness: "On a scale of 1-10, how ready do you feel to move forward?"
 - Choice: "If you had to pick just one - location or size - which matters more?"
 - Future: "A year from now, would you regret waiting or regret acting?"
-  Respond naturally in plain text only:"""
 
+Respond naturally in plain text only:"""
+
+        # ─── FIX 1: Session isolation - detect new customer by different email ───
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
             print(f"🆕 New session started: {session_key}")
+        else:
+            existing_history = conversation_memory[session_key]
+            existing_emails = re.findall(
+                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+                " ".join([m['content'] for m in existing_history if m['role'] == 'user']),
+                re.IGNORECASE
+            )
+            new_email_in_msg = re.findall(
+                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+                user_message, re.IGNORECASE
+            )
+            if (existing_emails and new_email_in_msg
+                    and new_email_in_msg[0].lower() not in [e.lower() for e in existing_emails]):
+                conversation_memory[session_key] = []
+                print(f"🔄 New customer detected (different email) - session reset: {session_key}")
+
         session_timestamps[session_key] = datetime.utcnow()
         history = conversation_memory[session_key]
         history.append({"role": "user", "content": user_message})
@@ -1404,10 +1392,13 @@ DECISION SUPPORT (when visitor seems stuck):
 
         lead_data = extract_lead_data(history)
 
-        # Auto-appointment booking
+        # ─── FIX 2: Auto-appointment requires name + email + day + time ───
         appt_data = extract_appointment_data(history)
-        if (appt_data['requested'] and appt_data['day'] and appt_data['time']
-                and lead_data.get('email')):
+        if (appt_data['requested']
+                and appt_data['day']
+                and appt_data['time']
+                and lead_data.get('email')
+                and lead_data.get('name')):  # name required - prevents wrong customer booking
             existing_appt = Appointment.query.filter_by(
                 agency_id=agency_id,
                 customer_email=lead_data['email'],
@@ -1418,7 +1409,7 @@ DECISION SUPPORT (when visitor seems stuck):
                 try:
                     new_appt = Appointment(
                         agency_id=agency_id,
-                        customer_name=lead_data.get('name') or 'Guest',
+                        customer_name=lead_data.get('name'),
                         customer_email=lead_data['email'],
                         appointment_date=appt_data['day'],
                         appointment_time=appt_data['time'],
@@ -1427,7 +1418,7 @@ DECISION SUPPORT (when visitor seems stuck):
                     )
                     db.session.add(new_appt)
                     db.session.commit()
-                    print(f"✅ Appointment auto-booked: {appt_data['day']} at {appt_data['time']}")
+                    print(f"✅ Appointment auto-booked: {new_appt.customer_name} | {appt_data['day']} at {appt_data['time']}")
                     send_appointment_confirmation(agency, new_appt)
                 except Exception as appt_err:
                     print(f"⚠️ Auto-appointment error: {appt_err}")
