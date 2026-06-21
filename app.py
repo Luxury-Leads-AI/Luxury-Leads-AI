@@ -1355,25 +1355,28 @@ DECISION SUPPORT (when visitor seems stuck):
 
 Respond naturally in plain text only:"""
 
-        # ─── FIX 1: Session isolation - detect new customer by different email ───
+        # ─── Session management: new session or continue existing ───
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
             print(f"🆕 New session started: {session_key}")
         else:
             existing_history = conversation_memory[session_key]
-            existing_emails = re.findall(
-                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-                " ".join([m['content'] for m in existing_history if m['role'] == 'user']),
-                re.IGNORECASE
-            )
-            new_email_in_msg = re.findall(
-                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-                user_message, re.IGNORECASE
-            )
-            if (existing_emails and new_email_in_msg
-                    and new_email_in_msg[0].lower() not in [e.lower() for e in existing_emails]):
-                conversation_memory[session_key] = []
-                print(f"🔄 New customer detected (different email) - session reset: {session_key}")
+            # Only reset if session is SHORT (≤2 messages = still at greeting stage)
+            # Never reset a mid-conversation session - that breaks active chats
+            if len(existing_history) <= 2:
+                existing_emails = re.findall(
+                    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+                    " ".join([m['content'] for m in existing_history if m['role'] == 'user']),
+                    re.IGNORECASE
+                )
+                new_email_in_msg = re.findall(
+                    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+                    user_message, re.IGNORECASE
+                )
+                if (existing_emails and new_email_in_msg
+                        and new_email_in_msg[0].lower() not in [e.lower() for e in existing_emails]):
+                    conversation_memory[session_key] = []
+                    print(f"🔄 New customer detected (early stage) - session reset: {session_key}")
 
         session_timestamps[session_key] = datetime.utcnow()
         history = conversation_memory[session_key]
