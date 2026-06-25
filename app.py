@@ -1355,28 +1355,39 @@ DECISION SUPPORT (when visitor seems stuck):
 
 Respond naturally in plain text only:"""
 
-        # ─── Session management: new session or continue existing ───
+        # ─── Session management ───
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
             print(f"🆕 New session started: {session_key}")
         else:
             existing_history = conversation_memory[session_key]
-            # Only reset if session is SHORT (≤2 messages = still at greeting stage)
-            # Never reset a mid-conversation session - that breaks active chats
-            if len(existing_history) <= 2:
+            # Check if new message contains an email
+            new_email_in_msg = re.findall(
+                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+                user_message, re.IGNORECASE
+            )
+            if new_email_in_msg:
+                # Get email already in this session's history
                 existing_emails = re.findall(
                     r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
                     " ".join([m['content'] for m in existing_history if m['role'] == 'user']),
                     re.IGNORECASE
                 )
-                new_email_in_msg = re.findall(
-                    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-                    user_message, re.IGNORECASE
-                )
-                if (existing_emails and new_email_in_msg
-                        and new_email_in_msg[0].lower() not in [e.lower() for e in existing_emails]):
-                    conversation_memory[session_key] = []
-                    print(f"🔄 New customer detected (early stage) - session reset: {session_key}")
+                incoming_email = new_email_in_msg[0].lower()
+                known_emails = [e.lower() for e in existing_emails]
+
+                # If incoming email is different from ALL emails in session history
+                # AND a lead exists in DB for the existing session email → new customer
+                if existing_emails and incoming_email not in known_emails:
+                    existing_lead_in_db = Lead.query.filter_by(
+                        agency_id=agency_id,
+                        email=existing_emails[0].lower()
+                    ).first()
+                    if existing_lead_in_db:
+                        # Previous customer's lead was saved → safe to reset for new customer
+                        conversation_memory[session_key] = []
+                        conversation_memory.pop(f"appt_booked_{session_key}", None)
+                        print(f"🔄 New customer after saved lead - session reset: {session_key}")
 
         session_timestamps[session_key] = datetime.utcnow()
         history = conversation_memory[session_key]
@@ -1403,13 +1414,18 @@ Respond naturally in plain text only:"""
 
         lead_data = extract_lead_data(history)
 
-        # ─── FIX 2: Auto-appointment requires name + email + day + time ───
+        # ─── Auto-appointment: requires name + email + day + time ───
+        # Only book ONE appointment per session (prevents duplicates from continued chat)
         appt_data = extract_appointment_data(history)
-        if (appt_data['requested']
+        session_appt_key = f"appt_booked_{session_key}"
+        already_booked_this_session = conversation_memory.get(session_appt_key, False)
+
+        if (not already_booked_this_session
+                and appt_data['requested']
                 and appt_data['day']
                 and appt_data['time']
                 and lead_data.get('email')
-                and lead_data.get('name')):  # name required - prevents wrong customer booking
+                and lead_data.get('name')):
             existing_appt = Appointment.query.filter_by(
                 agency_id=agency_id,
                 customer_email=lead_data['email'],
@@ -1429,11 +1445,14 @@ Respond naturally in plain text only:"""
                     )
                     db.session.add(new_appt)
                     db.session.commit()
+                    conversation_memory[session_appt_key] = True  # ← mark as booked
                     print(f"✅ Appointment auto-booked: {new_appt.customer_name} | {appt_data['day']} at {appt_data['time']}")
                     send_appointment_confirmation(agency, new_appt)
                 except Exception as appt_err:
                     print(f"⚠️ Auto-appointment error: {appt_err}")
                     db.session.rollback()
+            else:
+                conversation_memory[session_appt_key] = True  # existing appt found, mark done
 
         if is_lead_qualified(lead_data, history):
             try:
