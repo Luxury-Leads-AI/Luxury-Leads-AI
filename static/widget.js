@@ -2,6 +2,10 @@
   const agencyId = document.currentScript.getAttribute("data-agency");
   const BASE_URL = "https://luxury-leads-ai.onrender.com";
 
+  // ── UNIQUE SESSION ID - generated fresh on every page load ──
+  // Guarantees each visitor/visit gets an isolated conversation
+  const sessionId = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+
   let chatOpened = false;
   let proactiveShown = false;
   let messagesExchanged = 0;
@@ -37,17 +41,17 @@
       z-index: 9999;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     `;
-    
+
     button.onmouseenter = () => {
       button.style.transform = "scale(1.1)";
       button.style.boxShadow = "0 6px 16px rgba(37, 211, 102, 0.5), 0 12px 32px rgba(0,0,0,0.2)";
     };
-    
+
     button.onmouseleave = () => {
       button.style.transform = "scale(1)";
       button.style.boxShadow = "0 4px 12px rgba(37, 211, 102, 0.4), 0 8px 24px rgba(0,0,0,0.15)";
     };
-    
+
     document.body.appendChild(button);
 
     // ---------- PROACTIVE BUBBLE (WhatsApp Style) ----------
@@ -69,7 +73,7 @@
       cursor: pointer;
       animation: slideInRight 0.3s ease-out;
     `;
-    
+
     const closeProactive = document.createElement("span");
     closeProactive.innerHTML = "✕";
     closeProactive.style = `
@@ -81,26 +85,26 @@
       font-size: 18px;
       font-weight: 300;
     `;
-    
+
     closeProactive.onclick = (e) => {
       e.stopPropagation();
       proactiveBubble.style.display = "none";
       proactiveShown = true;
     };
-    
+
     proactiveBubble.appendChild(closeProactive);
-    
+
     const proactiveText = document.createElement("div");
     proactiveText.style = "margin-top: 4px;";
     proactiveBubble.appendChild(proactiveText);
-    
+
     proactiveBubble.onclick = () => {
       proactiveBubble.style.display = "none";
       chatBox.style.display = "flex";
       chatOpened = true;
       input.focus();
     };
-    
+
     document.body.appendChild(proactiveBubble);
 
     // ---------- CHAT BOX (WhatsApp Dark Theme) ----------
@@ -240,7 +244,6 @@
     const closeBtn = chatBox.querySelector("#chat-close");
     const typingIndicator = chatBox.querySelector("#typing-indicator");
 
-    // Hover effect for send button
     sendButton.onmouseenter = () => {
       sendButton.style.transform = "scale(1.05)";
       sendButton.style.boxShadow = "0 4px 8px rgba(37, 211, 102, 0.4)";
@@ -250,75 +253,35 @@
       sendButton.style.boxShadow = "0 2px 4px rgba(37, 211, 102, 0.3)";
     };
 
-    // Add CSS animations
     const style = document.createElement('style');
     style.textContent = `
       @keyframes slideInRight {
-        from {
-          transform: translateX(100px);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
+        from { transform: translateX(100px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
       }
-      
       @keyframes typing {
-        0%, 60%, 100% {
-          transform: translateY(0);
-          opacity: 0.4;
-        }
-        30% {
-          transform: translateY(-8px);
-          opacity: 1;
-        }
+        0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+        30% { transform: translateY(-8px); opacity: 1; }
       }
-      
       @keyframes messageIn {
-        from {
-          transform: scale(0.9);
-          opacity: 0;
-        }
-        to {
-          transform: scale(1);
-          opacity: 1;
-        }
+        from { transform: scale(0.9); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
       }
-      
-      #chat-messages::-webkit-scrollbar {
-        width: 6px;
-      }
-      
-      #chat-messages::-webkit-scrollbar-track {
-        background: #0b141a;
-      }
-      
-      #chat-messages::-webkit-scrollbar-thumb {
-        background: #374045;
-        border-radius: 3px;
-      }
-      
-      #chat-messages::-webkit-scrollbar-thumb:hover {
-        background: #4a5356;
-      }
+      #chat-messages::-webkit-scrollbar { width: 6px; }
+      #chat-messages::-webkit-scrollbar-track { background: #0b141a; }
+      #chat-messages::-webkit-scrollbar-thumb { background: #374045; border-radius: 3px; }
+      #chat-messages::-webkit-scrollbar-thumb:hover { background: #4a5356; }
     `;
     document.head.appendChild(style);
 
+    // ── NO AUTO-GREETING: chat opens silently, client speaks first ──
     button.onclick = () => {
       chatBox.style.display = "flex";
       chatOpened = true;
       proactiveBubble.style.display = "none";
       input.focus();
-      
-      // Send initial greeting
-      if (messagesExchanged === 0) {
-        setTimeout(() => {
-          addBubble(`Hi! What brings you here today?`, "ai");
-        }, 600);
-      }
     };
-    
+
     closeBtn.onclick = () => {
       chatBox.style.display = "none";
       chatOpened = false;
@@ -350,18 +313,6 @@
         position: relative;
       `;
 
-      // WhatsApp-style timestamp
-      const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-      const timestamp = document.createElement("span");
-      timestamp.innerText = time;
-      timestamp.style = `
-        font-size: 10px;
-        color: #8696a0;
-        margin-left: 8px;
-        align-self: flex-end;
-        margin-top: 2px;
-      `;
-
       wrapper.appendChild(bubble);
       messages.appendChild(wrapper);
       messages.scrollTop = messages.scrollHeight;
@@ -382,7 +333,11 @@
         const response = await fetch(`${BASE_URL}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, agency_id: agencyId })
+          body: JSON.stringify({
+            message: text,
+            agency_id: agencyId,
+            session_id: sessionId   // ← unique per page load
+          })
         });
 
         let data;
@@ -416,9 +371,8 @@
       sendMessage(text);
     };
 
-    // ---------- BEHAVIORAL TRIGGERS ----------
+    // ---------- BEHAVIORAL TRIGGERS (unchanged) ----------
 
-    // Warm Greeter (5 seconds)
     setTimeout(() => {
       if (!chatOpened && !proactiveShown) {
         proactiveText.innerHTML = `<strong>👋 Hi there!</strong><br>Need help finding a property?`;
@@ -427,7 +381,6 @@
       }
     }, 5000);
 
-    // Exit Intent
     let exitIntentShown = false;
     document.addEventListener('mouseleave', (e) => {
       if (e.clientY < 10 && !chatOpened && !exitIntentShown && messagesExchanged === 0) {
@@ -439,7 +392,6 @@
       }
     });
 
-    // Return Visitor
     const hasVisitedBefore = localStorage.getItem('luxury_leads_visited');
     if (hasVisitedBefore && !chatOpened) {
       setTimeout(() => {
@@ -452,11 +404,9 @@
     }
     localStorage.setItem('luxury_leads_visited', 'true');
 
-    // Property Page
-    if (window.location.href.includes('/property') || 
+    if (window.location.href.includes('/property') ||
         window.location.href.includes('/listing') ||
         window.location.href.includes('/homes')) {
-      
       setTimeout(() => {
         if (!chatOpened && !proactiveShown) {
           proactiveText.innerHTML = `<strong>🏡 Interested in this property?</strong><br>I have details on schools & neighborhood!`;
@@ -466,11 +416,9 @@
       }, 12000);
     }
 
-    // Scroll Engagement (50%)
     let scrollTriggered = false;
     window.addEventListener('scroll', () => {
       const scrollPercent = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
-      
       if (scrollPercent > 50 && !chatOpened && !scrollTriggered && !proactiveShown) {
         proactiveText.innerHTML = `<strong>🔍 Finding what you need?</strong><br>I can help narrow down your search!`;
         proactiveBubble.style.display = "block";
@@ -479,7 +427,6 @@
       }
     });
 
-    // Time on Page (60 seconds)
     setTimeout(() => {
       if (!chatOpened && messagesExchanged === 0) {
         proactiveBubble.style.display = "none";

@@ -518,10 +518,10 @@ def extract_lead_data(conversation_history):
                 break
 
     budget_patterns = [
-        r"(\d+(?:\.\d+)?)\s*([MmKk])\s*(?:\$|dollars?)?",
-        r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
+        r"(\d+(?:\.\d+)?)\s*([MmKk])(?![a-zA-Z])\s*(?:\$|dollars?)?",   # M/K must not be part of a word (fixes "1 month")
+        r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand)?",
         r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*(?:\$|dollars?|usd|aed)?",
-        r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk]|million|thousand)?",
+        r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand)?",
     ]
     for pattern in budget_patterns:
         budget_match = re.search(pattern, full_conversation_user, re.IGNORECASE)
@@ -1261,10 +1261,15 @@ def chat():
         data = request.get_json(force=True)
         user_message = data.get("message", "").strip()
         agency_id = int(data.get("agency_id"))
-        visitor_ip = request.remote_addr or "unknown"
-        user_agent = request.headers.get('User-Agent', '')
-        session_hash = hashlib.md5(f"{visitor_ip}{user_agent}".encode()).hexdigest()[:12]
-        session_key = f"{agency_id}_{session_hash}"
+        # Prefer widget-generated session_id (unique per page load = perfect isolation)
+        widget_session_id = data.get("session_id")
+        if widget_session_id:
+            session_key = f"{agency_id}_{widget_session_id}"
+        else:
+            visitor_ip = request.remote_addr or "unknown"
+            user_agent = request.headers.get('User-Agent', '')
+            session_hash = hashlib.md5(f"{visitor_ip}{user_agent}".encode()).hexdigest()[:12]
+            session_key = f"{agency_id}_{session_hash}"
         if not user_message:
             return jsonify({"error": "Message required"}), 400
         agency = db.session.get(Agency, agency_id)
@@ -1276,69 +1281,52 @@ def chat():
         system_prompt = f"""You are {agency.assistant_name}, a real estate consultant at {agency.name}.
 {listings_context}
 
-PROPERTY RECOMMENDATION RULES - CRITICAL:
-- You HAVE real listings above. Use them actively in conversation.
-- The MOMENT a customer mentions budget AND location, check if you have a matching property.
-- If you have a match: mention it by name immediately. Example: "We actually have a property that fits perfectly - the Beverly Hills Mansion at $15M, 7 beds, with a pool, cinema and gym. Interested?"
-- If budget is close (within 20%): still mention it. Example: "We have something close - the Malibu Villa at $8.5M, slightly over but worth a look?"
-- If no match: say "We don't have anything in that exact range right now, but I can keep you in mind for new listings."
-- NEVER say "I'll find options and send them" - you have the listings RIGHT NOW. Show them!
-- Keep recommendations to 1-2 sentences. Then ask if they want more details.
+GOLDEN RULE - ONE QUESTION PER MESSAGE:
+- Never ask two questions in one response. Ever.
+- WRONG: "Interested in learning more? When are you hoping to move in?"
+- RIGHT: "Interested in learning more about it?"
+- Wait for their answer before asking the next thing.
 
-CRITICAL FORMATTING RULES - MUST FOLLOW:
-- Never use markdown: no **, no *, no _, no #, no bullet points with -, no numbered lists with 1. 2. 3.
-- Never use bold or italic formatting of any kind
-- Write in plain conversational text only
-- If listing options, separate with commas or "or" not bullet points
+CONVERSATION START - GET NAME FIRST:
+- When the client greets you or sends their first message, warmly ask who you're speaking with.
+- Example: Client says "Hi" → You say "Hello! May I know who I'm speaking with?"
+- Client gives name → "Nice to meet you, [Name]! What's on your mind today?"
+- Use their name naturally throughout the conversation.
 
-GREETING RULES:
-- Never start with the same greeting twice in a conversation
-- Vary your opening: "Hi there!", "Hey!", "Hello!", "Welcome!"
-- After the first message, never use opening greetings again
-- Do not say "Perfect", "Great", "Nice", "Awesome" more than once per conversation
+PACE - LET THE CLIENT LEAD:
+- The client came to ask questions. Answer them patiently and helpfully.
+- Do not rush to collect information. Help them think and decide first.
+- Only after they seem satisfied with a property choice, collect: email, then contact preference.
+- Never interrogate. One relaxed question at a time.
 
-PERSONALITY:
-- Warm and natural, like a knowledgeable friend
-- Short responses: 1-2 sentences only
-- Ask ONE question at a time
-- Use casual language and contractions
-- Acknowledge what they said before asking next question
+PROPERTY RECOMMENDATIONS:
+- When you know their budget or location, check listings above for a match.
+- If matched: mention it by name with price and key features in 1-2 sentences. Then ask ONE question: "Would you like to know more?"
+- If no match: "We don't have anything in that exact range right now, but I can keep an eye out and get back to you with options."
 
-CONVERSATION FLOW - COLLECT IN ORDER:
-1. Property type (villa, condo, apartment, etc.)
-2. Location preference
-3. Budget → recommend matching listing immediately if available
-4. Timeline ("When are you looking to move?")
-5. Name ("What's your name?") ← MANDATORY - never skip this
-6. Email
-7. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
-8. If WhatsApp or phone chosen: ask for the number
-9. If user declines or email only: thank and wrap up
+VIEWING FLOW:
+- If client selects a property FROM THE LISTINGS and shows interest, offer a viewing: "Would you like to see it in person?"
+- Viewing days: Monday to Saturday (Sunday closed). Slots: 10:00 AM, 12:00 PM, 2:00 PM, 4:00 PM, 6:00 PM.
+- Ask day first. Then time. Then email if you don't have it yet. Then confirm: "You're booked for [Day] at [Time], [Name]. Confirmation will go to your email."
+- If client wants to view a property NOT in the listings: say "Unfortunately we don't currently have a property matching your requirements. I'll find suitable options and get back to you to plan a viewing." Do NOT offer day/time slots in this case. Just collect their email and contact preference so the agency can follow up.
 
-CRITICAL NAME RULE:
-- You MUST ask for the customer's name before asking for email or contact preference
-- Even if customer asks to schedule a viewing, collect name BEFORE confirming booking
-- Never say "confirmation will be sent to your email" until you have their name AND email
-- Correct order: Day → Time → "What's your name?" → "What's your email?" → Confirm booking
-- WRONG: "You're booked! What's the best way to reach you?" (skipped name!)
-- RIGHT: "Tuesday 10 AM works! And what's your name so I can send the confirmation?"
+INFORMATION TO COLLECT (in natural order, one at a time):
+1. Name (at the very start)
+2. What they're looking for (property type, location, budget - through natural conversation)
+3. Email (after they're satisfied or a viewing is planned)
+4. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
+5. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
 
-LISTING RECOMMENDATION TIMING:
-- After customer gives budget (step 3): recommend matching listing immediately
-- Then continue collecting: timeline → name → email → contact pref
-- Example: "$15M Beverly Hills" → "We have the Beverly Hills Mansion at $15M, 7 beds, pool and cinema. Love the sound of that? When are you hoping to move in?"
+FORMATTING RULES:
+- Never use markdown: no **, no *, no _, no #, no bullets, no numbered lists
+- Plain conversational text only
+- Short responses: 1-2 sentences
+- Use contractions: "it's", "that's", "you're"
 
-APPOINTMENT SCHEDULING:
-- If customer asks to see a property, collect day and time THEN ask for name
-- Available days: Monday to Saturday (Sunday closed)
-- Available slots: 10:00 AM, 12:00 PM, 2:00 PM, 4:00 PM, 6:00 PM
-- Flow: "What day works?" → "What time?" → "What's your name?" → "Your email?" → "Confirmed!"
-- Only say "You're booked" AFTER you have their name and email
-
-IMPORTANT FOR CONTACT STEP:
-- Always ask the contact preference question before ending
-- If they say email only, that is fine
-- If they decline number, thank them and end
+TONE:
+- Warm, natural, like a knowledgeable friend
+- Vary your acknowledgements - don't repeat "Perfect", "Great", "Awesome" more than once each
+- Acknowledge what they said before responding
 
 HANDLING HESITATION:
 - Price concern: "I hear you - even a rough range helps. What feels comfortable?"
@@ -1348,46 +1336,12 @@ HANDLING HESITATION:
 LANGUAGE:
 - Detect the visitor's language and respond in that same language throughout
 
-DECISION SUPPORT (when visitor seems stuck):
-- Readiness: "On a scale of 1-10, how ready do you feel to move forward?"
-- Choice: "If you had to pick just one - location or size - which matters more?"
-- Future: "A year from now, would you regret waiting or regret acting?"
-
 Respond naturally in plain text only:"""
 
-        # ─── Session management ───
+    # ─── Session management (widget session_id guarantees isolation) ───
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
             print(f"🆕 New session started: {session_key}")
-        else:
-            existing_history = conversation_memory[session_key]
-            # Check if new message contains an email
-            new_email_in_msg = re.findall(
-                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-                user_message, re.IGNORECASE
-            )
-            if new_email_in_msg:
-                # Get email already in this session's history
-                existing_emails = re.findall(
-                    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-                    " ".join([m['content'] for m in existing_history if m['role'] == 'user']),
-                    re.IGNORECASE
-                )
-                incoming_email = new_email_in_msg[0].lower()
-                known_emails = [e.lower() for e in existing_emails]
-
-                # If incoming email is different from ALL emails in session history
-                # AND a lead exists in DB for the existing session email → new customer
-                if existing_emails and incoming_email not in known_emails:
-                    existing_lead_in_db = Lead.query.filter_by(
-                        agency_id=agency_id,
-                        email=existing_emails[0].lower()
-                    ).first()
-                    if existing_lead_in_db:
-                        # Previous customer's lead was saved → safe to reset for new customer
-                        conversation_memory[session_key] = []
-                        conversation_memory.pop(f"appt_booked_{session_key}", None)
-                        print(f"🔄 New customer after saved lead - session reset: {session_key}")
 
         session_timestamps[session_key] = datetime.utcnow()
         history = conversation_memory[session_key]
