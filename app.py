@@ -622,11 +622,16 @@ def contact_step_completed(conversation_history):
 
 def detect_objection(user_message):
     user_message_lower = user_message.lower()
+
+    # If message contains a number/amount, user is GIVING information, not objecting
+    if re.search(r'\d', user_message):
+        return None
+
     objections = {
-        'price': ['expensive', 'too much', 'costly', 'afford', 'budget', 'high price', 'over budget'],
-        'timing': ['not ready', 'not sure', 'need time', 'thinking', 'maybe later', 'unsure'],
-        'indecision': ['torn', 'confused', 'cant decide', "can't decide", 'both', 'either'],
-        'trust': ['scam', 'legit', 'real', 'trust', 'safe', 'reliable']
+        'price': ['expensive', 'too much', 'costly', "can't afford", 'cannot afford', 'high price', 'over budget', 'out of my budget'],
+        'timing': ['not ready', 'not sure', 'need time', 'thinking about it', 'maybe later', 'unsure'],
+        'indecision': ['torn', 'confused', 'cant decide', "can't decide"],
+        'trust': ['scam', 'legit', 'is this real', 'can i trust', 'safe', 'reliable']
     }
     for objection_type, keywords in objections.items():
         if any(keyword in user_message_lower for keyword in keywords):
@@ -1310,12 +1315,20 @@ VIEWING FLOW:
 - Ask day first. Then time. Then email if you don't have it yet. Then confirm: "You're booked for [Day] at [Time], [Name]. Confirmation will go to your email."
 - If client wants to view a property NOT in the listings: say "Unfortunately we don't currently have a property matching your requirements. I'll find suitable options and get back to you to plan a viewing." Do NOT offer day/time slots in this case. Just collect their email and contact preference so the agency can follow up.
 
-INFORMATION TO COLLECT (in natural order, one at a time):
+INFORMATION TO COLLECT (strictly one at a time, in this order):
 1. Name (at the very start)
-2. What they're looking for (property type, location, budget - through natural conversation)
-3. Email (after they're satisfied or a viewing is planned)
-4. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
-5. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
+2. Property type ("What kind of property are you looking for?")
+3. Location ONLY ("Any particular area in mind?") - do NOT mention budget yet
+4. Budget ONLY (after location is answered: "And what budget are you working with?")
+5. Email (after they're satisfied or a viewing is planned)
+6. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
+7. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
+
+NEVER combine location and budget in one question.
+WRONG: "Could you share the location and your budget?"
+RIGHT: "Any particular area in mind?" → wait → "And what's your budget?"
+
+If customer volunteers multiple details in one message (e.g. "Miami, 10K per month"), accept ALL of it gracefully - acknowledge and move to the NEXT missing item. Never re-ask something they already told you.
 
 FORMATTING RULES:
 - Never use markdown: no **, no *, no _, no #, no bullets, no numbered lists
