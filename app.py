@@ -12,21 +12,11 @@ import os
 import re
 import json
 import csv
-import smtplib
-from email.mime.text import MIMEText
 from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
 import pytz
 from collections import defaultdict
-
-# SendGrid email imports
-try:
-    from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail
-    SENDGRID_AVAILABLE = True
-except ImportError:
-    SENDGRID_AVAILABLE = False
-    print("⚠️ SendGrid not installed")
+import httpx  # used for Brevo email API + webhooks
 
 # -------------------------
 # LOAD ENV VARIABLES
@@ -76,7 +66,6 @@ session_timestamps = {}
 # EMAIL CONFIG
 # -------------------------
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 
 def clean_whatsapp_number(number):
@@ -85,6 +74,40 @@ def clean_whatsapp_number(number):
     cleaned = re.sub(r'\D', '', number)
     cleaned = cleaned.lstrip('0')
     return cleaned if len(cleaned) >= 9 else None
+
+
+def send_email_brevo(to_email, subject, body):
+    """Central email sender via Brevo API. Returns True/False."""
+    BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+    if not BREVO_API_KEY:
+        print("⚠️ BREVO_API_KEY not set - email not sent")
+        return False
+    if not to_email:
+        return False
+    try:
+        response = httpx.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": BREVO_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "sender": {"name": "Luxury Leads AI", "email": SMTP_EMAIL},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "textContent": body
+            },
+            timeout=10
+        )
+        if response.status_code in (200, 201):
+            print(f"✅ EMAIL SENT via Brevo to: {to_email}")
+            return True
+        else:
+            print(f"⚠️ Brevo failed ({response.status_code}): {response.text[:200]}")
+            return False
+    except Exception as e:
+        print(f"⚠️ Brevo error: {e}")
+        return False
 
 
 def get_listings_context(agency_id):
@@ -168,26 +191,10 @@ https://luxury-leads-ai.onrender.com/owner-login
 Agency ID: {agency.id}
 Default Password: admin123
 """
-    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-    if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
-        try:
-            print(f"📧 Sending via SendGrid to: {agency.email}")
-            message = Mail(from_email=SMTP_EMAIL, to_emails=agency.email,
-                           subject=subject, plain_text_content=body)
-            sg = SendGridAPIClient(SENDGRID_API_KEY)
-            response = sg.send(message)
-            print(f"✅ EMAIL SENT via SendGrid (Status: {response.status_code})")
-            return True
-        except Exception as e:
-            print(f"⚠️ SendGrid failed: {e}")
-            return False
-    else:
-        print("⚠️ SendGrid not configured")
-        return False
+    return send_email_brevo(agency.email, subject, body)
 
 
 def send_appointment_confirmation(agency, appointment):
-    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     customer_subject = f"✅ Appointment Confirmed - {agency.name}"
     customer_body = f"""
 Dear {appointment.customer_name},
@@ -223,24 +230,9 @@ New Appointment Booked!
 View all appointments:
 https://luxury-leads-ai.onrender.com/appointments/{agency.id}
 """
-    if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
-        try:
-            if appointment.customer_email:
-                msg1 = Mail(from_email=SMTP_EMAIL, to_emails=appointment.customer_email,
-                            subject=customer_subject, plain_text_content=customer_body)
-                sg = SendGridAPIClient(SENDGRID_API_KEY)
-                sg.send(msg1)
-                print(f"✅ Appointment confirmation sent to: {appointment.customer_email}")
-            msg2 = Mail(from_email=SMTP_EMAIL, to_emails=agency.email,
-                        subject=agency_subject, plain_text_content=agency_body)
-            sg = SendGridAPIClient(SENDGRID_API_KEY)
-            sg.send(msg2)
-            print(f"✅ Appointment notification sent to agency: {agency.email}")
-            return True
-        except Exception as e:
-            print(f"⚠️ Appointment email failed: {e}")
-            return False
-    return False
+    sent_customer = send_email_brevo(appointment.customer_email, customer_subject, customer_body)
+    sent_agency = send_email_brevo(agency.email, agency_subject, agency_body)
+    return sent_customer or sent_agency
 
 
 def send_crm_webhook(agency, lead):
@@ -259,7 +251,6 @@ def send_crm_webhook(agency, lead):
                 "created_at": lead.created_at.isoformat() if lead.created_at else None
             }
         }
-        import httpx
         response = httpx.post(agency.webhook_url, json=payload, timeout=5)
         print(f"✅ Webhook sent (Status: {response.status_code})")
     except Exception as e:
@@ -315,19 +306,7 @@ Login to view: https://luxury-leads-ai.onrender.com/owner-login
     else:
         return False
 
-    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-    if SENDGRID_API_KEY and SENDGRID_AVAILABLE:
-        try:
-            message = Mail(from_email=SMTP_EMAIL, to_emails=agency.email,
-                           subject=subject, plain_text_content=body)
-            sg = SendGridAPIClient(SENDGRID_API_KEY)
-            response = sg.send(message)
-            print(f"✅ Follow-up Day {day} sent (Status: {response.status_code})")
-            return True
-        except Exception as e:
-            print(f"⚠️ Follow-up Day {day} failed: {e}")
-            return False
-    return False
+    return send_email_brevo(agency.email, subject, body)
 
 
 def process_pending_followups():
@@ -419,7 +398,8 @@ def extract_name_from_context(conversation_history):
         "what's your name", "what is your name", "whats your name",
         "your name?", "may i have your name", "can i get your name",
         "could i get your name", "mind sharing your name",
-        "first name", "tell me your name", "know your name"
+        "first name", "tell me your name", "know your name",
+        "who i'm speaking with", "who i am speaking with", "who's this"
     ]
     for i, msg in enumerate(conversation_history):
         if msg['role'] == 'assistant':
@@ -518,7 +498,7 @@ def extract_lead_data(conversation_history):
                 break
 
     budget_patterns = [
-        r"(\d+(?:\.\d+)?)\s*([MmKk])(?![a-zA-Z])\s*(?:\$|dollars?)?",   # M/K must not be part of a word (fixes "1 month")
+        r"(\d+(?:\.\d+)?)\s*([MmKk])(?![a-zA-Z])\s*(?:\$|dollars?)?",
         r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand)?",
         r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*(?:\$|dollars?|usd|aed)?",
         r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand)?",
@@ -623,7 +603,6 @@ def contact_step_completed(conversation_history):
 def detect_objection(user_message):
     user_message_lower = user_message.lower()
 
-    # If message contains a number/amount, user is GIVING information, not objecting
     if re.search(r'\d', user_message):
         return None
 
@@ -1266,7 +1245,6 @@ def chat():
         data = request.get_json(force=True)
         user_message = data.get("message", "").strip()
         agency_id = int(data.get("agency_id"))
-        # Prefer widget-generated session_id (unique per page load = perfect isolation)
         widget_session_id = data.get("session_id")
         if widget_session_id:
             session_key = f"{agency_id}_{widget_session_id}"
@@ -1351,7 +1329,6 @@ LANGUAGE:
 
 Respond naturally in plain text only:"""
 
-    # ─── Session management (widget session_id guarantees isolation) ───
         if session_key not in conversation_memory:
             conversation_memory[session_key] = []
             print(f"🆕 New session started: {session_key}")
@@ -1381,8 +1358,6 @@ Respond naturally in plain text only:"""
 
         lead_data = extract_lead_data(history)
 
-        # ─── Auto-appointment: requires name + email + day + time ───
-        # Only book ONE appointment per session (prevents duplicates from continued chat)
         appt_data = extract_appointment_data(history)
         session_appt_key = f"appt_booked_{session_key}"
         already_booked_this_session = conversation_memory.get(session_appt_key, False)
@@ -1412,14 +1387,14 @@ Respond naturally in plain text only:"""
                     )
                     db.session.add(new_appt)
                     db.session.commit()
-                    conversation_memory[session_appt_key] = True  # ← mark as booked
+                    conversation_memory[session_appt_key] = True
                     print(f"✅ Appointment auto-booked: {new_appt.customer_name} | {appt_data['day']} at {appt_data['time']}")
                     send_appointment_confirmation(agency, new_appt)
                 except Exception as appt_err:
                     print(f"⚠️ Auto-appointment error: {appt_err}")
                     db.session.rollback()
             else:
-                conversation_memory[session_appt_key] = True  # existing appt found, mark done
+                conversation_memory[session_appt_key] = True
 
         if is_lead_qualified(lead_data, history):
             try:
