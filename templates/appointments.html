@@ -334,7 +334,15 @@
       <div class="stat-value">{{ appointments|selectattr('status', 'equalto', 'cancelled')|list|length }}</div>
     </div>
   </div>
-
+<!-- SLOT CAPACITY SETTING -->
+  <div style="background:#1e293b; border:1px solid #334155; border-radius:12px; padding:16px 20px; margin-bottom:20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+    <span style="font-size:14px; color:#94a3b8; font-weight:600;">⚙️ Max viewings per time slot:</span>
+    <input type="number" id="slot-capacity" min="1" max="20" value="{{ agency.max_viewings_per_slot or 2 }}"
+      style="width:70px; padding:8px 10px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:14px; outline:none; text-align:center;">
+    <button onclick="saveCapacity()"
+      style="background:#667eea; color:white; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">Save</button>
+    <span style="font-size:12px; color:#64748b;">How many customers can book the same date & time. Full slots are automatically hidden from the AI.</span>
+  </div>
   <!-- FILTER -->
   <div class="filter-section">
     <div class="filter-tabs">
@@ -462,16 +470,8 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Day</label>
-          <select id="inp-day" class="form-select">
-            <option value="">Select day...</option>
-            <option>Monday</option>
-            <option>Tuesday</option>
-            <option>Wednesday</option>
-            <option>Thursday</option>
-            <option>Friday</option>
-            <option>Saturday</option>
-          </select>
+          <label class="form-label">Date</label>
+          <input type="date" id="inp-date" class="form-input" style="color-scheme: dark;">
         </div>
         <div class="form-group">
           <label class="form-label">Time Slot</label>
@@ -593,7 +593,7 @@
   function closeModal() {
     document.getElementById('modal-overlay').classList.remove('open');
     // Clear form
-    ['inp-name', 'inp-email', 'inp-day', 'inp-time', 'inp-property', 'inp-notes'].forEach(id => {
+    ['inp-name', 'inp-email', 'inp-date', 'inp-time', 'inp-property', 'inp-notes'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
@@ -606,10 +606,74 @@
   async function submitNewAppt() {
     const name = document.getElementById('inp-name').value.trim();
     const email = document.getElementById('inp-email').value.trim();
-    const day = document.getElementById('inp-day').value;
+    const dateIso = document.getElementById('inp-date').value;
     const time = document.getElementById('inp-time').value;
     const property = document.getElementById('inp-property').value.trim();
     const notes = document.getElementById('inp-notes').value.trim();
+
+    if (!name || !email || !dateIso || !time) {
+      alert('⚠️ Please fill in Name, Email, Date and Time.');
+      return;
+    }
+
+    // Block Sundays
+    const picked = new Date(dateIso + 'T12:00:00');
+    if (picked.getDay() === 0) {
+      alert('⚠️ Sundays are closed. Please pick another day.');
+      return;
+    }
+    // Block past dates
+    const today = new Date(); today.setHours(0,0,0,0);
+    if (picked < today) {
+      alert('⚠️ Please pick a future date.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/book-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agency_id: agencyId,
+          customer_name: name,
+          customer_email: email,
+          appointment_date_iso: dateIso,
+          appointment_time: time,
+          property_interest: property,
+          notes: notes
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        alert(`✅ Appointment booked!\n\nConfirmation emails sent to ${email} and your agency.`);
+        closeModal();
+        location.reload();
+      } else {
+        alert('❌ ' + (d.error || 'Failed to book'));
+      }
+    } catch(e) {
+      alert('❌ Network error');
+    }
+  }
+
+  async function saveCapacity() {
+    const capacity = document.getElementById('slot-capacity').value;
+    try {
+      const res = await fetch(`/update-slot-capacity/${agencyId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capacity: parseInt(capacity) })
+      });
+      const d = await res.json();
+      if (d.success) {
+        alert(`✅ Slot capacity set to ${d.capacity} viewings per slot`);
+      } else {
+        alert('❌ ' + (d.error || 'Failed to save'));
+      }
+    } catch(e) {
+      alert('❌ Network error');
+    }
+  }
 
     if (!name || !email || !day || !time) {
       alert('⚠️ Please fill in Name, Email, Day and Time.');
@@ -639,6 +703,7 @@
         alert('❌ Failed to book: ' + (d.error || 'Unknown error'));
       }
     } catch(e) {
+
       alert('❌ Network error');
     }
   }
