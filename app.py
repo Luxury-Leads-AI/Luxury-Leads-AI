@@ -479,6 +479,22 @@ def extract_name_from_context(conversation_history):
         'coconut', 'grove', 'hilton', 'santa', 'monica', 'myrtle',
         'asking', 'checking', 'getting', 'making', 'looking', 'trying'
     }
+
+    # ── METHOD 0: Language-agnostic — reply to AI's very first message ──
+    # Our system prompt always makes the AI ask for the name as its first
+    # response, regardless of language. So history[1]=assistant question,
+    # history[2]=user's name reply. This works in ANY language.
+    if (len(conversation_history) >= 3
+            and conversation_history[1]['role'] == 'assistant'
+            and conversation_history[2]['role'] == 'user'):
+        candidate_msg = conversation_history[2]['content']
+        cleaned = re.sub(r'[.,!?;:]', '', candidate_msg).strip()
+        tokens = cleaned.split()
+        for tok in reversed(tokens):
+            if re.match(r'^[A-Za-zÀ-ÖØ-öø-ÿ]{2,30}$', tok) and tok.lower() not in not_a_name:
+                print(f"✅ Name (first-turn, lang-agnostic): {tok.title()}")
+                return tok.title()
+
     name_question_patterns = [
         "what's your name", "what is your name", "whats your name",
         "your name?", "may i have your name", "can i get your name",
@@ -584,9 +600,9 @@ def extract_lead_data(conversation_history):
 
     budget_patterns = [
         r"(\d+(?:\.\d+)?)\s*([MmKk])(?![a-zA-Z])\s*(?:\$|dollars?)?",
-        r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand)?",
-        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore)\s*(?:\$|dollars?|usd|aed)?",
-        r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand)?",
+        r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand|mln|mio)?",
+        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore|mln|milionów|mio|millones|millionen)\s*(?:\$|dollars?|usd|aed|eur|pln)?",
+        r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand|mln)?",
     ]
     for pattern in budget_patterns:
         budget_match = re.search(pattern, full_conversation_user, re.IGNORECASE)
@@ -602,14 +618,34 @@ def extract_lead_data(conversation_history):
                 currency = 'USD'
             elif 'aed' in full_conversation_user.lower():
                 currency = 'AED'
+            if unit in ['mln', 'milionów', 'mio', 'millones', 'millionen']:
+                unit = 'million'
             lead_data['budget'] = f"{amount} {unit} {currency}".strip() if unit else f"{amount} {currency}".strip()
             print(f"✅ Budget: {lead_data['budget']}")
             break
+
+    # Fallback: budget implied by accepting a specific listing's price
+    if not lead_data['budget']:
+        affirmative_words = ['yes', 'sure', 'sounds good', 'interested', 'great',
+                              'ok', 'okay', 'definitely', 'absolutely', "let's",
+                              'perfect', 'love it', 'i like', 'oczywiście', 'tak']
+        for i, msg in enumerate(conversation_history):
+            if msg['role'] == 'assistant':
+                price_match = re.search(r'\$\s?[\d,]+(?:\.\d+)?', msg['content'])
+                if price_match and i + 1 < len(conversation_history):
+                    next_msg = conversation_history[i + 1]
+                    if next_msg['role'] == 'user':
+                        user_lower = next_msg['content'].lower()
+                        if any(w in user_lower for w in affirmative_words):
+                            lead_data['budget'] = price_match.group(0).replace('$', '').strip() + ' USD (selected property)'
+                            print(f"✅ Budget (implied from listing): {lead_data['budget']}")
+                            break
     return lead_data
 
 
 def extract_appointment_data(conversation_history):
-    """Scan USER messages only - prevents false matches from AI's availability offers."""
+    """Detects viewing intent via keywords OR an affirmative reply to the AI's
+    viewing offer. Day/time still extracted from USER messages only."""
     user_text = " ".join([
         msg['content'] for msg in conversation_history if msg['role'] == 'user'
     ]).lower()
@@ -622,6 +658,31 @@ def extract_appointment_data(conversation_history):
         'i would like to see', 'i want to see', 'visit the property', 'see it'
     ]
     appointment_data['requested'] = any(kw in user_text for kw in booking_keywords)
+
+    # Fallback: user simply said "yes/sure" to the AI's viewing offer
+    if not appointment_data['requested']:
+        viewing_offer_phrases = [
+            'see it in person', 'seeing it in person', 'view it in person',
+            'would you like to see', 'would you like to view', 'in person',
+            'interested in seeing', 'interested in viewing', 'want to view',
+            'schedule a viewing', 'arrange a viewing', 'book a viewing',
+            'see the property', 'visit the property', 'like to view', 'like to see'
+        ]
+        affirmative_words = ['yes', 'sure', 'sounds good', 'definitely', 'absolutely',
+                              "let's", 'ok', 'okay', 'yeah', 'yep', 'of course',
+                              'tak', 'oczywiście', 'jasne']
+        for i, msg in enumerate(conversation_history):
+            if msg['role'] == 'assistant':
+                ai_lower = msg['content'].lower()
+                if any(p in ai_lower for p in viewing_offer_phrases):
+                    if i + 1 < len(conversation_history):
+                        next_msg = conversation_history[i + 1]
+                        if next_msg['role'] == 'user':
+                            user_reply = re.sub(r'[^\w\s]', '', next_msg['content'].lower()).strip()
+                            if any(user_reply == w or user_reply.startswith(w + ' ') or user_reply == w
+                                   for w in affirmative_words):
+                                appointment_data['requested'] = True
+                                break
 
     days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
             'tomorrow', 'today']
@@ -1790,7 +1851,6 @@ with app.app_context():
             db.session.execute(text("ALTER TABLE lead ADD COLUMN notes TEXT DEFAULT '[]';"))
             db.session.commit()
 
-        # STEP 3 MIGRATIONS
         if 'max_viewings_per_slot' not in agency_cols:
             db.session.execute(text("ALTER TABLE agency ADD COLUMN max_viewings_per_slot INTEGER DEFAULT 2;"))
             db.session.commit()
