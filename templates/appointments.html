@@ -334,7 +334,8 @@
       <div class="stat-value">{{ appointments|selectattr('status', 'equalto', 'cancelled')|list|length }}</div>
     </div>
   </div>
-<!-- SLOT CAPACITY SETTING -->
+
+  <!-- SLOT CAPACITY SETTING -->
   <div style="background:#1e293b; border:1px solid #334155; border-radius:12px; padding:16px 20px; margin-bottom:20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
     <span style="font-size:14px; color:#94a3b8; font-weight:600;">⚙️ Max viewings per time slot:</span>
     <input type="number" id="slot-capacity" min="1" max="20" value="{{ agency.max_viewings_per_slot or 2 }}"
@@ -343,6 +344,7 @@
       style="background:#667eea; color:white; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">Save</button>
     <span style="font-size:12px; color:#64748b;">How many customers can book the same date & time. Full slots are automatically hidden from the AI.</span>
   </div>
+
   <!-- FILTER -->
   <div class="filter-section">
     <div class="filter-tabs">
@@ -514,7 +516,6 @@
       });
       const d = await res.json();
       if (d.success) {
-        // Reload to reflect new status card styling
         location.reload();
       } else {
         alert('❌ Failed to update status');
@@ -592,7 +593,6 @@
 
   function closeModal() {
     document.getElementById('modal-overlay').classList.remove('open');
-    // Clear form
     ['inp-name', 'inp-email', 'inp-date', 'inp-time', 'inp-property', 'inp-notes'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
@@ -671,39 +671,6 @@
         alert('❌ ' + (d.error || 'Failed to save'));
       }
     } catch(e) {
-      alert('❌ Network error');
-    }
-  }
-
-    if (!name || !email || !day || !time) {
-      alert('⚠️ Please fill in Name, Email, Day and Time.');
-      return;
-    }
-
-    try {
-      const res = await fetch('/book-appointment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agency_id: agencyId,
-          customer_name: name,
-          customer_email: email,
-          appointment_date: day,
-          appointment_time: time,
-          property_interest: property,
-          notes: notes
-        })
-      });
-      const d = await res.json();
-      if (d.success) {
-        alert(`✅ Appointment booked!\n\nConfirmation emails sent to ${email} and your agency.`);
-        closeModal();
-        location.reload();
-      } else {
-        alert('❌ Failed to book: ' + (d.error || 'Unknown error'));
-      }
-    } catch(e) {
-
       alert('❌ Network error');
     }
   }
