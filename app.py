@@ -73,6 +73,32 @@ SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 TIME_SLOTS = ['10:00 AM', '12:00 PM', '2:00 PM', '4:00 PM', '6:00 PM']
 PK_TZ = pytz.timezone('Asia/Karachi')
 
+MONTH_NAMES = {
+    'january': 1, 'jan': 1, 'januar': 1, 'stycznia': 1, 'styczeń': 1, 'janvier': 1, 'enero': 1,
+    'february': 2, 'feb': 2, 'februar': 2, 'lutego': 2, 'luty': 2, 'février': 2, 'febrero': 2,
+    'march': 3, 'mar': 3, 'märz': 3, 'marca': 3, 'marzec': 3, 'mars': 3, 'marzo': 3,
+    'april': 4, 'apr': 4, 'kwietnia': 4, 'kwiecień': 4, 'avril': 4, 'abril': 4,
+    'may': 5, 'mai': 5, 'maja': 5, 'maj': 5, 'mayo': 5,
+    'june': 6, 'jun': 6, 'juni': 6, 'czerwca': 6, 'czerwiec': 6, 'juin': 6, 'junio': 6,
+    'july': 7, 'jul': 7, 'juli': 7, 'lipca': 7, 'lipiec': 7, 'juillet': 7, 'julio': 7,
+    'august': 8, 'aug': 8, 'sierpnia': 8, 'sierpień': 8, 'août': 8, 'agosto': 8,
+    'september': 9, 'sep': 9, 'sept': 9, 'września': 9, 'wrzesień': 9, 'septembre': 9, 'septiembre': 9,
+    'october': 10, 'oct': 10, 'oktober': 10, 'października': 10, 'październik': 10, 'octobre': 10, 'octubre': 10,
+    'november': 11, 'nov': 11, 'listopada': 11, 'listopad': 11, 'novembre': 11, 'noviembre': 11,
+    'december': 12, 'dec': 12, 'dezember': 12, 'grudnia': 12, 'grudzień': 12, 'décembre': 12, 'diciembre': 12,
+}
+
+WEEKDAY_WORDS = {
+    'monday': 'monday', 'montag': 'monday', 'poniedziałek': 'monday', 'lundi': 'monday', 'lunes': 'monday',
+    'tuesday': 'tuesday', 'dienstag': 'tuesday', 'wtorek': 'tuesday', 'mardi': 'tuesday', 'martes': 'tuesday',
+    'wednesday': 'wednesday', 'mittwoch': 'wednesday', 'środa': 'wednesday', 'mercredi': 'wednesday', 'miércoles': 'wednesday',
+    'thursday': 'thursday', 'donnerstag': 'thursday', 'czwartek': 'thursday', 'jeudi': 'thursday', 'jueves': 'thursday',
+    'friday': 'friday', 'freitag': 'friday', 'piątek': 'friday', 'vendredi': 'friday', 'viernes': 'friday',
+    'saturday': 'saturday', 'samstag': 'saturday', 'sobota': 'saturday', 'samedi': 'saturday', 'sábado': 'saturday',
+    'tomorrow': 'tomorrow', 'morgen': 'tomorrow', 'jutro': 'tomorrow', 'demain': 'tomorrow', 'mañana': 'tomorrow',
+    'today': 'today', 'heute': 'today', 'dzisiaj': 'today', "aujourd'hui": 'today', 'hoy': 'today',
+}
+
 
 def clean_whatsapp_number(number):
     if not number:
@@ -153,6 +179,33 @@ def resolve_next_date(day_word):
         'display': target.strftime('%A, %B %d, %Y'),
         'iso': target.strftime('%Y-%m-%d')
     }
+
+
+def resolve_date_from_daymonth(user_text):
+    """Language-agnostic: finds 'DD <month name>' anywhere and resolves to
+    the nearest matching future date. Works regardless of what language
+    the customer types the date in."""
+    match = re.search(r'\b(\d{1,2})[.,]?\s*(?:st|nd|rd|th|\.)?\s*([A-Za-zÀ-ÖØ-öø-ÿ]+)\b', user_text, re.IGNORECASE)
+    if not match:
+        return None
+    day_num = int(match.group(1))
+    month_word = match.group(2).lower()
+    month_num = MONTH_NAMES.get(month_word)
+    if not month_num or day_num < 1 or day_num > 31:
+        return None
+    today = datetime.now(PK_TZ).date()
+    for year in (today.year, today.year + 1):
+        try:
+            candidate = datetime(year, month_num, day_num).date()
+        except ValueError:
+            continue
+        if candidate >= today and candidate.weekday() != 6:
+            return {
+                'date': candidate,
+                'display': candidate.strftime('%A, %B %d, %Y'),
+                'iso': candidate.strftime('%Y-%m-%d')
+            }
+    return None
 
 
 def slot_booked_count(agency_id, date_iso, time_label):
@@ -625,52 +678,68 @@ def extract_lead_data(conversation_history):
             break
 
     # Fallback: budget implied by accepting a specific listing's price
+    # (handles both $6,000,000 and 6.000.000 $ style formatting)
     if not lead_data['budget']:
         affirmative_words = ['yes', 'sure', 'sounds good', 'interested', 'great',
                               'ok', 'okay', 'definitely', 'absolutely', "let's",
-                              'perfect', 'love it', 'i like', 'oczywiście', 'tak']
+                              'perfect', 'love it', 'i like', 'oczywiście', 'tak',
+                              'sicher', 'klar', 'natürlich', 'ja', 'gut', 'passt',
+                              'si', 'sí', 'claro', 'oui', 'bien sûr']
+        price_pattern = r'[\$]?\s?\d{1,3}(?:[.,]\d{3}){1,3}\s?[\$]?'
         for i, msg in enumerate(conversation_history):
             if msg['role'] == 'assistant':
-                price_match = re.search(r'\$\s?[\d,]+(?:\.\d+)?', msg['content'])
+                price_match = re.search(price_pattern, msg['content'])
                 if price_match and i + 1 < len(conversation_history):
                     next_msg = conversation_history[i + 1]
                     if next_msg['role'] == 'user':
-                        user_lower = next_msg['content'].lower()
-                        if any(w in user_lower for w in affirmative_words):
-                            lead_data['budget'] = price_match.group(0).replace('$', '').strip() + ' USD (selected property)'
+                        user_reply = re.sub(r'[^\w\s]', '', next_msg['content'].lower()).strip()
+                        if any(user_reply == w or user_reply.startswith(w + ' ') for w in affirmative_words):
+                            digits = re.sub(r'\D', '', price_match.group(0))
+                            if len(digits) >= 6:
+                                millions = int(digits) / 1_000_000
+                                formatted = f"{millions:.1f}".rstrip('0').rstrip('.')
+                                lead_data['budget'] = f"{formatted} million USD (selected property)"
+                            else:
+                                lead_data['budget'] = f"{digits} USD (selected property)"
                             print(f"✅ Budget (implied from listing): {lead_data['budget']}")
                             break
     return lead_data
 
 
 def extract_appointment_data(conversation_history):
-    """Detects viewing intent via keywords OR an affirmative reply to the AI's
-    viewing offer. Day/time still extracted from USER messages only."""
+    """Detects viewing intent, day and time - language-agnostic where possible."""
     user_text = " ".join([
         msg['content'] for msg in conversation_history if msg['role'] == 'user'
     ]).lower()
 
-    appointment_data = {'day': None, 'time': None, 'property_interest': None, 'requested': False}
+    appointment_data = {'day': None, 'time': None, 'resolved_date': None,
+                         'property_interest': None, 'requested': False}
 
     booking_keywords = [
         'schedule', 'appointment', 'viewing', 'visit', 'see the property',
         'book a visit', 'arrange a viewing', 'show me', 'can i see',
-        'i would like to see', 'i want to see', 'visit the property', 'see it'
+        'i would like to see', 'i want to see', 'visit the property', 'see it',
+        'besichtigung', 'besichtigen', 'zobaczyć', 'obejrzeć', 'visiter', 'ver la propiedad'
     ]
     appointment_data['requested'] = any(kw in user_text for kw in booking_keywords)
 
-    # Fallback: user simply said "yes/sure" to the AI's viewing offer
     if not appointment_data['requested']:
         viewing_offer_phrases = [
             'see it in person', 'seeing it in person', 'view it in person',
             'would you like to see', 'would you like to view', 'in person',
             'interested in seeing', 'interested in viewing', 'want to view',
             'schedule a viewing', 'arrange a viewing', 'book a viewing',
-            'see the property', 'visit the property', 'like to view', 'like to see'
+            'see the property', 'visit the property', 'like to view', 'like to see',
+            'besichtigung', 'in person besichtigen', 'zobaczyć osobiście'
         ]
-        affirmative_words = ['yes', 'sure', 'sounds good', 'definitely', 'absolutely',
-                              "let's", 'ok', 'okay', 'yeah', 'yep', 'of course',
-                              'tak', 'oczywiście', 'jasne']
+        affirmative_words = [
+            'yes', 'sure', 'sounds good', 'definitely', 'absolutely', "let's",
+            'ok', 'okay', 'yeah', 'yep', 'of course',
+            'tak', 'oczywiście', 'jasne',
+            'sicher', 'klar', 'natürlich', 'ja', 'na klar', 'warum nicht', 'gut', 'passt',
+            'si', 'sí', 'claro', 'por supuesto',
+            'oui', 'bien sûr', 'd\'accord'
+        ]
         for i, msg in enumerate(conversation_history):
             if msg['role'] == 'assistant':
                 ai_lower = msg['content'].lower()
@@ -679,24 +748,34 @@ def extract_appointment_data(conversation_history):
                         next_msg = conversation_history[i + 1]
                         if next_msg['role'] == 'user':
                             user_reply = re.sub(r'[^\w\s]', '', next_msg['content'].lower()).strip()
-                            if any(user_reply == w or user_reply.startswith(w + ' ') or user_reply == w
-                                   for w in affirmative_words):
+                            if any(user_reply == w or user_reply.startswith(w + ' ') for w in affirmative_words):
                                 appointment_data['requested'] = True
                                 break
 
-    days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
-            'tomorrow', 'today']
-    for day in days:
-        if day in user_text:
-            appointment_data['day'] = day.title()
-            break
+    # ── Try language-agnostic DAY+MONTH date match first (most reliable) ──
+    resolved = resolve_date_from_daymonth(user_text)
+    if resolved:
+        appointment_data['resolved_date'] = resolved
+        appointment_data['day'] = resolved['display']
+    else:
+        # Fallback: weekday name in any supported language
+        for word, normalized in WEEKDAY_WORDS.items():
+            if re.search(r'\b' + re.escape(word) + r'\b', user_text):
+                appointment_data['day'] = normalized.title()
+                break
 
+    # ── TIME: 12-hour AND 24-hour formats ──
     time_patterns = [
         (r'\b(10\s*am|10\s*o\'?clock)\b', '10:00 AM'),
         (r'\b(12\s*pm|noon|12\s*o\'?clock)\b', '12:00 PM'),
         (r'\b(2\s*pm|2\s*o\'?clock)\b', '2:00 PM'),
         (r'\b(4\s*pm|4\s*o\'?clock)\b', '4:00 PM'),
         (r'\b(6\s*pm|6\s*o\'?clock)\b', '6:00 PM'),
+        (r'\b10[:.]00\s*(?:uhr|h)?\b', '10:00 AM'),
+        (r'\b12[:.]00\s*(?:uhr|h)?\b', '12:00 PM'),
+        (r'\b14[:.]00\s*(?:uhr|h)?\b', '2:00 PM'),
+        (r'\b16[:.]00\s*(?:uhr|h)?\b', '4:00 PM'),
+        (r'\b18[:.]00\s*(?:uhr|h)?\b', '6:00 PM'),
         (r'\bmorning\b', '10:00 AM'),
         (r'\b(afternoon|midday)\b', '2:00 PM'),
         (r'\b(evening|late afternoon)\b', '4:00 PM'),
@@ -1570,7 +1649,7 @@ Respond naturally in plain text only:"""
                 and lead_data.get('email')
                 and lead_data.get('name')):
 
-            resolved = resolve_next_date(appt_data['day'])
+            resolved = appt_data.get('resolved_date') or resolve_next_date(appt_data['day'])
             if resolved:
                 booked = slot_booked_count(agency_id, resolved['iso'], appt_data['time'])
                 if booked >= max_slot:
