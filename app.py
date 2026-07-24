@@ -73,31 +73,129 @@ SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 TIME_SLOTS = ['10:00 AM', '12:00 PM', '2:00 PM', '4:00 PM', '6:00 PM']
 PK_TZ = pytz.timezone('Asia/Karachi')
 
+# ─────────────────────────────────────────────────────
+# MULTILINGUAL DICTIONARIES
+# Supported: EN, ES, DE, FR, IT, PT, PL, NL, TR (+ Roman Urdu/Hindi affirmatives)
+# ─────────────────────────────────────────────────────
+
 MONTH_NAMES = {
-    'january': 1, 'jan': 1, 'januar': 1, 'stycznia': 1, 'styczeń': 1, 'janvier': 1, 'enero': 1,
-    'february': 2, 'feb': 2, 'februar': 2, 'lutego': 2, 'luty': 2, 'février': 2, 'febrero': 2,
-    'march': 3, 'mar': 3, 'märz': 3, 'marca': 3, 'marzec': 3, 'mars': 3, 'marzo': 3,
-    'april': 4, 'apr': 4, 'kwietnia': 4, 'kwiecień': 4, 'avril': 4, 'abril': 4,
-    'may': 5, 'mai': 5, 'maja': 5, 'maj': 5, 'mayo': 5,
-    'june': 6, 'jun': 6, 'juni': 6, 'czerwca': 6, 'czerwiec': 6, 'juin': 6, 'junio': 6,
-    'july': 7, 'jul': 7, 'juli': 7, 'lipca': 7, 'lipiec': 7, 'juillet': 7, 'julio': 7,
-    'august': 8, 'aug': 8, 'sierpnia': 8, 'sierpień': 8, 'août': 8, 'agosto': 8,
-    'september': 9, 'sep': 9, 'sept': 9, 'września': 9, 'wrzesień': 9, 'septembre': 9, 'septiembre': 9,
-    'october': 10, 'oct': 10, 'oktober': 10, 'października': 10, 'październik': 10, 'octobre': 10, 'octubre': 10,
-    'november': 11, 'nov': 11, 'listopada': 11, 'listopad': 11, 'novembre': 11, 'noviembre': 11,
-    'december': 12, 'dec': 12, 'dezember': 12, 'grudnia': 12, 'grudzień': 12, 'décembre': 12, 'diciembre': 12,
+    'january': 1, 'jan': 1, 'januar': 1, 'janvier': 1, 'enero': 1, 'gennaio': 1, 'janeiro': 1, 'stycznia': 1, 'styczeń': 1, 'januari': 1, 'ocak': 1,
+    'february': 2, 'feb': 2, 'februar': 2, 'février': 2, 'febrero': 2, 'febbraio': 2, 'fevereiro': 2, 'lutego': 2, 'luty': 2, 'februari': 2, 'şubat': 2, 'subat': 2,
+    'march': 3, 'mar': 3, 'märz': 3, 'mars': 3, 'marzo': 3, 'março': 3, 'marco': 3, 'marca': 3, 'marzec': 3, 'maart': 3, 'mart': 3,
+    'april': 4, 'apr': 4, 'avril': 4, 'abril': 4, 'aprile': 4, 'kwietnia': 4, 'kwiecień': 4, 'nisan': 4,
+    'may': 5, 'mai': 5, 'mayo': 5, 'maggio': 5, 'maio': 5, 'maja': 5, 'maj': 5, 'mei': 5, 'mayıs': 5, 'mayis': 5,
+    'june': 6, 'jun': 6, 'juni': 6, 'juin': 6, 'junio': 6, 'giugno': 6, 'junho': 6, 'czerwca': 6, 'czerwiec': 6, 'haziran': 6,
+    'july': 7, 'jul': 7, 'juli': 7, 'juillet': 7, 'julio': 7, 'luglio': 7, 'julho': 7, 'lipca': 7, 'lipiec': 7, 'temmuz': 7,
+    'august': 8, 'aug': 8, 'août': 8, 'aout': 8, 'agosto': 8, 'sierpnia': 8, 'sierpień': 8, 'augustus': 8, 'ağustos': 8, 'agustos': 8,
+    'september': 9, 'sep': 9, 'sept': 9, 'septembre': 9, 'septiembre': 9, 'settembre': 9, 'setembro': 9, 'września': 9, 'wrzesień': 9, 'eylül': 9, 'eylul': 9,
+    'october': 10, 'oct': 10, 'oktober': 10, 'octobre': 10, 'octubre': 10, 'ottobre': 10, 'outubro': 10, 'października': 10, 'październik': 10, 'ekim': 10,
+    'november': 11, 'nov': 11, 'novembre': 11, 'noviembre': 11, 'novembro': 11, 'listopada': 11, 'listopad': 11, 'kasım': 11, 'kasim': 11,
+    'december': 12, 'dec': 12, 'dezember': 12, 'décembre': 12, 'decembre': 12, 'diciembre': 12, 'dicembre': 12, 'dezembro': 12, 'grudnia': 12, 'grudzień': 12, 'aralık': 12, 'aralik': 12,
 }
 
 WEEKDAY_WORDS = {
-    'monday': 'monday', 'montag': 'monday', 'poniedziałek': 'monday', 'lundi': 'monday', 'lunes': 'monday',
-    'tuesday': 'tuesday', 'dienstag': 'tuesday', 'wtorek': 'tuesday', 'mardi': 'tuesday', 'martes': 'tuesday',
-    'wednesday': 'wednesday', 'mittwoch': 'wednesday', 'środa': 'wednesday', 'mercredi': 'wednesday', 'miércoles': 'wednesday',
-    'thursday': 'thursday', 'donnerstag': 'thursday', 'czwartek': 'thursday', 'jeudi': 'thursday', 'jueves': 'thursday',
-    'friday': 'friday', 'freitag': 'friday', 'piątek': 'friday', 'vendredi': 'friday', 'viernes': 'friday',
-    'saturday': 'saturday', 'samstag': 'saturday', 'sobota': 'saturday', 'samedi': 'saturday', 'sábado': 'saturday',
-    'tomorrow': 'tomorrow', 'morgen': 'tomorrow', 'jutro': 'tomorrow', 'demain': 'tomorrow', 'mañana': 'tomorrow',
-    'today': 'today', 'heute': 'today', 'dzisiaj': 'today', "aujourd'hui": 'today', 'hoy': 'today',
+    'monday': 'monday', 'montag': 'monday', 'lundi': 'monday', 'lunes': 'monday', 'lunedì': 'monday', 'lunedi': 'monday', 'segunda-feira': 'monday', 'segunda': 'monday', 'poniedziałek': 'monday', 'poniedzialek': 'monday', 'maandag': 'monday', 'pazartesi': 'monday',
+    'tuesday': 'tuesday', 'dienstag': 'tuesday', 'mardi': 'tuesday', 'martes': 'tuesday', 'martedì': 'tuesday', 'martedi': 'tuesday', 'terça-feira': 'tuesday', 'terça': 'tuesday', 'terca': 'tuesday', 'wtorek': 'tuesday', 'dinsdag': 'tuesday', 'salı': 'tuesday', 'sali': 'tuesday',
+    'wednesday': 'wednesday', 'mittwoch': 'wednesday', 'mercredi': 'wednesday', 'miércoles': 'wednesday', 'miercoles': 'wednesday', 'mercoledì': 'wednesday', 'mercoledi': 'wednesday', 'quarta-feira': 'wednesday', 'quarta': 'wednesday', 'środa': 'wednesday', 'sroda': 'wednesday', 'woensdag': 'wednesday', 'çarşamba': 'wednesday', 'carsamba': 'wednesday',
+    'thursday': 'thursday', 'donnerstag': 'thursday', 'jeudi': 'thursday', 'jueves': 'thursday', 'giovedì': 'thursday', 'giovedi': 'thursday', 'quinta-feira': 'thursday', 'quinta': 'thursday', 'czwartek': 'thursday', 'donderdag': 'thursday', 'perşembe': 'thursday', 'persembe': 'thursday',
+    'friday': 'friday', 'freitag': 'friday', 'vendredi': 'friday', 'viernes': 'friday', 'venerdì': 'friday', 'venerdi': 'friday', 'sexta-feira': 'friday', 'sexta': 'friday', 'piątek': 'friday', 'piatek': 'friday', 'vrijdag': 'friday', 'cuma': 'friday',
+    'saturday': 'saturday', 'samstag': 'saturday', 'samedi': 'saturday', 'sábado': 'saturday', 'sabado': 'saturday', 'sabato': 'saturday', 'sobota': 'saturday', 'zaterdag': 'saturday', 'cumartesi': 'saturday',
+    'tomorrow': 'tomorrow', 'morgen': 'tomorrow', 'demain': 'tomorrow', 'mañana': 'tomorrow', 'manana': 'tomorrow', 'domani': 'tomorrow', 'amanhã': 'tomorrow', 'amanha': 'tomorrow', 'jutro': 'tomorrow', 'yarın': 'tomorrow', 'yarin': 'tomorrow', 'kal': 'tomorrow',
+    'today': 'today', 'heute': 'today', "aujourd'hui": 'today', 'hoy': 'today', 'oggi': 'today', 'hoje': 'today', 'dzisiaj': 'today', 'dziś': 'today', 'vandaag': 'today', 'bugün': 'today', 'bugun': 'today', 'aaj': 'today',
 }
+
+AFFIRMATIVE_WORDS = [
+    # English
+    'yes', 'sure', 'sounds good', 'definitely', 'absolutely', "let's", 'ok', 'okay', 'yeah', 'yep', 'of course',
+    # Spanish
+    'si', 'sí', 'claro', 'por supuesto', 'vale', 'perfecto', 'genial',
+    # German
+    'ja', 'sicher', 'klar', 'natürlich', 'natuerlich', 'na klar', 'gerne', 'gut', 'passt',
+    # French
+    'oui', 'bien sûr', 'bien sur', "d'accord", 'daccord', 'volontiers', 'parfait',
+    # Italian
+    'sì', 'certo', 'va bene', 'certamente', 'volentieri',
+    # Portuguese
+    'sim', 'com certeza', 'certamente', 'pode ser',
+    # Polish
+    'tak', 'oczywiście', 'oczywiscie', 'jasne', 'pewnie', 'chętnie', 'chetnie',
+    # Dutch
+    'zeker', 'graag', 'prima', 'natuurlijk',
+    # Turkish
+    'evet', 'tabii', 'tabi', 'elbette', 'olur',
+    # Roman Urdu/Hindi
+    'haan', 'han', 'jee', 'ji', 'bilkul', 'zaroor',
+]
+
+NAME_FILLER_WORDS = {
+    # English
+    'i', 'am', 'im', 'my', 'name', 'is', 'this', 'it', 'its', 'call', 'me', 'hello', 'hi', 'hey', 'and', 'you', 'who', 'are',
+    # Spanish
+    'soy', 'yo', 'llamo', 'mi', 'nombre', 'es', 'hola', 'y', 'tu', 'tú', 'quien', 'quién', 'eres', 'usted', 'cómo', 'como', 'estás', 'estas',
+    # German
+    'ich', 'bin', 'mein', 'ist', 'heisse', 'heiße', 'hallo', 'und', 'wer', 'bist', 'du', 'sie', 'sind', 'da', 'jemand',
+    # French
+    'je', 'suis', 'appelle', "m'appelle", 'mappelle', 'mon', 'nom', 'est', 'bonjour', 'et', 'qui', 'es', 'vous', 'êtes', 'etes', 'toi',
+    # Italian
+    'sono', 'chiamo', 'il', 'mio', 'nome', 'è', 'ciao', 'e', 'chi', 'sei', 'lei',
+    # Portuguese
+    'eu', 'sou', 'meu', 'chamo', 'olá', 'ola', 'quem', 'você', 'voce', 'és',
+    # Polish
+    'jestem', 'nazywam', 'się', 'sie', 'mam', 'na', 'imię', 'imie', 'cześć', 'czesc', 'a', 'kim', 'jesteś', 'jestes', 'ty', 'witam',
+    # Dutch
+    'ik', 'ben', 'mijn', 'naam', 'heet', 'en', 'wie', 'jij',
+    # Turkish
+    'ben', 'benim', 'adım', 'adim', 'ismim', 'merhaba', 'sen', 'kimsin',
+    # Roman Urdu/Hindi
+    'mera', 'naam', 'hai', 'main', 'hoon', 'ap', 'aap', 'kaun',
+}
+
+VIEWING_OFFER_PHRASES = [
+    # English
+    'see it in person', 'seeing it in person', 'view it in person', 'would you like to see', 'would you like to view',
+    'in person', 'interested in seeing', 'interested in viewing', 'want to view', 'schedule a viewing',
+    'arrange a viewing', 'book a viewing', 'see the property', 'visit the property', 'like to view', 'like to see',
+    # Spanish
+    'en persona', 'una visita', 'ver la propiedad', 'ver alguna', 'visitar la propiedad', 'agendar una visita',
+    # German
+    'besichtigung', 'besichtigen', 'vor ort', 'anschauen', 'ansehen',
+    # French
+    'en personne', 'une visite', 'visiter', 'voir le bien', 'voir la propriété',
+    # Italian
+    'di persona', 'una visita', 'visitare', 'vedere la proprietà', 'vedere la proprieta',
+    # Portuguese
+    'pessoalmente', 'uma visita', 'visitar', 'ver o imóvel', 'ver o imovel',
+    # Polish
+    'osobiście', 'osobiscie', 'obejrzeć', 'obejrzec', 'zobaczyć', 'zobaczyc', 'umówić', 'umowic',
+    # Dutch
+    'in persoon', 'bezichtiging', 'bezichtigen', 'bekijken',
+    # Turkish
+    'yerinde görmek', 'gormek ister', 'görmek ister', 'ziyaret',
+]
+
+BOOKING_KEYWORDS = [
+    # English
+    'schedule', 'appointment', 'viewing', 'visit', 'see the property', 'book a visit', 'arrange a viewing',
+    'show me', 'can i see', 'i would like to see', 'i want to see', 'visit the property', 'see it',
+    # Spanish
+    'quiero ver', 'ver a', 'ver la', 'ver los', 'ver las', 'visita', 'visitar', 'cita',
+    # German
+    'besichtigung', 'besichtigen', 'sehen', 'termin',
+    # French
+    'visite', 'visiter', 'voir', 'rendez-vous',
+    # Italian
+    'visita', 'visitare', 'vedere', 'appuntamento',
+    # Portuguese
+    'visita', 'visitar', 'ver', 'agendar',
+    # Polish
+    'zobaczyć', 'zobaczyc', 'obejrzeć', 'obejrzec', 'wizyta', 'spotkanie',
+    # Dutch
+    'bezichtiging', 'bezichtigen', 'zien', 'afspraak',
+    # Turkish
+    'görmek', 'gormek', 'ziyaret', 'randevu',
+    # Roman Urdu/Hindi
+    'dekhna', 'dekh', 'mulaqat',
+]
 
 
 def clean_whatsapp_number(number):
@@ -143,6 +241,42 @@ def send_email_brevo(to_email, subject, body):
 
 
 # ─────────────────────────────────────────────────────
+# LANGUAGE-AGNOSTIC QUESTION DETECTION
+# ─────────────────────────────────────────────────────
+
+def is_contact_question(ai_text):
+    """True if the AI message is asking for contact preference - any language.
+    Universal signal: 'whatsapp' appearing alongside an email/phone word."""
+    ai_lower = ai_text.lower()
+    english_patterns = [
+        "best way to reach you", "how can i reach you", "reach you",
+        "contact you", "whatsapp, phone, or email", "phone, or email"
+    ]
+    if any(p in ai_lower for p in english_patterns):
+        return True
+    if 'whatsapp' in ai_lower:
+        contact_words = ['email', 'e-mail', 'mail', 'correo', 'phone', 'telefon',
+                          'teléfono', 'telefono', 'téléphone', 'telephone', 'telefone',
+                          'telefoon', 'numer', 'número', 'numero']
+        if any(w in ai_lower for w in contact_words):
+            return True
+    return False
+
+
+def is_number_question(ai_text):
+    """True if the AI message is asking for a phone/WhatsApp number - any language."""
+    ai_lower = ai_text.lower()
+    english_patterns = ["whatsapp number", "phone number", "your number",
+                         "share your number", "what's your"]
+    if any(p in ai_lower for p in english_patterns):
+        return True
+    number_words = ['nummer', 'número', 'numero', 'numéro', 'numer', 'numara']
+    if any(w in ai_lower for w in number_words) and ('whatsapp' in ai_lower or 'telefon' in ai_lower or 'phone' in ai_lower):
+        return True
+    return False
+
+
+# ─────────────────────────────────────────────────────
 # APPOINTMENT DATE + CAPACITY HELPERS
 # ─────────────────────────────────────────────────────
 
@@ -182,29 +316,28 @@ def resolve_next_date(day_word):
 
 
 def resolve_date_from_daymonth(user_text):
-    """Language-agnostic: finds 'DD <month name>' anywhere and resolves to
-    the nearest matching future date. Works regardless of what language
-    the customer types the date in."""
-    match = re.search(r'\b(\d{1,2})[.,]?\s*(?:st|nd|rd|th|\.)?\s*([A-Za-zÀ-ÖØ-öø-ÿ]+)\b', user_text, re.IGNORECASE)
-    if not match:
-        return None
-    day_num = int(match.group(1))
-    month_word = match.group(2).lower()
-    month_num = MONTH_NAMES.get(month_word)
-    if not month_num or day_num < 1 or day_num > 31:
-        return None
+    """Language-agnostic: finds 'DD <month name>' patterns (including connector
+    words like 'de'/'den'/'of'/'di') and resolves to the nearest matching future
+    date. Checks ALL matches, not just the first."""
+    pattern = r'\b(\d{1,2})\s*(?:st|nd|rd|th)?[.,]?\s*(?:de\s+|den\s+|of\s+|di\s+|van\s+)?([A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]+)'
     today = datetime.now(PK_TZ).date()
-    for year in (today.year, today.year + 1):
-        try:
-            candidate = datetime(year, month_num, day_num).date()
-        except ValueError:
+    for match in re.finditer(pattern, user_text, re.IGNORECASE):
+        day_num = int(match.group(1))
+        month_word = match.group(2).lower()
+        month_num = MONTH_NAMES.get(month_word)
+        if not month_num or day_num < 1 or day_num > 31:
             continue
-        if candidate >= today and candidate.weekday() != 6:
-            return {
-                'date': candidate,
-                'display': candidate.strftime('%A, %B %d, %Y'),
-                'iso': candidate.strftime('%Y-%m-%d')
-            }
+        for year in (today.year, today.year + 1):
+            try:
+                candidate = datetime(year, month_num, day_num).date()
+            except ValueError:
+                continue
+            if candidate >= today and candidate.weekday() != 6:
+                return {
+                    'date': candidate,
+                    'display': candidate.strftime('%A, %B %d, %Y'),
+                    'iso': candidate.strftime('%Y-%m-%d')
+                }
     return None
 
 
@@ -499,6 +632,7 @@ def generate_lead_summary(conversation_history, agency_name):
         ])
         analysis_prompt = f"""Analyze this conversation and create a 2-3 sentence business summary for {agency_name}.
 Focus on: intent, property type, budget, location, timeline, urgency.
+Write the summary in ENGLISH even if the conversation is in another language.
 Conversation:
 {conversation_text}
 Format: "[INTENT] + [REQUIREMENTS] + [TIMELINE]"
@@ -530,21 +664,25 @@ def extract_name_from_context(conversation_history):
         'from', 'have', 'been', 'will', 'would', 'could', 'should',
         'south', 'north', 'east', 'west', 'central', 'downtown',
         'coconut', 'grove', 'hilton', 'santa', 'monica', 'myrtle',
-        'asking', 'checking', 'getting', 'making', 'looking', 'trying'
+        'asking', 'checking', 'getting', 'making', 'trying'
     }
 
     # ── METHOD 0: Language-agnostic — reply to AI's very first message ──
-    # Our system prompt always makes the AI ask for the name as its first
-    # response, regardless of language. So history[1]=assistant question,
-    # history[2]=user's name reply. This works in ANY language.
+    # The AI always asks for the name first. history[1]=assistant question,
+    # history[2]=user's name reply. We strip multilingual filler words
+    # ("soy", "ich bin", "jestem", "je suis"...) and take the FIRST
+    # remaining valid token - the actual name.
     if (len(conversation_history) >= 3
             and conversation_history[1]['role'] == 'assistant'
             and conversation_history[2]['role'] == 'user'):
         candidate_msg = conversation_history[2]['content']
-        cleaned = re.sub(r'[.,!?;:]', '', candidate_msg).strip()
+        cleaned = re.sub(r'[.,!?;:¿¡]', ' ', candidate_msg).strip()
         tokens = cleaned.split()
-        for tok in reversed(tokens):
-            if re.match(r'^[A-Za-zÀ-ÖØ-öø-ÿ]{2,30}$', tok) and tok.lower() not in not_a_name:
+        for tok in tokens:
+            tok_lower = tok.lower()
+            if tok_lower in NAME_FILLER_WORDS or tok_lower in not_a_name:
+                continue
+            if re.match(r'^[A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]{2,30}$', tok):
                 print(f"✅ Name (first-turn, lang-agnostic): {tok.title()}")
                 return tok.title()
 
@@ -601,21 +739,16 @@ def extract_lead_data(conversation_history):
 
     lead_data['name'] = extract_name_from_context(conversation_history)
 
-    contact_question_patterns = [
-        "best way to reach you", "how can i reach you", "reach you",
-        "contact you", "whatsapp, phone, or email", "phone, or email"
-    ]
     for i, msg in enumerate(conversation_history):
         if msg['role'] == 'assistant':
-            ai_text = msg['content'].lower()
-            if any(pattern in ai_text for pattern in contact_question_patterns):
+            if is_contact_question(msg['content']):
                 if i + 1 < len(conversation_history):
                     next_msg = conversation_history[i + 1]
                     if next_msg['role'] == 'user':
                         user_pref = next_msg['content'].lower()
-                        has_email = 'email' in user_pref
-                        has_whatsapp = 'whatsapp' in user_pref or 'wa' in user_pref
-                        has_phone = 'phone' in user_pref or 'call' in user_pref
+                        has_email = any(w in user_pref for w in ['email', 'e-mail', 'mail', 'correo'])
+                        has_whatsapp = 'whatsapp' in user_pref or 'wa' in user_pref.split()
+                        has_phone = any(w in user_pref for w in ['phone', 'call', 'telefon', 'teléfono', 'telefono', 'téléphone', 'telefone'])
                         if has_email and has_whatsapp:
                             lead_data['contact_preference'] = 'email_and_whatsapp'
                         elif has_email and has_phone:
@@ -654,9 +787,11 @@ def extract_lead_data(conversation_history):
     budget_patterns = [
         r"(\d+(?:\.\d+)?)\s*([MmKk])(?![a-zA-Z])\s*(?:\$|dollars?)?",
         r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand|mln|mio)?",
-        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore|mln|milionów|mio|millones|millionen)\s*(?:\$|dollars?|usd|aed|eur|pln)?",
+        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore|mln|milionów|milionow|mio|millones|millionen|milioni|milhões|milhoes|miljoen|milyon)\s*(?:\$|dollars?|usd|aed|eur|pln)?",
         r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand|mln)?",
     ]
+    million_units = ['mln', 'milionów', 'milionow', 'mio', 'millones', 'millionen',
+                      'milioni', 'milhões', 'milhoes', 'miljoen', 'milyon']
     for pattern in budget_patterns:
         budget_match = re.search(pattern, full_conversation_user, re.IGNORECASE)
         if budget_match:
@@ -667,11 +802,11 @@ def extract_lead_data(conversation_history):
                 if unit in ['m', 'million']: unit = 'million'
                 elif unit in ['k', 'thousand']: unit = 'thousand'
             currency = ''
-            if '$' in full_conversation_user or 'dollar' in full_conversation_user.lower():
+            if '$' in full_conversation_user or 'dollar' in full_conversation_user.lower() or 'dólar' in full_conversation_user.lower() or 'dolar' in full_conversation_user.lower():
                 currency = 'USD'
             elif 'aed' in full_conversation_user.lower():
                 currency = 'AED'
-            if unit in ['mln', 'milionów', 'mio', 'millones', 'millionen']:
+            if unit in million_units:
                 unit = 'million'
             lead_data['budget'] = f"{amount} {unit} {currency}".strip() if unit else f"{amount} {currency}".strip()
             print(f"✅ Budget: {lead_data['budget']}")
@@ -680,11 +815,6 @@ def extract_lead_data(conversation_history):
     # Fallback: budget implied by accepting a specific listing's price
     # (handles both $6,000,000 and 6.000.000 $ style formatting)
     if not lead_data['budget']:
-        affirmative_words = ['yes', 'sure', 'sounds good', 'interested', 'great',
-                              'ok', 'okay', 'definitely', 'absolutely', "let's",
-                              'perfect', 'love it', 'i like', 'oczywiście', 'tak',
-                              'sicher', 'klar', 'natürlich', 'ja', 'gut', 'passt',
-                              'si', 'sí', 'claro', 'oui', 'bien sûr']
         price_pattern = r'[\$]?\s?\d{1,3}(?:[.,]\d{3}){1,3}\s?[\$]?'
         for i, msg in enumerate(conversation_history):
             if msg['role'] == 'assistant':
@@ -692,8 +822,8 @@ def extract_lead_data(conversation_history):
                 if price_match and i + 1 < len(conversation_history):
                     next_msg = conversation_history[i + 1]
                     if next_msg['role'] == 'user':
-                        user_reply = re.sub(r'[^\w\s]', '', next_msg['content'].lower()).strip()
-                        if any(user_reply == w or user_reply.startswith(w + ' ') for w in affirmative_words):
+                        user_reply = re.sub(r'[^\w\sÀ-ÖØ-öø-ÿążćęłńóśźäöüß]', '', next_msg['content'].lower()).strip()
+                        if any(user_reply == w or user_reply.startswith(w + ' ') for w in AFFIRMATIVE_WORDS):
                             digits = re.sub(r'\D', '', price_match.group(0))
                             if len(digits) >= 6:
                                 millions = int(digits) / 1_000_000
@@ -707,7 +837,7 @@ def extract_lead_data(conversation_history):
 
 
 def extract_appointment_data(conversation_history):
-    """Detects viewing intent, day and time - language-agnostic where possible."""
+    """Detects viewing intent, day and time - language-agnostic."""
     user_text = " ".join([
         msg['content'] for msg in conversation_history if msg['role'] == 'user'
     ]).lower()
@@ -715,40 +845,18 @@ def extract_appointment_data(conversation_history):
     appointment_data = {'day': None, 'time': None, 'resolved_date': None,
                          'property_interest': None, 'requested': False}
 
-    booking_keywords = [
-        'schedule', 'appointment', 'viewing', 'visit', 'see the property',
-        'book a visit', 'arrange a viewing', 'show me', 'can i see',
-        'i would like to see', 'i want to see', 'visit the property', 'see it',
-        'besichtigung', 'besichtigen', 'zobaczyć', 'obejrzeć', 'visiter', 'ver la propiedad'
-    ]
-    appointment_data['requested'] = any(kw in user_text for kw in booking_keywords)
+    appointment_data['requested'] = any(kw in user_text for kw in BOOKING_KEYWORDS)
 
     if not appointment_data['requested']:
-        viewing_offer_phrases = [
-            'see it in person', 'seeing it in person', 'view it in person',
-            'would you like to see', 'would you like to view', 'in person',
-            'interested in seeing', 'interested in viewing', 'want to view',
-            'schedule a viewing', 'arrange a viewing', 'book a viewing',
-            'see the property', 'visit the property', 'like to view', 'like to see',
-            'besichtigung', 'in person besichtigen', 'zobaczyć osobiście'
-        ]
-        affirmative_words = [
-            'yes', 'sure', 'sounds good', 'definitely', 'absolutely', "let's",
-            'ok', 'okay', 'yeah', 'yep', 'of course',
-            'tak', 'oczywiście', 'jasne',
-            'sicher', 'klar', 'natürlich', 'ja', 'na klar', 'warum nicht', 'gut', 'passt',
-            'si', 'sí', 'claro', 'por supuesto',
-            'oui', 'bien sûr', 'd\'accord'
-        ]
         for i, msg in enumerate(conversation_history):
             if msg['role'] == 'assistant':
                 ai_lower = msg['content'].lower()
-                if any(p in ai_lower for p in viewing_offer_phrases):
+                if any(p in ai_lower for p in VIEWING_OFFER_PHRASES):
                     if i + 1 < len(conversation_history):
                         next_msg = conversation_history[i + 1]
                         if next_msg['role'] == 'user':
-                            user_reply = re.sub(r'[^\w\s]', '', next_msg['content'].lower()).strip()
-                            if any(user_reply == w or user_reply.startswith(w + ' ') for w in affirmative_words):
+                            user_reply = re.sub(r'[^\w\sÀ-ÖØ-öø-ÿążćęłńóśźäöüß]', '', next_msg['content'].lower()).strip()
+                            if any(user_reply == w or user_reply.startswith(w + ' ') for w in AFFIRMATIVE_WORDS):
                                 appointment_data['requested'] = True
                                 break
 
@@ -764,18 +872,21 @@ def extract_appointment_data(conversation_history):
                 appointment_data['day'] = normalized.title()
                 break
 
-    # ── TIME: 12-hour AND 24-hour formats ──
+    # ── TIME: 12-hour, 12-hour with :00, and 24-hour formats ──
     time_patterns = [
+        (r'\b10[:.]00\s*(?:am|uhr|h)?\b', '10:00 AM'),
         (r'\b(10\s*am|10\s*o\'?clock)\b', '10:00 AM'),
+        (r'\b12[:.]00\s*(?:pm|uhr|h)?\b', '12:00 PM'),
         (r'\b(12\s*pm|noon|12\s*o\'?clock)\b', '12:00 PM'),
-        (r'\b(2\s*pm|2\s*o\'?clock)\b', '2:00 PM'),
-        (r'\b(4\s*pm|4\s*o\'?clock)\b', '4:00 PM'),
-        (r'\b(6\s*pm|6\s*o\'?clock)\b', '6:00 PM'),
-        (r'\b10[:.]00\s*(?:uhr|h)?\b', '10:00 AM'),
-        (r'\b12[:.]00\s*(?:uhr|h)?\b', '12:00 PM'),
+        (r'\b2[:.]00\s*pm\b', '2:00 PM'),
         (r'\b14[:.]00\s*(?:uhr|h)?\b', '2:00 PM'),
+        (r'\b(2\s*pm|2\s*o\'?clock)\b', '2:00 PM'),
+        (r'\b4[:.]00\s*pm\b', '4:00 PM'),
         (r'\b16[:.]00\s*(?:uhr|h)?\b', '4:00 PM'),
+        (r'\b(4\s*pm|4\s*o\'?clock)\b', '4:00 PM'),
+        (r'\b6[:.]00\s*pm\b', '6:00 PM'),
         (r'\b18[:.]00\s*(?:uhr|h)?\b', '6:00 PM'),
+        (r'\b(6\s*pm|6\s*o\'?clock)\b', '6:00 PM'),
         (r'\bmorning\b', '10:00 AM'),
         (r'\b(afternoon|midday)\b', '2:00 PM'),
         (r'\b(evening|late afternoon)\b', '4:00 PM'),
@@ -788,32 +899,29 @@ def extract_appointment_data(conversation_history):
 
 
 def contact_step_completed(conversation_history):
-    contact_question_patterns = [
-        "best way to reach you", "how can i reach you", "reach you",
-        "contact you", "whatsapp, phone, or email", "phone, or email"
-    ]
-    number_question_patterns = [
-        "whatsapp number", "phone number", "your number",
-        "share your number", "what's your"
-    ]
     asked_contact_pref = False
     asked_number = False
     gave_number = False
     user_said_email_only = False
     user_declined_number = False
 
+    email_words = ['email', 'e-mail', 'mail', 'correo']
+    phone_words = ['phone', 'call', 'telefon', 'teléfono', 'telefono', 'téléphone', 'telefone']
+
     for i, msg in enumerate(conversation_history):
         if msg['role'] == 'assistant':
-            ai_text = msg['content'].lower()
-            if any(p in ai_text for p in contact_question_patterns):
+            if is_contact_question(msg['content']):
                 asked_contact_pref = True
                 if i + 1 < len(conversation_history):
                     next_msg = conversation_history[i + 1]
                     if next_msg['role'] == 'user':
                         user_text = next_msg['content'].lower()
-                        if 'email' in user_text and 'whatsapp' not in user_text and 'phone' not in user_text:
+                        has_email_word = any(w in user_text for w in email_words)
+                        has_wa = 'whatsapp' in user_text
+                        has_phone_word = any(w in user_text for w in phone_words)
+                        if has_email_word and not has_wa and not has_phone_word:
                             user_said_email_only = True
-            if any(p in ai_text for p in number_question_patterns):
+            if is_number_question(msg['content']):
                 asked_number = True
                 if i + 1 < len(conversation_history):
                     next_msg = conversation_history[i + 1]
@@ -821,7 +929,8 @@ def contact_step_completed(conversation_history):
                         user_text = next_msg['content'].strip()
                         if re.search(r'\+?\d{9,15}', user_text.replace(' ', '').replace('-', '')):
                             gave_number = True
-                        decline_words = ['no', 'nope', 'skip', 'pass', 'later', 'not now', "don't", 'prefer not']
+                        decline_words = ['no', 'nope', 'skip', 'pass', 'later', 'not now', "don't", 'prefer not',
+                                          'nein', 'nie', 'non', 'não', 'nao', 'hayır', 'hayir', 'nahi', 'nahin']
                         if any(w in user_text.lower() for w in decline_words):
                             user_declined_number = True
 
@@ -1605,6 +1714,7 @@ HANDLING HESITATION:
 
 LANGUAGE:
 - Detect the visitor's language and respond in that same language throughout
+- When mentioning viewing time slots in another language, keep the exact time format like 10:00 AM, 2:00 PM so the customer can reply with it
 
 Respond naturally in plain text only:"""
 
