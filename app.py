@@ -317,10 +317,12 @@ def resolve_next_date(day_word):
 
 def resolve_date_from_daymonth(user_text):
     """Language-agnostic: finds 'DD <month name>' patterns (including connector
-    words like 'de'/'den'/'of'/'di') and resolves to the nearest matching future
-    date. Checks ALL matches, not just the first."""
+    words like 'de'/'den'/'of'/'di') and resolves to a valid future date.
+    Returns the LAST-mentioned valid date, so newer requests override older ones."""
     pattern = r'\b(\d{1,2})\s*(?:st|nd|rd|th)?[.,]?\s*(?:de\s+|den\s+|of\s+|di\s+|van\s+)?([A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]+)'
     today = datetime.now(PK_TZ).date()
+    best = None
+    best_pos = -1
     for match in re.finditer(pattern, user_text, re.IGNORECASE):
         day_num = int(match.group(1))
         month_word = match.group(2).lower()
@@ -333,12 +335,15 @@ def resolve_date_from_daymonth(user_text):
             except ValueError:
                 continue
             if candidate >= today and candidate.weekday() != 6:
-                return {
-                    'date': candidate,
-                    'display': candidate.strftime('%A, %B %d, %Y'),
-                    'iso': candidate.strftime('%Y-%m-%d')
-                }
-    return None
+                if match.start() > best_pos:
+                    best_pos = match.start()
+                    best = {
+                        'date': candidate,
+                        'display': candidate.strftime('%A, %B %d, %Y'),
+                        'iso': candidate.strftime('%Y-%m-%d')
+                    }
+                break
+    return best
 
 
 def slot_booked_count(agency_id, date_iso, time_label):
@@ -860,17 +865,23 @@ def extract_appointment_data(conversation_history):
                                 appointment_data['requested'] = True
                                 break
 
-    # ── Try language-agnostic DAY+MONTH date match first (most reliable) ──
+# ── Try language-agnostic DAY+MONTH date match first (most reliable) ──
+    # Uses LAST-mentioned date so a second viewing request overrides the first
     resolved = resolve_date_from_daymonth(user_text)
     if resolved:
         appointment_data['resolved_date'] = resolved
         appointment_data['day'] = resolved['display']
     else:
-        # Fallback: weekday name in any supported language
+        # Fallback: LAST-mentioned weekday name in any supported language
+        best_pos = -1
+        best_day = None
         for word, normalized in WEEKDAY_WORDS.items():
-            if re.search(r'\b' + re.escape(word) + r'\b', user_text):
-                appointment_data['day'] = normalized.title()
-                break
+            for m in re.finditer(r'\b' + re.escape(word) + r'\b', user_text):
+                if m.start() > best_pos:
+                    best_pos = m.start()
+                    best_day = normalized.title()
+        if best_day:
+            appointment_data['day'] = best_day
 
     # ── TIME: 12-hour, 12-hour with :00, and 24-hour formats ──
     time_patterns = [
@@ -891,10 +902,15 @@ def extract_appointment_data(conversation_history):
         (r'\b(afternoon|midday)\b', '2:00 PM'),
         (r'\b(evening|late afternoon)\b', '4:00 PM'),
     ]
+# LAST-mentioned time wins (supports second booking in same chat)
+    best_pos = -1
+    best_label = None
     for pattern, time_label in time_patterns:
-        if re.search(pattern, user_text):
-            appointment_data['time'] = time_label
-            break
+        for m in re.finditer(pattern, user_text):
+            if m.start() > best_pos:
+                best_pos = m.start()
+                best_label = time_label
+    appointment_data['time'] = best_label
     return appointment_data
 
 
@@ -1747,13 +1763,12 @@ Respond naturally in plain text only:"""
 
         lead_data = extract_lead_data(history)
 
-        # ─── Auto-appointment: real date resolution + capacity check ───
+    # ─── Auto-appointment: multi-booking per session, one per unique slot ───
         appt_data = extract_appointment_data(history)
-        session_appt_key = f"appt_booked_{session_key}"
-        already_booked_this_session = conversation_memory.get(session_appt_key, False)
+        session_slots_key = f"appt_slots_{session_key}"
+        booked_slots = conversation_memory.get(session_slots_key, set())
 
-        if (not already_booked_this_session
-                and appt_data['requested']
+        if (appt_data['requested']
                 and appt_data['day']
                 and appt_data['time']
                 and lead_data.get('email')
@@ -1761,39 +1776,42 @@ Respond naturally in plain text only:"""
 
             resolved = appt_data.get('resolved_date') or resolve_next_date(appt_data['day'])
             if resolved:
-                booked = slot_booked_count(agency_id, resolved['iso'], appt_data['time'])
-                if booked >= max_slot:
-                    print(f"⚠️ Slot full ({booked}/{max_slot}): {resolved['display']} at {appt_data['time']} - not booking")
-                    conversation_memory[session_appt_key] = True  # prevent retry loop this session
-                else:
-                    existing_appt = Appointment.query.filter_by(
-                        agency_id=agency_id,
-                        customer_email=lead_data['email'],
-                        appointment_date_iso=resolved['iso'],
-                        appointment_time=appt_data['time']
-                    ).first()
-                    if not existing_appt:
-                        try:
-                            new_appt = Appointment(
-                                agency_id=agency_id,
-                                customer_name=lead_data.get('name'),
-                                customer_email=lead_data['email'],
-                                appointment_date=resolved['display'],
-                                appointment_date_iso=resolved['iso'],
-                                appointment_time=appt_data['time'],
-                                property_interest=lead_data.get('budget', '') + ' property viewing',
-                                status='pending'
-                            )
-                            db.session.add(new_appt)
-                            db.session.commit()
-                            conversation_memory[session_appt_key] = True
-                            print(f"✅ Appointment auto-booked: {new_appt.customer_name} | {resolved['display']} at {appt_data['time']} ({booked + 1}/{max_slot})")
-                            send_appointment_confirmation(agency, new_appt)
-                        except Exception as appt_err:
-                            print(f"⚠️ Auto-appointment error: {appt_err}")
-                            db.session.rollback()
+                slot_id = f"{resolved['iso']}|{appt_data['time']}"
+                if slot_id not in booked_slots:
+                    booked = slot_booked_count(agency_id, resolved['iso'], appt_data['time'])
+                    if booked >= max_slot:
+                        print(f"⚠️ Slot full ({booked}/{max_slot}): {resolved['display']} at {appt_data['time']} - not booking")
+                        booked_slots.add(slot_id)  # don't retry this slot in this session
                     else:
-                        conversation_memory[session_appt_key] = True
+                        existing_appt = Appointment.query.filter_by(
+                            agency_id=agency_id,
+                            customer_email=lead_data['email'],
+                            appointment_date_iso=resolved['iso'],
+                            appointment_time=appt_data['time']
+                        ).first()
+                        if not existing_appt:
+                            try:
+                                new_appt = Appointment(
+                                    agency_id=agency_id,
+                                    customer_name=lead_data.get('name'),
+                                    customer_email=lead_data['email'],
+                                    appointment_date=resolved['display'],
+                                    appointment_date_iso=resolved['iso'],
+                                    appointment_time=appt_data['time'],
+                                    property_interest=lead_data.get('budget', '') + ' property viewing',
+                                    status='pending'
+                                )
+                                db.session.add(new_appt)
+                                db.session.commit()
+                                booked_slots.add(slot_id)
+                                print(f"✅ Appointment auto-booked: {new_appt.customer_name} | {resolved['display']} at {appt_data['time']} ({booked + 1}/{max_slot})")
+                                send_appointment_confirmation(agency, new_appt)
+                            except Exception as appt_err:
+                                print(f"⚠️ Auto-appointment error: {appt_err}")
+                                db.session.rollback()
+                        else:
+                            booked_slots.add(slot_id)
+                    conversation_memory[session_slots_key] = booked_slots
 
         if is_lead_qualified(lead_data, history):
             try:
