@@ -616,19 +616,50 @@ def process_pending_followups():
 
 
 def clean_expired_sessions():
+    """Delete conversation sessions inactive for 30+ minutes (DB-backed)."""
     try:
-        current_time = datetime.utcnow()
-        expired_keys = [
-            key for key in list(session_timestamps.keys())
-            if (current_time - session_timestamps[key]).total_seconds() > 1800
-        ]
-        for key in expired_keys:
-            conversation_memory.pop(key, None)
-            session_timestamps.pop(key, None)
-            print(f"🧹 Expired session cleared: {key}")
+        cutoff = datetime.utcnow() - timedelta(minutes=30)
+        deleted = ConversationSession.query.filter(
+            ConversationSession.updated_at < cutoff
+        ).delete()
+        if deleted:
+            db.session.commit()
+            print(f"🧹 {deleted} expired session(s) cleared")
     except Exception as e:
         print(f"⚠️ Session cleanup error: {e}")
+        db.session.rollback()
 
+def load_session(session_key):
+    """Load conversation history + booked slots from DB. Survives restarts."""
+    row = db.session.get(ConversationSession, session_key)
+    if row:
+        try:
+            history = json.loads(row.history or '[]')
+        except Exception:
+            history = []
+        try:
+            booked = set(json.loads(row.booked_slots or '[]'))
+        except Exception:
+            booked = set()
+        return history, booked
+    print(f"🆕 New session started: {session_key}")
+    return [], set()
+
+
+def save_session(session_key, history, booked_slots):
+    """Persist conversation history + booked slots to DB."""
+    try:
+        row = db.session.get(ConversationSession, session_key)
+        if not row:
+            row = ConversationSession(session_key=session_key)
+            db.session.add(row)
+        row.history = json.dumps(history)
+        row.booked_slots = json.dumps(sorted(booked_slots))
+        row.updated_at = datetime.utcnow()
+        db.session.commit()
+    except Exception as e:
+        print(f"⚠️ Session save error: {e}")
+        db.session.rollback()
 
 def generate_lead_summary(conversation_history, agency_name):
     try:
@@ -1100,6 +1131,12 @@ class Listing(db.Model):
     status = db.Column(db.String(20), default='available')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
 
+
+class ConversationSession(db.Model):
+    session_key = db.Column(db.String(120), primary_key=True)
+    history = db.Column(db.Text, default='[]')
+    booked_slots = db.Column(db.Text, default='[]')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # -------------------------
 # ROUTES
@@ -1746,13 +1783,8 @@ LANGUAGE:
 
 Respond naturally in plain text only:"""
 
-        if session_key not in conversation_memory:
-            conversation_memory[session_key] = []
-            print(f"🆕 New session started: {session_key}")
-
-        session_timestamps[session_key] = datetime.utcnow()
-        history = conversation_memory[session_key]
-        history.append({"role": "user", "content": user_message})
+            history, booked_slots = load_session(session_key)
+            history.append({"role": "user", "content": user_message})
 
         objection = detect_objection(user_message)
         objection_context = ""
@@ -1777,8 +1809,7 @@ Respond naturally in plain text only:"""
 
     # ─── Auto-appointment: books ALL requested slots (multi-property support) ───
         appt_data = extract_appointment_data(history)
-        session_slots_key = f"appt_slots_{session_key}"
-        booked_slots = conversation_memory.get(session_slots_key, set())
+        
 
         if (appt_data['requested']
                 and appt_data['slots']
@@ -1827,7 +1858,7 @@ Respond naturally in plain text only:"""
                 except Exception as appt_err:
                     print(f"⚠️ Auto-appointment error: {appt_err}")
                     db.session.rollback()
-            conversation_memory[session_slots_key] = booked_slots
+            
 
         if is_lead_qualified(lead_data, history):
             try:
@@ -1876,7 +1907,7 @@ Respond naturally in plain text only:"""
             except Exception as save_err:
                 print(f"❌ Lead save error: {save_err}")
                 db.session.rollback()
-
+                save_session(session_key, history, booked_slots)
         return jsonify({"reply": ai_reply})
     except Exception as e:
         print(f"❌ CHAT ERROR: {e}")
