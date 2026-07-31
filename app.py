@@ -57,12 +57,6 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 
 # -------------------------
-# MEMORY STORE
-# -------------------------
-conversation_memory = {}
-session_timestamps = {}
-
-# -------------------------
 # EMAIL CONFIG
 # -------------------------
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
@@ -105,95 +99,56 @@ WEEKDAY_WORDS = {
 }
 
 AFFIRMATIVE_WORDS = [
-    # English
     'yes', 'sure', 'sounds good', 'definitely', 'absolutely', "let's", 'ok', 'okay', 'yeah', 'yep', 'of course',
-    # Spanish
     'si', 'sí', 'claro', 'por supuesto', 'vale', 'perfecto', 'genial',
-    # German
     'ja', 'sicher', 'klar', 'natürlich', 'natuerlich', 'na klar', 'gerne', 'gut', 'passt',
-    # French
     'oui', 'bien sûr', 'bien sur', "d'accord", 'daccord', 'volontiers', 'parfait',
-    # Italian
     'sì', 'certo', 'va bene', 'certamente', 'volentieri',
-    # Portuguese
     'sim', 'com certeza', 'certamente', 'pode ser',
-    # Polish
     'tak', 'oczywiście', 'oczywiscie', 'jasne', 'pewnie', 'chętnie', 'chetnie',
-    # Dutch
     'zeker', 'graag', 'prima', 'natuurlijk',
-    # Turkish
     'evet', 'tabii', 'tabi', 'elbette', 'olur',
-    # Roman Urdu/Hindi
     'haan', 'han', 'jee', 'ji', 'bilkul', 'zaroor',
 ]
 
 NAME_FILLER_WORDS = {
-    # English
     'i', 'am', 'im', 'my', 'name', 'is', 'this', 'it', 'its', 'call', 'me', 'hello', 'hi', 'hey', 'and', 'you', 'who', 'are',
-    # Spanish
     'soy', 'yo', 'llamo', 'mi', 'nombre', 'es', 'hola', 'y', 'tu', 'tú', 'quien', 'quién', 'eres', 'usted', 'cómo', 'como', 'estás', 'estas',
-    # German
     'ich', 'bin', 'mein', 'ist', 'heisse', 'heiße', 'hallo', 'und', 'wer', 'bist', 'du', 'sie', 'sind', 'da', 'jemand',
-    # French
     'je', 'suis', 'appelle', "m'appelle", 'mappelle', 'mon', 'nom', 'est', 'bonjour', 'et', 'qui', 'es', 'vous', 'êtes', 'etes', 'toi',
-    # Italian
     'sono', 'chiamo', 'il', 'mio', 'nome', 'è', 'ciao', 'e', 'chi', 'sei', 'lei',
-    # Portuguese
     'eu', 'sou', 'meu', 'chamo', 'olá', 'ola', 'quem', 'você', 'voce', 'és',
-    # Polish
     'jestem', 'nazywam', 'się', 'sie', 'mam', 'na', 'imię', 'imie', 'cześć', 'czesc', 'a', 'kim', 'jesteś', 'jestes', 'ty', 'witam',
-    # Dutch
     'ik', 'ben', 'mijn', 'naam', 'heet', 'en', 'wie', 'jij',
-    # Turkish
     'ben', 'benim', 'adım', 'adim', 'ismim', 'merhaba', 'sen', 'kimsin',
-    # Roman Urdu/Hindi
     'mera', 'naam', 'hai', 'main', 'hoon', 'ap', 'aap', 'kaun',
 }
 
 VIEWING_OFFER_PHRASES = [
-    # English
     'see it in person', 'seeing it in person', 'view it in person', 'would you like to see', 'would you like to view',
     'in person', 'interested in seeing', 'interested in viewing', 'want to view', 'schedule a viewing',
     'arrange a viewing', 'book a viewing', 'see the property', 'visit the property', 'like to view', 'like to see',
-    # Spanish
     'en persona', 'una visita', 'ver la propiedad', 'ver alguna', 'visitar la propiedad', 'agendar una visita',
-    # German
     'besichtigung', 'besichtigen', 'vor ort', 'anschauen', 'ansehen',
-    # French
     'en personne', 'une visite', 'visiter', 'voir le bien', 'voir la propriété',
-    # Italian
     'di persona', 'una visita', 'visitare', 'vedere la proprietà', 'vedere la proprieta',
-    # Portuguese
     'pessoalmente', 'uma visita', 'visitar', 'ver o imóvel', 'ver o imovel',
-    # Polish
     'osobiście', 'osobiscie', 'obejrzeć', 'obejrzec', 'zobaczyć', 'zobaczyc', 'umówić', 'umowic',
-    # Dutch
     'in persoon', 'bezichtiging', 'bezichtigen', 'bekijken',
-    # Turkish
     'yerinde görmek', 'gormek ister', 'görmek ister', 'ziyaret',
 ]
 
 BOOKING_KEYWORDS = [
-    # English
     'schedule', 'appointment', 'viewing', 'visit', 'see the property', 'book a visit', 'arrange a viewing',
     'show me', 'can i see', 'i would like to see', 'i want to see', 'visit the property', 'see it',
-    # Spanish
     'quiero ver', 'ver a', 'ver la', 'ver los', 'ver las', 'visita', 'visitar', 'cita',
-    # German
     'besichtigung', 'besichtigen', 'sehen', 'termin',
-    # French
     'visite', 'visiter', 'voir', 'rendez-vous',
-    # Italian
     'visita', 'visitare', 'vedere', 'appuntamento',
-    # Portuguese
     'visita', 'visitar', 'ver', 'agendar',
-    # Polish
     'zobaczyć', 'zobaczyc', 'obejrzeć', 'obejrzec', 'wizyta', 'spotkanie',
-    # Dutch
     'bezichtiging', 'bezichtigen', 'zien', 'afspraak',
-    # Turkish
     'görmek', 'gormek', 'ziyaret', 'randevu',
-    # Roman Urdu/Hindi
     'dekhna', 'dekh', 'mulaqat',
 ]
 
@@ -300,12 +255,12 @@ def resolve_next_date(day_word):
     elif day_word in weekdays:
         days_ahead = (weekdays[day_word] - today.weekday()) % 7
         if days_ahead == 0:
-            days_ahead = 7  # same weekday name = next week's occurrence
+            days_ahead = 7
         target = today + timedelta(days=days_ahead)
     else:
         return None
 
-    if target.weekday() == 6:  # Sunday - closed
+    if target.weekday() == 6:
         return None
 
     return {
@@ -318,7 +273,7 @@ def resolve_next_date(day_word):
 def resolve_date_from_daymonth(user_text):
     """Language-agnostic: finds 'DD <month name>' patterns (including connector
     words like 'de'/'den'/'of'/'di') and resolves to a valid future date.
-    Returns the LAST-mentioned valid date, so newer requests override older ones."""
+    Returns the LAST-mentioned valid date."""
     pattern = r'\b(\d{1,2})\s*(?:st|nd|rd|th)?[.,]?\s*(?:de\s+|den\s+|of\s+|di\s+|van\s+)?([A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]+)'
     today = datetime.now(PK_TZ).date()
     best = None
@@ -365,9 +320,9 @@ def get_availability_context(agency_id, max_per_slot):
         today = datetime.now(PK_TZ).date()
         lines = ["\nVIEWING AVAILABILITY - ONLY offer these exact dates and open time slots:"]
         any_open = False
-        for i in range(1, 8):  # starting tomorrow, next 7 days
+        for i in range(1, 8):
             d = today + timedelta(days=i)
-            if d.weekday() == 6:  # skip Sunday
+            if d.weekday() == 6:
                 continue
             iso = d.strftime('%Y-%m-%d')
             open_slots = [s for s in TIME_SLOTS
@@ -615,6 +570,10 @@ def process_pending_followups():
         return {"error": str(e)}
 
 
+# ─────────────────────────────────────────────────────
+# DB-BACKED CONVERSATION SESSIONS (survive restarts)
+# ─────────────────────────────────────────────────────
+
 def clean_expired_sessions():
     """Delete conversation sessions inactive for 30+ minutes (DB-backed)."""
     try:
@@ -628,6 +587,7 @@ def clean_expired_sessions():
     except Exception as e:
         print(f"⚠️ Session cleanup error: {e}")
         db.session.rollback()
+
 
 def load_session(session_key):
     """Load conversation history + booked slots from DB. Survives restarts."""
@@ -660,6 +620,7 @@ def save_session(session_key, history, booked_slots):
     except Exception as e:
         print(f"⚠️ Session save error: {e}")
         db.session.rollback()
+
 
 def generate_lead_summary(conversation_history, agency_name):
     try:
@@ -705,10 +666,6 @@ def extract_name_from_context(conversation_history):
     }
 
     # ── METHOD 0: Language-agnostic — reply to AI's very first message ──
-    # The AI always asks for the name first. history[1]=assistant question,
-    # history[2]=user's name reply. We strip multilingual filler words
-    # ("soy", "ich bin", "jestem", "je suis"...) and take the FIRST
-    # remaining valid token - the actual name.
     if (len(conversation_history) >= 3
             and conversation_history[1]['role'] == 'assistant'
             and conversation_history[2]['role'] == 'user'):
@@ -743,7 +700,8 @@ def extract_name_from_context(conversation_history):
                             '', candidate, flags=re.IGNORECASE).strip()
                         first_word = candidate.split()[0] if candidate.split() else ''
                         if (first_word and re.match(r'^[a-zA-Z]{2,30}$', first_word)
-                                and first_word.lower() not in not_a_name):
+                                and first_word.lower() not in not_a_name
+                                and first_word.lower() not in NAME_FILLER_WORDS):
                             print(f"✅ Name (context): {first_word.title()}")
                             return first_word.title()
 
@@ -753,7 +711,9 @@ def extract_name_from_context(conversation_history):
         if msg['role'] == 'user':
             for match in re.finditer(explicit_pattern, msg['content'], re.IGNORECASE):
                 candidate = match.group(1).strip()
-                if re.match(r'^[a-zA-Z]{2,30}$', candidate) and candidate.lower() not in not_a_name:
+                if (re.match(r'^[a-zA-Z]{2,30}$', candidate)
+                        and candidate.lower() not in not_a_name
+                        and candidate.lower() not in NAME_FILLER_WORDS):
                     found_names.append(candidate.title())
     if found_names:
         print(f"✅ Name (explicit): {found_names[-1]}")
@@ -839,9 +799,10 @@ def extract_lead_data(conversation_history):
                 if unit in ['m', 'million']: unit = 'million'
                 elif unit in ['k', 'thousand']: unit = 'thousand'
             currency = ''
-            if '$' in full_conversation_user or 'dollar' in full_conversation_user.lower() or 'dólar' in full_conversation_user.lower() or 'dolar' in full_conversation_user.lower():
+            low_all = full_conversation_user.lower()
+            if '$' in full_conversation_user or 'dollar' in low_all or 'dólar' in low_all or 'dolar' in low_all:
                 currency = 'USD'
-            elif 'aed' in full_conversation_user.lower():
+            elif 'aed' in low_all:
                 currency = 'AED'
             if unit in million_units:
                 unit = 'million'
@@ -850,7 +811,6 @@ def extract_lead_data(conversation_history):
             break
 
     # Fallback: budget implied by accepting a specific listing's price
-    # (handles both $6,000,000 and 6.000.000 $ style formatting)
     if not lead_data['budget']:
         price_pattern = r'[\$]?\s?\d{1,3}(?:[.,]\d{3}){1,3}\s?[\$]?'
         for i, msg in enumerate(conversation_history):
@@ -1138,6 +1098,7 @@ class ConversationSession(db.Model):
     booked_slots = db.Column(db.Text, default='[]')
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
 # -------------------------
 # ROUTES
 # -------------------------
@@ -1236,6 +1197,9 @@ def delete_agency(agency_id):
     Lead.query.filter_by(agency_id=agency_id).delete()
     Appointment.query.filter_by(agency_id=agency_id).delete()
     Listing.query.filter_by(agency_id=agency_id).delete()
+    ConversationSession.query.filter(
+        ConversationSession.session_key.like(f"{agency_id}_%")
+    ).delete(synchronize_session=False)
     db.session.delete(agency)
     db.session.commit()
     return jsonify({"message": "Agency deleted"})
@@ -1352,10 +1316,6 @@ def bulk_delete_leads():
         for lead_id in lead_ids:
             lead = db.session.get(Lead, int(lead_id))
             if lead:
-                for key in list(conversation_memory.keys()):
-                    if key.startswith(f"{lead.agency_id}_"):
-                        conversation_memory.pop(key, None)
-                        session_timestamps.pop(key, None)
                 db.session.delete(lead)
                 deleted += 1
         db.session.commit()
@@ -1411,7 +1371,6 @@ def book_appointment():
         date_iso = data.get("appointment_date_iso", "").strip()
         time_label = data.get("appointment_time", "").strip()
 
-        # Build display date from ISO
         display_date = data.get("appointment_date", "")
         if date_iso:
             try:
@@ -1422,7 +1381,6 @@ def book_appointment():
             except ValueError:
                 return jsonify({"error": "Invalid date format"}), 400
 
-        # Capacity check
         max_slot = agency.max_viewings_per_slot or 2
         if date_iso and time_label:
             booked = slot_booked_count(int(agency_id), date_iso, time_label)
@@ -1727,6 +1685,7 @@ CONVERSATION START - GET NAME FIRST:
 - Example: Client says "Hi" → You say "Hello! May I know who I'm speaking with?"
 - Client gives name → "Nice to meet you, [Name]! What's on your mind today?"
 - Use their name naturally throughout the conversation.
+- NEVER ask for the name again once given.
 
 PACE - LET THE CLIENT LEAD:
 - The client came to ask questions. Answer them patiently and helpfully.
@@ -1783,8 +1742,8 @@ LANGUAGE:
 
 Respond naturally in plain text only:"""
 
-            history, booked_slots = load_session(session_key)
-            history.append({"role": "user", "content": user_message})
+        history, booked_slots = load_session(session_key)
+        history.append({"role": "user", "content": user_message})
 
         objection = detect_objection(user_message)
         objection_context = ""
@@ -1803,13 +1762,12 @@ Respond naturally in plain text only:"""
             frequency_penalty=0.5
         )
         ai_reply = response.choices[0].message.content.strip()
-        history.append({"role": "assistant", "content": ai_reply, "name": agency.assistant_name})
+        history.append({"role": "assistant", "content": ai_reply})
 
         lead_data = extract_lead_data(history)
 
-    # ─── Auto-appointment: books ALL requested slots (multi-property support) ───
+        # ─── Auto-appointment: books ALL requested slots (multi-property support) ───
         appt_data = extract_appointment_data(history)
-        
 
         if (appt_data['requested']
                 and appt_data['slots']
@@ -1847,7 +1805,7 @@ Respond naturally in plain text only:"""
                         appointment_date=slot['display'],
                         appointment_date_iso=slot['iso'],
                         appointment_time=slot['time'],
-                        property_interest=lead_data.get('budget', '') + ' property viewing',
+                        property_interest=(lead_data.get('budget') or '') + ' property viewing',
                         status='pending'
                     )
                     db.session.add(new_appt)
@@ -1858,7 +1816,6 @@ Respond naturally in plain text only:"""
                 except Exception as appt_err:
                     print(f"⚠️ Auto-appointment error: {appt_err}")
                     db.session.rollback()
-            
 
         if is_lead_qualified(lead_data, history):
             try:
@@ -1907,7 +1864,8 @@ Respond naturally in plain text only:"""
             except Exception as save_err:
                 print(f"❌ Lead save error: {save_err}")
                 db.session.rollback()
-                save_session(session_key, history, booked_slots)
+
+        save_session(session_key, history, booked_slots)
         return jsonify({"reply": ai_reply})
     except Exception as e:
         print(f"❌ CHAT ERROR: {e}")
@@ -1920,10 +1878,6 @@ def delete_lead(lead_id):
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
-        for key in list(conversation_memory.keys()):
-            if key.startswith(f"{lead.agency_id}_"):
-                conversation_memory.pop(key, None)
-                session_timestamps.pop(key, None)
         db.session.delete(lead)
         db.session.commit()
         return jsonify({"message": "Lead deleted"})
@@ -1934,14 +1888,14 @@ def delete_lead(lead_id):
 @app.route("/clear-all-leads/<int:agency_id>", methods=["DELETE"])
 def clear_all_leads(agency_id):
     try:
-        keys_to_delete = [k for k in conversation_memory.keys() if k.startswith(f"{agency_id}_")]
-        for key in keys_to_delete:
-            conversation_memory.pop(key, None)
-            session_timestamps.pop(key, None)
+        ConversationSession.query.filter(
+            ConversationSession.session_key.like(f"{agency_id}_%")
+        ).delete(synchronize_session=False)
         deleted_count = Lead.query.filter_by(agency_id=agency_id).delete()
         db.session.commit()
         return jsonify({"message": f"{deleted_count} leads deleted"})
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": "Failed to clear"}), 500
 
 
