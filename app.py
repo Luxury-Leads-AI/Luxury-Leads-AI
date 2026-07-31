@@ -67,6 +67,23 @@ SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 TIME_SLOTS = ['10:00 AM', '12:00 PM', '2:00 PM', '4:00 PM', '6:00 PM']
 PK_TZ = pytz.timezone('Asia/Karachi')
 
+# -------------------------
+# TIER CONFIGURATION (Paddle-ready)
+# -------------------------
+TIER_LIMITS = {
+    'solo':        {'agents': 1,   'branches': 0,   'label': 'Solo Agent',  'price': 197, 'paddle_price_id': os.getenv('PADDLE_PRICE_SOLO', '')},
+    'agency':      {'agents': 10,  'branches': 0,   'label': 'Agency',      'price': 497, 'paddle_price_id': os.getenv('PADDLE_PRICE_AGENCY', '')},
+    'corporation': {'agents': 999, 'branches': 999, 'label': 'Corporation', 'price': 997, 'paddle_price_id': os.getenv('PADDLE_PRICE_CORP', '')},
+}
+
+def get_tier_limits(agency):
+    """Single source of truth for what an agency can do."""
+    return TIER_LIMITS.get((agency.tier or 'solo'), TIER_LIMITS['solo'])
+
+def has_dashboard_access(agency):
+    """Billing-state gate. Pre-Paddle: everyone passes."""
+    return (agency.subscription_status or 'active') in ('active', 'trialing', 'past_due')
+
 # ─────────────────────────────────────────────────────
 # MULTILINGUAL DICTIONARIES
 # Supported: EN, ES, DE, FR, IT, PT, PL, NL, TR (+ Roman Urdu/Hindi affirmatives)
@@ -1033,6 +1050,14 @@ class Agency(db.Model):
     status = db.Column(db.String(50), default="Active")
     webhook_url = db.Column(db.String(500))
     max_viewings_per_slot = db.Column(db.Integer, default=2)
+    # ── Tier & Paddle billing (Step 4A) ──
+    tier = db.Column(db.String(20), default='solo')
+    parent_id = db.Column(db.Integer, nullable=True)          # branch → HQ agency id
+    paddle_customer_id = db.Column(db.String(100), nullable=True)
+    paddle_subscription_id = db.Column(db.String(100), nullable=True)
+    subscription_status = db.Column(db.String(20), default='active')
+    trial_ends_at = db.Column(db.DateTime, nullable=True)
+    billing_email = db.Column(db.String(150), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -1099,6 +1124,22 @@ class ConversationSession(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class Agent(db.Model):
+    """Sub-accounts for Tier 2 (agency) and Tier 3 (corporation branches)."""
+    id = db.Column(db.Integer, primary_key=True)
+    agency_id = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(150), nullable=False)
+    password_hash = db.Column(db.String(200))
+    status = db.Column(db.String(20), default='active')   # active / disabled
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+    
 # -------------------------
 # ROUTES
 # -------------------------
@@ -1163,6 +1204,11 @@ def create_agency():
     data = request.json
     if not data.get("name") or not data.get("email"):
         return jsonify({"error": "Name and email required"}), 400
+
+    tier = data.get("tier", "solo")
+    if tier not in TIER_LIMITS:
+        tier = "solo"
+
     agency = Agency(
         name=data.get("name"),
         prompt=data.get("prompt", "You are a luxury real estate assistant."),
@@ -1171,12 +1217,38 @@ def create_agency():
         email=data.get("email"),
         whatsapp=data.get("whatsapp"),
         subscription_type=data.get("subscription_type", "Basic"),
-        status="Active"
+        status="Active",
+        tier=tier,
+        subscription_status="trialing",
+        trial_ends_at=datetime.utcnow() + timedelta(days=14),
+        billing_email=data.get("billing_email") or data.get("email")
     )
     agency.set_password("admin123")
     db.session.add(agency)
     db.session.commit()
-    return jsonify({"agency_id": agency.id, "message": "Agency created"})
+    print(f"✅ Agency created: ID {agency.id} | Tier: {tier} | Trial ends: {agency.trial_ends_at.date()}")
+    return jsonify({
+        "agency_id": agency.id,
+        "tier": tier,
+        "trial_ends": agency.trial_ends_at.strftime('%Y-%m-%d'),
+        "message": "Agency created"
+    })
+
+@app.route("/paddle-webhook", methods=["POST"])
+def paddle_webhook():
+    """Stub: logs Paddle events. Signature verification + event handling
+    will be added when the Paddle account goes live (Step 7)."""
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        event_type = payload.get("event_type", "unknown")
+        print(f"💳 Paddle webhook received: {event_type}")
+        # Future: subscription.created → set tier/status
+        #         subscription.updated → change tier
+        #         subscription.cancelled → subscription_status='cancelled'
+        return jsonify({"status": "received"}), 200
+    except Exception as e:
+        print(f"⚠️ Paddle webhook error: {e}")
+        return jsonify({"status": "error"}), 200
 
 @app.route("/agencies")
 def get_agencies():
@@ -2067,6 +2139,21 @@ with app.app_context():
             db.session.execute(text("ALTER TABLE appointment ADD COLUMN appointment_date_iso VARCHAR(20);"))
             db.session.commit()
             print("✅ Migration: appointment_date_iso added")
+
+            # STEP 4A MIGRATIONS - Tier + Paddle fields
+        for col, ddl in [
+            ('tier', "ALTER TABLE agency ADD COLUMN tier VARCHAR(20) DEFAULT 'solo';"),
+            ('parent_id', "ALTER TABLE agency ADD COLUMN parent_id INTEGER;"),
+            ('paddle_customer_id', "ALTER TABLE agency ADD COLUMN paddle_customer_id VARCHAR(100);"),
+            ('paddle_subscription_id', "ALTER TABLE agency ADD COLUMN paddle_subscription_id VARCHAR(100);"),
+            ('subscription_status', "ALTER TABLE agency ADD COLUMN subscription_status VARCHAR(20) DEFAULT 'active';"),
+            ('trial_ends_at', "ALTER TABLE agency ADD COLUMN trial_ends_at TIMESTAMP;"),
+            ('billing_email', "ALTER TABLE agency ADD COLUMN billing_email VARCHAR(150);"),
+        ]:
+            if col not in agency_cols:
+                db.session.execute(text(ddl))
+                db.session.commit()
+                print(f"✅ Migration: agency.{col} added")
 
         print("✅ All migrations complete")
     except Exception as e:
