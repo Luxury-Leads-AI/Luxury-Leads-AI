@@ -216,6 +216,19 @@
 <script>
 let selectedTier = 'solo';
 
+// Pre-select tier from URL, e.g. /signup?tier=agency
+(function () {
+  const urlTier = new URLSearchParams(window.location.search).get('tier');
+  if (['solo', 'agency', 'corporation'].includes(urlTier)) {
+    selectedTier = urlTier;
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
+      const card = document.querySelector(`.tier-card[data-tier="${urlTier}"]`);
+      if (card) card.classList.add('selected');
+    });
+  }
+})();
+
 function selectTier(tier, el) {
   selectedTier = tier;
   document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));

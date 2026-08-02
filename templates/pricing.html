@@ -26,7 +26,18 @@
             text-align: center;
             color: rgba(255,255,255,0.9);
             font-size: 20px;
-            margin-bottom: 60px;
+            margin-bottom: 10px;
+        }
+        .trial-note {
+            text-align: center;
+            color: rgba(255,255,255,0.85);
+            font-size: 15px;
+            margin-bottom: 40px;
+        }
+        .trial-note span {
+            background: rgba(255,255,255,0.15);
+            padding: 6px 16px;
+            border-radius: 20px;
         }
         .pricing-grid {
             display: grid;
@@ -41,6 +52,8 @@
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             transition: transform 0.3s;
             position: relative;
+            display: flex;
+            flex-direction: column;
         }
         .plan:hover {
             transform: translateY(-10px);
@@ -84,6 +97,7 @@
         .features {
             list-style: none;
             margin-bottom: 30px;
+            flex: 1;
         }
         .features li {
             padding: 12px 0;
@@ -98,113 +112,130 @@
             margin-right: 10px;
         }
         .cta-button {
+            display: block;
             width: 100%;
             padding: 16px;
-            background: #667eea;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            border: none;
+            text-align: center;
+            text-decoration: none;
             border-radius: 10px;
             font-size: 16px;
             font-weight: bold;
-            cursor: pointer;
-            transition: background 0.3s;
-            text-decoration: none;
-            display: block;
-            text-align: center;
+            transition: opacity 0.3s, transform 0.2s;
         }
         .cta-button:hover {
-            background: #5568d3;
+            opacity: 0.9;
+            transform: scale(1.02);
         }
-        .trial-note {
+        .cta-button.secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        .footer-links {
             text-align: center;
-            margin-top: 10px;
-            color: #718096;
-            font-size: 13px;
+            margin-top: 60px;
         }
-        .back-link {
+        .footer-links a {
+            color: rgba(255,255,255,0.85);
+            text-decoration: none;
+            margin: 0 15px;
+            font-size: 14px;
+        }
+        .footer-links a:hover {
+            color: white;
+            text-decoration: underline;
+        }
+        .guarantee {
             text-align: center;
             margin-top: 40px;
+            color: rgba(255,255,255,0.9);
+            font-size: 15px;
         }
-        .back-link a {
-            color: white;
-            text-decoration: none;
-            font-size: 16px;
-        }
-        .back-link a:hover {
-            text-decoration: underline;
+        @media (max-width: 768px) {
+            h1 { font-size: 34px; }
+            .subtitle { font-size: 17px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Simple, Transparent Pricing</h1>
-        <p class="subtitle">Start your 7-day free trial. No credit card required.</p>
-        
-        <div class="pricing-grid">
-            <!-- Starter Plan -->
-            <div class="plan">
-                <div class="plan-name">Starter</div>
-                <div class="plan-price">$197<span>/month</span></div>
-                <div class="plan-description">Perfect for solo agents and small offices</div>
-                <ul class="features">
-                    <li>Up to 50 leads/month</li>
-                    <li>1 AI Assistant</li>
-                    <li>Email notifications</li>
-                    <li>Basic dashboard</li>
-                    <li>Excel export</li>
-                    <li>Standard support (48hr)</li>
-                </ul>
-                <a href="mailto:yasar.ai.leads@gmail.com?subject=Start Free Trial - Starter Plan&body=Hi, I'd like to start a 7-day free trial of the Starter plan." class="cta-button">
-                    Contact for Free Trial
-                </a>
-                <p class="trial-note">7 days free, then $197/month</p>
-            </div>
 
-            <!-- Professional Plan -->
-            <div class="plan popular">
-                <div class="popular-badge">MOST POPULAR</div>
-                <div class="plan-name">Professional</div>
-                <div class="plan-price">$497<span>/month</span></div>
-                <div class="plan-description">For growing agencies ready to scale</div>
-                <ul class="features">
-                    <li>Up to 200 leads/month</li>
-                    <li>Customizable AI</li>
-                    <li>Email + SMS notifications</li>
-                    <li>Advanced analytics</li>
-                    <li>Custom branding</li>
-                    <li>CRM integration</li>
-                    <li>Priority support (24hr)</li>
-                </ul>
-                <a href="mailto:yasar.ai.leads@gmail.com?subject=Start Free Trial - Professional Plan&body=Hi, I'd like to start a 7-day free trial of the Professional plan." class="cta-button">
-                    Contact for Free Trial
-                </a>
-                <p class="trial-note">7 days free, then $497/month</p>
-            </div>
+<div class="container">
+    <h1>💎 Simple, Transparent Pricing</h1>
+    <p class="subtitle">AI-powered lead generation that pays for itself with one closed deal</p>
+    <p class="trial-note"><span>🎁 Every plan starts with a 14-day free trial — no payment required</span></p>
 
-            <!-- Enterprise Plan -->
-            <div class="plan">
-                <div class="plan-name">Enterprise</div>
-                <div class="plan-price">$997<span>/month</span></div>
-                <div class="plan-description">For large brokerages with high volume</div>
-                <ul class="features">
-                    <li>Unlimited leads</li>
-                    <li>Multiple AI assistants</li>
-                    <li>White-label solution</li>
-                    <li>Full CRM integration</li>
-                    <li>API access</li>
-                    <li>Custom features</li>
-                    <li>Dedicated support (4hr)</li>
-                </ul>
-                <a href="mailto:yasar.ai.leads@gmail.com?subject=Start Free Trial - Enterprise Plan&body=Hi, I'd like to start a 7-day free trial of the Enterprise plan." class="cta-button">
-                    Contact for Free Trial
-                </a>
-                <p class="trial-note">7 days free, then $997/month</p>
-            </div>
+    <div class="pricing-grid">
+
+        <!-- SOLO AGENT -->
+        <div class="plan">
+            <div class="plan-name">👤 Solo Agent</div>
+            <div class="plan-price">$197<span>/month</span></div>
+            <p class="plan-description">Perfect for independent agents who want to capture every lead automatically.</p>
+            <ul class="features">
+                <li>AI chat assistant on your website</li>
+                <li>24/7 automatic lead qualification</li>
+                <li>Smart appointment booking with real dates</li>
+                <li>Property listings + AI recommendations</li>
+                <li>Multilingual support (10 languages)</li>
+                <li>Lead dashboard with CRM pipeline</li>
+                <li>Email notifications & auto follow-ups</li>
+                <li>Analytics dashboard</li>
+            </ul>
+            <a href="/signup?tier=solo" class="cta-button secondary">Start Free Trial</a>
         </div>
 
-        <div class="back-link">
-            <a href="/">← Back to Home</a>
+        <!-- AGENCY -->
+        <div class="plan popular">
+            <div class="popular-badge">⭐ MOST POPULAR</div>
+            <div class="plan-name">🏢 Agency</div>
+            <div class="plan-price">$497<span>/month</span></div>
+            <p class="plan-description">For agencies with a team. Distribute leads and manage everyone in one place.</p>
+            <ul class="features">
+                <li>Everything in Solo Agent</li>
+                <li>Up to 10 agent accounts</li>
+                <li>Automatic lead assignment (round-robin)</li>
+                <li>Individual agent logins & dashboards</li>
+                <li>Per-agent appointment calendars</li>
+                <li>Team performance overview</li>
+                <li>Owner sees all leads & bookings</li>
+                <li>Priority email support</li>
+            </ul>
+            <a href="/signup?tier=agency" class="cta-button">Start Free Trial</a>
         </div>
+
+        <!-- CORPORATION -->
+        <div class="plan">
+            <div class="plan-name">🌐 Corporation</div>
+            <div class="plan-price">$997<span>/month</span></div>
+            <p class="plan-description">For brokerages and multi-location firms that need everything under one roof.</p>
+            <ul class="features">
+                <li>Everything in Agency</li>
+                <li>Unlimited branches / locations</li>
+                <li>Each branch: own widget, listings & team</li>
+                <li>HQ dashboard with aggregate analytics</li>
+                <li>Per-branch performance comparison</li>
+                <li>Unlimited agent accounts</li>
+                <li>Dedicated onboarding support</li>
+                <li>Custom integrations (CRM webhooks)</li>
+            </ul>
+            <a href="/signup?tier=corporation" class="cta-button secondary">Start Free Trial</a>
+        </div>
+
     </div>
+
+    <p class="guarantee">🔒 Cancel anytime during your trial — no questions asked. One closed luxury deal covers years of subscription.</p>
+
+    <div class="footer-links">
+        <a href="/">Home</a>
+        <a href="/signup">Sign Up</a>
+        <a href="/owner-login">Login</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy-policy">Privacy</a>
+        <a href="/refund-policy">Refunds</a>
+    </div>
+</div>
+
 </body>
 </html>
