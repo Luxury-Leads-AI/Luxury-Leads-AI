@@ -84,6 +84,20 @@ def has_dashboard_access(agency):
     """Billing-state gate. Pre-Paddle: everyone passes."""
     return (agency.subscription_status or 'active') in ('active', 'trialing', 'past_due')
 
+def assign_next_agent(agency):
+    """Round-robin: returns the active agent with the fewest leads.
+    Returns None for solo tier or when no active agents exist."""
+    if (agency.tier or 'solo') == 'solo':
+        return None
+    agents = Agent.query.filter_by(agency_id=agency.id, status='active').all()
+    if not agents:
+        return None
+    counts = {a.id: Lead.query.filter_by(agency_id=agency.id, agent_id=a.id).count()
+              for a in agents}
+    best = min(agents, key=lambda a: (counts[a.id], a.id))
+    print(f"👥 Round-robin: lead → agent {best.name} (ID {best.id}, {counts[best.id]} leads)")
+    return best
+
 # ─────────────────────────────────────────────────────
 # MULTILINGUAL DICTIONARIES
 # Supported: EN, ES, DE, FR, IT, PT, PL, NL, TR (+ Roman Urdu/Hindi affirmatives)
@@ -1083,12 +1097,13 @@ class Lead(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
     follow_up_1_sent = db.Column(db.Integer, default=0)
     follow_up_7_sent = db.Column(db.Integer, default=0)
-
+    agent_id = db.Column(db.Integer, nullable=True)   # assigned agent (Tier 2/3)
 
 class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     agency_id = db.Column(db.Integer, nullable=False)
     lead_id = db.Column(db.Integer, nullable=True)
+    agent_id = db.Column(db.Integer, nullable=True)   # whose calendar (Tier 2/3)
     customer_name = db.Column(db.String(100))
     customer_email = db.Column(db.String(150))
     appointment_date = db.Column(db.String(100))       # Display: "Monday, July 13, 2026"
@@ -1411,6 +1426,7 @@ def appointments(agency_id):
     return render_template("appointments.html", agency=agency, appointments=appts)
 
 
+
 @app.route("/update-slot-capacity/<int:agency_id>", methods=["POST"])
 def update_slot_capacity(agency_id):
     """Agency sets how many customers can book the same slot"""
@@ -1525,6 +1541,108 @@ def get_appointments_count(agency_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ─────────────────────────────────────────────────────
+# STEP 4B - AGENT MANAGEMENT (Tier 2/3)
+# ─────────────────────────────────────────────────────
+
+@app.route("/agents/<int:agency_id>")
+def agents_page(agency_id):
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return redirect("/owner-login?error=Agency+not+found")
+    if (agency.tier or 'solo') == 'solo':
+        return redirect(f"/admin?agency_id={agency_id}")
+    agents = Agent.query.filter_by(agency_id=agency_id).order_by(Agent.created_at.asc()).all()
+    lead_counts = {a.id: Lead.query.filter_by(agency_id=agency_id, agent_id=a.id).count() for a in agents}
+    limits = get_tier_limits(agency)
+    return render_template("agents.html", agency=agency, agents=agents,
+                           lead_counts=lead_counts, limits=limits)
+
+
+@app.route("/add-agent/<int:agency_id>", methods=["POST"])
+def add_agent(agency_id):
+    try:
+        agency = db.session.get(Agency, agency_id)
+        if not agency:
+            return jsonify({"error": "Agency not found"}), 404
+        limits = get_tier_limits(agency)
+        current = Agent.query.filter_by(agency_id=agency_id).count()
+        if current >= limits['agents']:
+            return jsonify({"error": f"Agent limit reached ({limits['agents']} for {limits['label']} plan). Upgrade to add more."}), 403
+        data = request.get_json(force=True)
+        name = data.get("name", "").strip()
+        email = data.get("email", "").strip().lower()
+        password = data.get("password", "").strip() or "agent123"
+        if not name or not email:
+            return jsonify({"error": "Name and email required"}), 400
+        if Agent.query.filter_by(agency_id=agency_id, email=email).first():
+            return jsonify({"error": "An agent with this email already exists"}), 400
+        agent = Agent(agency_id=agency_id, name=name, email=email, status='active')
+        agent.set_password(password)
+        db.session.add(agent)
+        db.session.commit()
+        print(f"✅ Agent added: {name} (ID {agent.id}) for agency {agency_id}")
+        return jsonify({"success": True, "agent_id": agent.id, "default_password": password})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to add agent"}), 500
+
+
+@app.route("/toggle-agent/<int:agent_id>", methods=["POST"])
+def toggle_agent(agent_id):
+    try:
+        agent = db.session.get(Agent, agent_id)
+        if not agent:
+            return jsonify({"error": "Agent not found"}), 404
+        agent.status = 'disabled' if agent.status == 'active' else 'active'
+        db.session.commit()
+        return jsonify({"success": True, "status": agent.status})
+    except Exception:
+        return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/delete-agent/<int:agent_id>", methods=["DELETE"])
+def delete_agent(agent_id):
+    try:
+        agent = db.session.get(Agent, agent_id)
+        if not agent:
+            return jsonify({"error": "Agent not found"}), 404
+        # Unassign their leads (leads stay with the agency)
+        Lead.query.filter_by(agent_id=agent_id).update({"agent_id": None})
+        Appointment.query.filter_by(agent_id=agent_id).update({"agent_id": None})
+        db.session.delete(agent)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Failed to delete"}), 500
+
+
+@app.route("/agent-login", methods=["GET", "POST"])
+def agent_login():
+    if request.method == "GET":
+        return render_template("agent_login.html")
+    email = request.form.get("email", "").strip().lower()
+    password = request.form.get("password", "").strip()
+    agent = Agent.query.filter_by(email=email, status='active').first()
+    if agent and agent.check_password(password):
+        session['agent_id'] = agent.id
+        return redirect(f"/agent-dashboard/{agent.id}")
+    return redirect("/agent-login?error=Invalid+credentials")
+
+
+@app.route("/agent-dashboard/<int:agent_id>")
+def agent_dashboard(agent_id):
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return redirect("/agent-login?error=Agent+not+found")
+    agency = db.session.get(Agency, agent.agency_id)
+    my_leads = Lead.query.filter_by(agency_id=agent.agency_id, agent_id=agent_id)\
+        .order_by(Lead.intent_score.desc(), Lead.created_at.desc()).all()
+    my_appts = Appointment.query.filter_by(agency_id=agent.agency_id, agent_id=agent_id)\
+        .order_by(Appointment.created_at.desc()).all()
+    return render_template("agent_dashboard.html", agent=agent, agency=agency,
+                           leads=my_leads, appointments=my_appts)
 
 # ─────────────────────────────────────────────────────
 # PHASE 2D ROUTES - PROPERTY LISTINGS
@@ -1872,6 +1990,7 @@ Respond naturally in plain text only:"""
                 try:
                     new_appt = Appointment(
                         agency_id=agency_id,
+                        agent_id=None,
                         customer_name=lead_data.get('name'),
                         customer_email=lead_data['email'],
                         appointment_date=slot['display'],
@@ -1913,10 +2032,12 @@ Respond naturally in plain text only:"""
                     else:
                         print(f"⚠️ Duplicate: {lead_data['email']}")
                 else:
-                    ai_summary = generate_lead_summary(history, agency.name)
+                   ai_summary = generate_lead_summary(history, agency.name)
                     quality_score = analyze_lead_quality(lead_data, history)
+                    assigned = assign_next_agent(agency)
                     lead = Lead(
                         agency_id=agency_id,
+                        agent_id=assigned.id if assigned else None,
                         name=lead_data['name'],
                         email=lead_data['email'],
                         phone=lead_data.get('phone'),
@@ -2160,6 +2281,15 @@ with app.app_context():
         print(f"⚠️ Migration error: {e}")
         db.session.rollback()
 
+            # STEP 4B MIGRATIONS - agent assignment
+        if 'agent_id' not in lead_cols:
+            db.session.execute(text("ALTER TABLE lead ADD COLUMN agent_id INTEGER;"))
+            db.session.commit()
+            print("✅ Migration: lead.agent_id added")
+        if 'agent_id' not in appt_cols:
+            db.session.execute(text("ALTER TABLE appointment ADD COLUMN agent_id INTEGER;"))
+            db.session.commit()
+            print("✅ Migration: appointment.agent_id added")
 
 # -------------------------
 # RUN
