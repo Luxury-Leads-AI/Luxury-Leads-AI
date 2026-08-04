@@ -2281,15 +2281,29 @@ with app.app_context():
         print(f"⚠️ Migration error: {e}")
         db.session.rollback()
 
-            # STEP 4B MIGRATIONS - agent assignment
-        if 'agent_id' not in lead_cols:
-            db.session.execute(text("ALTER TABLE lead ADD COLUMN agent_id INTEGER;"))
+            # ── STEP 4B MIGRATIONS (self-contained) ──
+    try:
+        from sqlalchemy import text as _text, inspect as _inspect
+        _insp = _inspect(db.engine)
+        _lead_cols = [c['name'] for c in _insp.get_columns('lead')]
+        _appt_cols = [c['name'] for c in _insp.get_columns('appointment')]
+
+        if 'agent_id' not in _lead_cols:
+            db.session.execute(_text("ALTER TABLE lead ADD COLUMN agent_id INTEGER;"))
             db.session.commit()
             print("✅ Migration: lead.agent_id added")
-        if 'agent_id' not in appt_cols:
-            db.session.execute(text("ALTER TABLE appointment ADD COLUMN agent_id INTEGER;"))
+        else:
+            print("✔ lead.agent_id already exists")
+
+        if 'agent_id' not in _appt_cols:
+            db.session.execute(_text("ALTER TABLE appointment ADD COLUMN agent_id INTEGER;"))
             db.session.commit()
             print("✅ Migration: appointment.agent_id added")
+        else:
+            print("✔ appointment.agent_id already exists")
+    except Exception as e:
+        print(f"⚠️ 4B migration error: {e}")
+        db.session.rollback()
 
 # -------------------------
 # RUN
