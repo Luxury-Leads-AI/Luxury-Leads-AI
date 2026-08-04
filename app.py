@@ -2032,7 +2032,7 @@ Respond naturally in plain text only:"""
                     else:
                         print(f"⚠️ Duplicate: {lead_data['email']}")
                 else:
-                   ai_summary = generate_lead_summary(history, agency.name)
+                    ai_summary = generate_lead_summary(history, agency.name)
                     quality_score = analyze_lead_quality(lead_data, history)
                     assigned = assign_next_agent(agency)
                     lead = Lead(
