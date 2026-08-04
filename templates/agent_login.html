@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Agent Login - Luxury Leads AI</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .login-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 40px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+    .logo {
+      text-align: center;
+      font-size: 44px;
+      margin-bottom: 10px;
+    }
+    h2 {
+      text-align: center;
+      color: white;
+      font-size: 24px;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 14px;
+      margin-bottom: 30px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      margin-top: 18px;
+    }
+    input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #e2e8f0;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #8b5cf6; }
+    button {
+      width: 100%;
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 28px;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    .error-box {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.35);
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .links {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 13px;
+    }
+    .links a {
+      color: #a78bfa;
+      text-decoration: none;
+    }
+    .links a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div class="login-box">
+  <div class="logo">👥</div>
+  <h2>Agent Login</h2>
+  <p class="subtitle">Sign in to view your leads & appointments</p>
+
+  <div class="error-box" id="error-box"></div>
+
+  <form method="POST" action="/agent-login">
+    <label>Email</label>
+    <input type="email" name="email" placeholder="you@agency.com" required autofocus>
+
+    <label>Password</label>
+    <input type="password" name="password" placeholder="Your password" required>
+
+    <button type="submit">🔐 Sign In</button>
+  </form>
+
+  <div class="links">
+    <a href="/owner-login">Agency owner? Login here</a>
+  </div>
+</div>
+
+<script>
+  const err = new URLSearchParams(window.location.search).get('error');
+  if (err) {
+    const box = document.getElementById('error-box');
+    box.textContent = '❌ ' + err.replace(/\+/g, ' ');
+    box.style.display = 'block';
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Agents - {{ agency.name }}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+    .topbar {
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      padding: 20px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(139,92,246,0.3);
+    }
+    .title { font-size: 24px; font-weight: bold; color: white; }
+    .subtitle { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+    .topbar-actions a, .topbar-actions button {
+      text-decoration: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      margin-left: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .topbar-actions a:hover, .topbar-actions button:hover { transform: translateY(-2px); }
+    .btn-back { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3) !important; }
+    .btn-add { background: #22c55e; color: white; }
+
+    .container { padding: 30px 40px; max-width: 1100px; margin: 0 auto; }
+
+    .plan-info {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .plan-label { font-size: 14px; color: #94a3b8; }
+    .plan-label b { color: #a78bfa; }
+    .agent-count { font-size: 14px; color: #94a3b8; }
+    .agent-count b { color: white; font-size: 18px; }
+
+    .agents-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .agent-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 20px;
+      transition: transform 0.2s;
+    }
+    .agent-card:hover { transform: translateY(-3px); }
+    .agent-card.disabled { opacity: 0.55; }
+    .agent-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+    .agent-name { font-size: 18px; font-weight: 700; color: white; }
+    .agent-email { font-size: 13px; color: #94a3b8; margin-top: 3px; }
+    .status-pill {
+      padding: 4px 12px; border-radius: 20px; font-size: 11px;
+      font-weight: 700; text-transform: uppercase; white-space: nowrap;
+    }
+    .pill-active { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .pill-disabled { background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
+    .agent-stats {
+      background: #0f172a; border-radius: 8px; padding: 12px;
+      margin-bottom: 14px; text-align: center;
+    }
+    .stat-num { font-size: 24px; font-weight: bold; color: #a78bfa; }
+    .stat-lbl { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+    .agent-actions { display: flex; gap: 8px; }
+    .btn-sm {
+      flex: 1; padding: 8px 12px; border-radius: 6px; font-size: 12px;
+      font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; text-align: center;
+    }
+    .btn-toggle { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+    .btn-toggle:hover { background: rgba(245,158,11,0.3); }
+    .btn-enable { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .btn-enable:hover { background: rgba(34,197,94,0.3); }
+    .btn-del { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); flex: 0; padding: 8px 12px; }
+    .btn-del:hover { background: rgba(239,68,68,0.3); }
+
+    .empty-state { text-align: center; padding: 70px 20px; color: #64748b; grid-column: 1 / -1; }
+    .empty-icon { font-size: 60px; margin-bottom: 18px; opacity: 0.4; }
+    .empty-title { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: #94a3b8; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      z-index: 1000; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #1e293b; border-radius: 16px; width: 100%; max-width: 460px;
+      border: 1px solid #334155; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .modal-header {
+      padding: 20px 24px; border-bottom: 1px solid #334155;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-title { font-size: 18px; font-weight: 700; color: white; }
+    .modal-close {
+      background: transparent; border: none; color: #94a3b8;
+      font-size: 22px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+    }
+    .modal-close:hover { background: #334155; color: white; }
+    .modal-body { padding: 24px; }
+    .form-group { margin-bottom: 16px; }
+    .form-label {
+      display: block; font-size: 12px; color: #94a3b8; text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: 6px; font-weight: 600;
+    }
+    .form-input {
+      width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+      padding: 10px 14px; color: #e2e8f0; font-size: 14px; outline: none;
+    }
+    .form-input:focus { border-color: #8b5cf6; }
+    .helper { font-size: 11px; color: #64748b; margin-top: 4px; }
+    .btn-submit {
+      width: 100%; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      color: white; border: none; padding: 12px; border-radius: 8px;
+      font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px;
+    }
+    .btn-submit:hover { opacity: 0.9; }
+
+    @media (max-width: 768px) {
+      .container { padding: 16px; }
+      .topbar { flex-direction: column; gap: 15px; text-align: center; padding: 16px; }
+      .agents-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="title">👥 Agents</div>
+    <div class="subtitle">{{ agency.name }}</div>
+  </div>
+  <div class="topbar-actions">
+    <button onclick="openAddModal()" class="btn-add">+ Add Agent</button>
+    <a href="/admin?agency_id={{ agency.id }}" class="btn-back">← Back to Dashboard</a>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="plan-info">
+    <div class="plan-label">Plan: <b>{{ limits.label }}</b> &nbsp;•&nbsp; Agent limit: <b>{{ limits.agents }}</b></div>
+    <div class="agent-count"><b>{{ agents|length }}</b> / {{ limits.agents }} agents used</div>
+  </div>
+
+  <div class="agents-grid">
+    {% if agents %}
+      {% for agent in agents %}
+      <div class="agent-card {{ 'disabled' if agent.status != 'active' }}" id="agent-{{ agent.id }}">
+        <div class="agent-header">
+          <div>
+            <div class="agent-name">{{ agent.name }}</div>
+            <div class="agent-email">📧 {{ agent.email }}</div>
+          </div>
+          <span class="status-pill {{ 'pill-active' if agent.status == 'active' else 'pill-disabled' }}">
+            {{ '● Active' if agent.status == 'active' else '○ Disabled' }}
+          </span>
+        </div>
+        <div class="agent-stats">
+          <div class="stat-num">{{ lead_counts.get(agent.id, 0) }}</div>
+          <div class="stat-lbl">Assigned Leads</div>
+        </div>
+        <div class="agent-actions">
+          {% if agent.status == 'active' %}
+          <button class="btn-sm btn-toggle" onclick="toggleAgent({{ agent.id }})">⏸ Disable</button>
+          {% else %}
+          <button class="btn-sm btn-enable" onclick="toggleAgent({{ agent.id }})">▶ Enable</button>
+          {% endif %}
+          <button class="btn-sm btn-del" onclick="deleteAgent({{ agent.id }}, '{{ agent.name }}')">🗑️</button>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-icon">👥</div>
+        <div class="empty-title">No Agents Yet</div>
+        <div>Add your first agent to start distributing leads automatically.</div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ADD AGENT MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">👥 Add New Agent</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Agent Name *</label>
+        <input type="text" id="agent-name" class="form-input" placeholder="e.g. Sarah Khan">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Agent Email *</label>
+        <input type="email" id="agent-email" class="form-input" placeholder="sarah@agency.com">
+        <div class="helper">Used for agent login</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="text" id="agent-password" class="form-input" placeholder="Leave empty for default: agent123">
+        <div class="helper">Agent logs in at /agent-login with email + this password</div>
+      </div>
+      <button class="btn-submit" onclick="submitAgent()">👥 Add Agent</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const agencyId = {{ agency.id }};
+
+  function openAddModal() { document.getElementById('modal-overlay').classList.add('open'); }
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    ['agent-name', 'agent-email', 'agent-password'].forEach(id => document.getElementById(id).value = '');
+  }
+  function closeOnOverlay(e) {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  }
+
+  async function submitAgent() {
+    const name = document.getElementById('agent-name').value.trim();
+    const email = document.getElementById('agent-email').value.trim();
+    const password = document.getElementById('agent-password').value.trim();
+    if (!name || !email) { alert('⚠️ Name and email are required.'); return; }
+    try {
+      const res = await fetch(`/add-agent/${agencyId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password })
+      });
+      const d = await res.json();
+      if (d.success) {
+        alert(`✅ Agent added!\n\nLogin: /agent-login\nEmail: ${email}\nPassword: ${d.default_password}`);
+        location.reload();
+      } else {
+        alert('❌ ' + (d.error || 'Failed to add agent'));
+      }
+    } catch (e) { alert('❌ Network error'); }
+  }
+
+  async function toggleAgent(agentId) {
+    try {
+      const res = await fetch(`/toggle-agent/${agentId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const d = await res.json();
+      if (d.success) location.reload();
+      else alert('❌ Failed to update');
+    } catch (e) { alert('❌ Network error'); }
+  }
+
+  async function deleteAgent(agentId, name) {
+    if (!confirm(`🗑️ Delete agent "${name}"?\n\nTheir leads stay with the agency (unassigned).`)) return;
+    try {
+      const res = await fetch(`/delete-agent/${agentId}`, { method: 'DELETE' });
+      const d = await res.json();
+      if (d.success) location.reload();
+      else alert('❌ Failed to delete');
+    } catch (e) { alert('❌ Network error'); }
+  }
+</script>
+</body>
+</html>
