@@ -341,6 +341,48 @@ def slot_booked_count(agency_id, date_iso, time_label):
         Appointment.status != 'cancelled'
     ).count()
 
+def get_slot_capacity(agency):
+    """Effective bookings allowed per time slot.
+    Solo: agency's max_viewings_per_slot (unchanged behavior).
+    Tier 2/3: number of ACTIVE agents (each agent can host 1 viewing per slot);
+    falls back to max_viewings_per_slot if no agents exist yet."""
+    if (agency.tier or 'solo') == 'solo':
+        return agency.max_viewings_per_slot or 2
+    active = Agent.query.filter_by(agency_id=agency.id, status='active').count()
+    return active if active > 0 else (agency.max_viewings_per_slot or 2)
+
+
+def agent_busy_at(agent_id, date_iso, time_label):
+    """True if this agent already has a non-cancelled booking at that exact slot."""
+    return Appointment.query.filter(
+        Appointment.agent_id == agent_id,
+        Appointment.appointment_date_iso == date_iso,
+        Appointment.appointment_time == time_label,
+        Appointment.status != 'cancelled'
+    ).count() > 0
+
+
+def pick_agent_for_slot(agency, date_iso, time_label, preferred_agent_id=None):
+    """Choose the agent for a new booking:
+    1. The customer's own agent (preferred) if free at that slot
+    2. Otherwise the least-busy active agent who is free
+    Returns None for solo tier or when nobody is free."""
+    if (agency.tier or 'solo') == 'solo':
+        return None
+    agents = Agent.query.filter_by(agency_id=agency.id, status='active').all()
+    if not agents:
+        return None
+    if preferred_agent_id:
+        pref = next((a for a in agents if a.id == preferred_agent_id), None)
+        if pref and not agent_busy_at(pref.id, date_iso, time_label):
+            return pref
+    free = [a for a in agents if not agent_busy_at(a.id, date_iso, time_label)]
+    if not free:
+        return None
+    counts = {a.id: Appointment.query.filter(
+        Appointment.agent_id == a.id,
+        Appointment.status != 'cancelled').count() for a in free}
+    return min(free, key=lambda a: (counts[a.id], a.id))
 
 def get_availability_context(agency_id, max_per_slot):
     """
@@ -1423,9 +1465,36 @@ def appointments(agency_id):
     appts = Appointment.query.filter_by(
         agency_id=agency_id
     ).order_by(Appointment.created_at.desc()).all()
-    return render_template("appointments.html", agency=agency, appointments=appts)
+    agents = Agent.query.filter_by(agency_id=agency_id).order_by(Agent.name.asc()).all()
+    agent_names = {a.id: a.name for a in agents}
+    return render_template("appointments.html", agency=agency, appointments=appts,
+                           agents=agents, agent_names=agent_names)
 
-
+@app.route("/reassign-appointment/<int:appt_id>", methods=["POST"])
+def reassign_appointment(appt_id):
+    try:
+        appt = db.session.get(Appointment, appt_id)
+        if not appt:
+            return jsonify({"error": "Appointment not found"}), 404
+        data = request.get_json(force=True)
+        new_agent_id = data.get("agent_id")
+        if not new_agent_id:
+            appt.agent_id = None
+            db.session.commit()
+            return jsonify({"success": True, "agent_id": None})
+        agent = db.session.get(Agent, int(new_agent_id))
+        if not agent or agent.agency_id != appt.agency_id:
+            return jsonify({"error": "Invalid agent"}), 400
+        if appt.appointment_date_iso and appt.appointment_time:
+            if agent_busy_at(agent.id, appt.appointment_date_iso, appt.appointment_time) and appt.agent_id != agent.id:
+                return jsonify({"error": f"{agent.name} already has a booking at that time"}), 409
+        appt.agent_id = agent.id
+        db.session.commit()
+        print(f"✅ Appointment {appt_id} reassigned → agent {agent.name}")
+        return jsonify({"success": True, "agent_id": agent.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to reassign"}), 500
 
 @app.route("/update-slot-capacity/<int:agency_id>", methods=["POST"])
 def update_slot_capacity(agency_id):
@@ -1448,7 +1517,7 @@ def update_slot_capacity(agency_id):
 
 @app.route("/book-appointment", methods=["POST"])
 def book_appointment():
-    """Manual booking with real date + capacity check"""
+    """Manual booking with real date + agent-aware capacity check"""
     try:
         data = request.get_json(force=True)
         agency_id = data.get("agency_id")
@@ -1469,15 +1538,31 @@ def book_appointment():
             except ValueError:
                 return jsonify({"error": "Invalid date format"}), 400
 
-        max_slot = agency.max_viewings_per_slot or 2
+        max_slot = get_slot_capacity(agency)
         if date_iso and time_label:
             booked = slot_booked_count(int(agency_id), date_iso, time_label)
             if booked >= max_slot:
                 return jsonify({"error": f"This slot is full ({booked}/{max_slot} booked). Please choose another time."}), 409
 
+        # Agent assignment (Tier 2/3)
+        agent_id = None
+        if (agency.tier or 'solo') != 'solo':
+            requested_agent = data.get("agent_id")
+            if requested_agent:
+                agent = db.session.get(Agent, int(requested_agent))
+                if not agent or agent.agency_id != int(agency_id):
+                    return jsonify({"error": "Invalid agent"}), 400
+                if date_iso and time_label and agent_busy_at(agent.id, date_iso, time_label):
+                    return jsonify({"error": f"{agent.name} already has a booking at that time. Pick another agent or slot."}), 409
+                agent_id = agent.id
+            else:
+                chosen = pick_agent_for_slot(agency, date_iso, time_label)
+                agent_id = chosen.id if chosen else None
+
         appt = Appointment(
             agency_id=int(agency_id),
             lead_id=data.get("lead_id"),
+            agent_id=agent_id,
             customer_name=data.get("customer_name", ""),
             customer_email=data.get("customer_email", ""),
             appointment_date=display_date,
@@ -1489,7 +1574,7 @@ def book_appointment():
         )
         db.session.add(appt)
         db.session.commit()
-        print(f"✅ Appointment booked: ID {appt.id} for {appt.customer_name} on {display_date}")
+        print(f"✅ Appointment booked: ID {appt.id} for {appt.customer_name} on {display_date} (agent: {agent_id})")
         send_appointment_confirmation(agency, appt)
         return jsonify({
             "success": True, "appointment_id": appt.id,
@@ -1988,9 +2073,17 @@ Respond naturally in plain text only:"""
                     booked_slots.add(slot_id)
                     continue
                 try:
+                    preferred_id = None
+                    lead_row = Lead.query.filter_by(
+                        agency_id=agency_id, email=lead_data['email']).first()
+                    if lead_row:
+                        preferred_id = lead_row.agent_id
+                    chosen_agent = pick_agent_for_slot(agency, slot['iso'], slot['time'], preferred_id)
+                    if chosen_agent:
+                        print(f"👥 Appointment → agent {chosen_agent.name} (ID {chosen_agent.id})")
                     new_appt = Appointment(
                         agency_id=agency_id,
-                        agent_id=None,
+                        agent_id=chosen_agent.id if chosen_agent else None,
                         customer_name=lead_data.get('name'),
                         customer_email=lead_data['email'],
                         appointment_date=slot['display'],
