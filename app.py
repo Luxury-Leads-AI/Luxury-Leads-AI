@@ -539,6 +539,11 @@ https://luxury-leads-ai.onrender.com/appointments/{agency.id}
     sent_agency = send_email_brevo(agency.email, agency_subject, agency_body)
     return sent_customer or sent_agency
 
+def notify_agent(agent, subject, body):
+    if agent and agent.email:
+        return send_email_brevo(agent.email, subject, body)
+    return False
+
 
 def send_crm_webhook(agency, lead):
     if not agency.webhook_url:
@@ -1076,13 +1081,17 @@ def analyze_lead_quality(lead_data, conversation_history):
     return min(score, 5)
 
 
-def is_lead_qualified(lead_data, conversation_history):
+def is_lead_qualified(lead_data, conversation_history, has_booking=False):
     has_email = bool(lead_data.get('email'))
     has_name = bool(lead_data.get('name'))
     has_budget = bool(lead_data.get('budget'))
     message_count = len([msg for msg in conversation_history if msg['role'] == 'user'])
     contact_done = contact_step_completed(conversation_history)
     is_qualified = (has_email and has_name and has_budget and message_count >= 7 and contact_done)
+    # Alternate path: a booked viewing with name+email is inherently qualified
+    if not is_qualified and has_booking and has_email and has_name:
+        is_qualified = True
+        print("✅ QUALIFIED via booking path")
     if is_qualified:
         print(f"✅ QUALIFIED: Email={has_email}, Name={has_name}, Budget={has_budget}, Msgs={message_count}, ContactDone={contact_done}")
     else:
@@ -1326,6 +1335,7 @@ def delete_agency(agency_id):
     Lead.query.filter_by(agency_id=agency_id).delete()
     Appointment.query.filter_by(agency_id=agency_id).delete()
     Listing.query.filter_by(agency_id=agency_id).delete()
+    Agent.query.filter_by(agency_id=agency_id).delete()
     ConversationSession.query.filter(
         ConversationSession.session_key.like(f"{agency_id}_%")
     ).delete(synchronize_session=False)
@@ -2032,7 +2042,7 @@ Respond naturally in plain text only:"""
             model="gpt-4o-mini",
             messages=messages,
             temperature=0.7,
-            max_tokens=150,
+            max_tokens=300,
             presence_penalty=0.8,
             frequency_penalty=0.5
         )
@@ -2060,6 +2070,21 @@ Respond naturally in plain text only:"""
                     continue
                 booked = slot_booked_count(agency_id, slot['iso'], slot['time'])
                 if booked >= max_slot:
+                    print(f"⚠️ Slot full ({booked}/{max_slot}): {slot['display']} at {slot['time']} - not booking")
+                    booked_slots.add(slot_id)
+                    continue
+                # Guard: skip slots the AI explicitly refused in conversation
+                refused = False
+                for i, m in enumerate(history):
+                    if (m['role'] == 'user' and slot['time'].split(':')[0] in m['content']
+                            and i + 1 < len(history) and history[i+1]['role'] == 'assistant'):
+                        nxt = history[i+1]['content'].lower()
+                        if 'unavailable' in nxt or 'not available' in nxt or 'unfortunately' in nxt:
+                            refused = True
+                if refused and len(appt_data['slots']) > 1:
+                    print(f"⚠️ Slot was refused by AI in chat: {slot['display']} at {slot['time']} - skipping")
+                    booked_slots.add(slot_id)
+                    continue
                     print(f"⚠️ Slot full ({booked}/{max_slot}): {slot['display']} at {slot['time']} - not booking")
                     booked_slots.add(slot_id)
                     continue
@@ -2097,11 +2122,15 @@ Respond naturally in plain text only:"""
                     booked_slots.add(slot_id)
                     print(f"✅ Appointment auto-booked: {new_appt.customer_name} | {slot['display']} at {slot['time']} ({booked + 1}/{max_slot})")
                     send_appointment_confirmation(agency, new_appt)
+                    if chosen_agent:
+                        notify_agent(chosen_agent,
+                            f"📅 New Viewing Assigned - {new_appt.customer_name}",
+                            f"Hi {chosen_agent.name},\n\nA viewing was booked and assigned to you:\n\nCustomer: {new_appt.customer_name}\nEmail: {new_appt.customer_email}\nDate: {new_appt.appointment_date}\nTime: {new_appt.appointment_time}\n\nLogin: https://luxury-leads-ai.onrender.com/agent-login")
                 except Exception as appt_err:
                     print(f"⚠️ Auto-appointment error: {appt_err}")
                     db.session.rollback()
 
-        if is_lead_qualified(lead_data, history):
+        if is_lead_qualified(lead_data, history, has_booking=bool(booked_slots)):
             try:
                 existing_lead = Lead.query.filter_by(
                     agency_id=agency_id, email=lead_data['email']
@@ -2147,6 +2176,11 @@ Respond naturally in plain text only:"""
                     print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
                     send_lead_email(agency, lead)
                     send_crm_webhook(agency, lead)
+                    if lead.agent_id:
+                        assigned_agent = db.session.get(Agent, lead.agent_id)
+                        notify_agent(assigned_agent,
+                            f"🎯 New Lead Assigned - {lead.name}",
+                            f"Hi {assigned_agent.name},\n\nA new lead was assigned to you:\n\nName: {lead.name}\nEmail: {lead.email}\nBudget: {lead.budget}\n\nLogin: https://luxury-leads-ai.onrender.com/agent-login")
             except Exception as save_err:
                 print(f"❌ Lead save error: {save_err}")
                 db.session.rollback()
