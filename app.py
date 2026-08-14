@@ -341,6 +341,7 @@ def slot_booked_count(agency_id, date_iso, time_label):
         Appointment.status != 'cancelled'
     ).count()
 
+
 def get_slot_capacity(agency):
     """Effective bookings allowed per time slot.
     Solo: agency's max_viewings_per_slot (unchanged behavior).
@@ -415,38 +416,126 @@ def get_availability_context(agency_id, max_per_slot):
         return ""
 
 
-def get_listings_context(agency_id):
-    try:
-        listings = Listing.query.filter_by(
-            agency_id=agency_id,
-            status='available'
-        ).order_by(Listing.price_numeric.asc()).all()
+def budget_string_to_numeric(budget_str):
+    """Converts a budget string like '15 million USD' or '750 thousand' to a numeric USD estimate."""
+    if not budget_str:
+        return None
+    s = budget_str.lower()
+    m = re.search(r'(\d+(?:\.\d+)?)\s*(million|thousand)?', s)
+    if not m:
+        return None
+    amount = float(m.group(1))
+    unit = m.group(2)
+    if unit == 'million':
+        amount *= 1_000_000
+    elif unit == 'thousand':
+        amount *= 1_000
+    return amount
 
+
+BUY_WORDS = ['buy', 'buying', 'purchase', 'purchasing', 'own', 'ownership',
+             'comprar', 'kaufen', 'acheter', 'acquistare', 'kupić', 'kupic']
+RENT_WORDS = ['rent', 'renting', 'rental', 'lease', 'leasing',
+              'alquiler', 'miete', 'louer', 'affitto', 'wynajem']
+
+def detect_purpose(conversation_history):
+    """Language-lite: scans user messages for buy/rent intent."""
+    user_text = " ".join([m['content'] for m in conversation_history if m['role'] == 'user']).lower()
+    if any(re.search(r'\b' + w + r'\b', user_text) for w in RENT_WORDS):
+        return 'rent'
+    if any(re.search(r'\b' + w + r'\b', user_text) for w in BUY_WORDS):
+        return 'sale'
+    return None
+
+
+GENERIC_PROPERTY_TYPES = ['villa', 'condo', 'condominium', 'apartment', 'house', 'townhouse',
+                           'mansion', 'estate', 'loft', 'penthouse', 'duplex', 'bungalow', 'cottage']
+
+def detect_property_type(agency_id, conversation_history):
+    """Matches conversation text against this agency's actual listing types + generic terms."""
+    user_text = " ".join([m['content'] for m in conversation_history if m['role'] == 'user']).lower()
+    db_types = [t[0].lower() for t in db.session.query(Listing.property_type)
+                .filter_by(agency_id=agency_id).distinct().all() if t[0]]
+    candidates = set(db_types) | set(GENERIC_PROPERTY_TYPES)
+    for c in candidates:
+        if c and re.search(r'\b' + re.escape(c) + r'\b', user_text):
+            return c
+    return None
+
+
+def get_listings_context(agency_id, conversation_history=None):
+    """Filters and ranks listings by the customer's stated budget, property
+    type, and buy/rent purpose BEFORE handing anything to the AI - so the
+    model only ever sees relevant, correctly-scoped options."""
+    try:
+        listings = Listing.query.filter_by(agency_id=agency_id, status='available').all()
         if not listings:
             return ""
 
-        lines = ["\n\nAVAILABLE PROPERTIES AT YOUR AGENCY (use these when recommending):"]
-        for i, l in enumerate(listings, 1):
+        budget_val, purpose, prop_type = None, None, None
+        if conversation_history:
+            lead_snapshot = extract_lead_data(conversation_history)
+            budget_val = budget_string_to_numeric(lead_snapshot.get('budget'))
+            purpose = detect_purpose(conversation_history)
+            prop_type = detect_property_type(agency_id, conversation_history)
+
+        scored = []
+        for l in listings:
+            if purpose and l.listing_purpose and l.listing_purpose != purpose:
+                continue  # hard filter: never show a rental to a buyer or vice versa
+            score = 0
+            if prop_type:
+                type_field = (l.property_type or '').lower()
+                title_field = (l.title or '').lower()
+                if prop_type in type_field:
+                    score += 3
+                elif prop_type in title_field:
+                    score += 2
+            if budget_val and l.price_numeric:
+                lo, hi = budget_val * 0.7, budget_val * 1.3
+                if lo <= l.price_numeric <= hi:
+                    score += 3
+                else:
+                    closeness = min(l.price_numeric, budget_val) / max(l.price_numeric, budget_val)
+                    if closeness >= 0.5:
+                        score += 1
+                    else:
+                        continue  # too far outside budget - exclude
+            scored.append((score, l))
+
+        # Nothing matched all filters? Fall back to purpose-correct listings
+        # so the AI still has real options rather than nothing at all.
+        if not scored and (purpose or prop_type or budget_val):
+            fallback = [l for l in listings if not purpose or not l.listing_purpose or l.listing_purpose == purpose]
+            scored = [(0, l) for l in fallback]
+
+        scored.sort(key=lambda x: (-x[0], x[1].price_numeric or 0))
+        top = [l for s, l in scored[:8]]
+
+        if not top:
+            return ("\n\nNo listings currently match this customer's stated criteria. "
+                    "Do NOT invent or approximate a listing - tell them you'll keep an eye out and follow up.")
+
+        lines = ["\n\nMATCHING PROPERTIES (already filtered/ranked for this customer - recommend ONLY from this list):"]
+        for i, l in enumerate(top, 1):
             bed_bath = ""
             if l.bedrooms:
                 bed_bath += f"{l.bedrooms}bed"
             if l.bathrooms:
                 bed_bath += f"/{l.bathrooms}bath"
-
             price_str = f"${l.price:,.0f}" if l.price else l.price_raw or "Price on request"
+            purpose_tag = " [FOR RENT]" if l.listing_purpose == 'rent' else " [FOR SALE]"
             features_str = f" | {l.features}" if l.features else ""
             desc_str = f" - {l.description[:80]}..." if l.description and len(l.description) > 30 else (f" - {l.description}" if l.description else "")
-
             lines.append(
-                f"{i}. {l.title} | {l.location} | {price_str}"
+                f"{i}. {l.title}{purpose_tag} | {l.location} | {price_str}"
                 f"{' | ' + bed_bath if bed_bath else ''}"
                 f"{features_str}"
                 f"{desc_str}"
             )
-
         lines.append(
-            "\nWhen customer mentions budget or preferences, recommend matching properties by name. "
-            "Be specific: mention price, bedrooms, location. Create mild urgency naturally."
+            "\nBe specific: mention price, bedrooms, location, and whether it's for sale or rent. "
+            "Create mild urgency naturally."
         )
         return "\n".join(lines)
     except Exception as e:
@@ -1177,6 +1266,7 @@ class Listing(db.Model):
     bedrooms = db.Column(db.Integer, nullable=True)
     bathrooms = db.Column(db.Integer, nullable=True)
     property_type = db.Column(db.String(50))
+    listing_purpose = db.Column(db.String(10), default='sale')  # 'sale' or 'rent'
     features = db.Column(db.String(500))
     description = db.Column(db.Text)
     status = db.Column(db.String(20), default='available')
@@ -1604,7 +1694,7 @@ def update_appointment_status(appt_id):
             return jsonify({"error": "Appointment not found"}), 404
         data = request.get_json(force=True)
         new_status = data.get("status", "pending")
-        if new_status not in ['pending', 'confirmed', 'cancelled']:
+        if new_status not in ['pending', 'confirmed', 'cancelled', 'completed']:
             return jsonify({"error": "Invalid status"}), 400
         appt.status = new_status
         db.session.commit()
@@ -1739,6 +1829,92 @@ def agent_dashboard(agent_id):
     return render_template("agent_dashboard.html", agent=agent, agency=agency,
                            leads=my_leads, appointments=my_appts)
 
+
+# ─────────────────────────────────────────────────────
+# STEP 4C.1 - AGENT CLOSE/NOTE CAPABILITIES
+# ─────────────────────────────────────────────────────
+
+@app.route("/agent-update-lead-status/<int:lead_id>", methods=["POST"])
+def agent_update_lead_status(lead_id):
+    try:
+        data = request.get_json(force=True)
+        agent_id = data.get("agent_id")
+        lead = db.session.get(Lead, lead_id)
+        if not lead or lead.agent_id != int(agent_id):
+            return jsonify({"error": "Not authorized for this lead"}), 403
+        new_status = data.get("status", "new")
+        if new_status not in ['new', 'contacted', 'meeting', 'closed', 'lost']:
+            return jsonify({"error": "Invalid status"}), 400
+        lead.lead_status = new_status
+        db.session.commit()
+        return jsonify({"success": True, "status": new_status})
+    except Exception:
+        return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/agent-add-lead-note/<int:lead_id>", methods=["POST"])
+def agent_add_lead_note(lead_id):
+    try:
+        data = request.get_json(force=True)
+        agent_id = data.get("agent_id")
+        lead = db.session.get(Lead, lead_id)
+        if not lead or lead.agent_id != int(agent_id):
+            return jsonify({"error": "Not authorized"}), 403
+        note_text = data.get("note", "").strip()
+        if not note_text:
+            return jsonify({"error": "Note cannot be empty"}), 400
+        try:
+            notes = json.loads(lead.notes or '[]')
+        except:
+            notes = []
+        notes.append({
+            "id": len(notes) + 1,
+            "text": note_text,
+            "timestamp": datetime.now(pytz.timezone('Asia/Karachi')).strftime('%B %d, %Y at %I:%M %p')
+        })
+        lead.notes = json.dumps(notes)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception:
+        return jsonify({"error": "Failed"}), 500
+
+
+@app.route("/agent-update-appointment-status/<int:appt_id>", methods=["POST"])
+def agent_update_appointment_status(appt_id):
+    try:
+        data = request.get_json(force=True)
+        agent_id = data.get("agent_id")
+        appt = db.session.get(Appointment, appt_id)
+        if not appt or appt.agent_id != int(agent_id):
+            return jsonify({"error": "Not authorized for this appointment"}), 403
+        new_status = data.get("status", "pending")
+        if new_status not in ['pending', 'confirmed', 'cancelled', 'completed']:
+            return jsonify({"error": "Invalid status"}), 400
+        appt.status = new_status
+        db.session.commit()
+        return jsonify({"success": True, "status": new_status})
+    except Exception:
+        return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/agent-add-appointment-note/<int:appt_id>", methods=["POST"])
+def agent_add_appointment_note(appt_id):
+    try:
+        data = request.get_json(force=True)
+        agent_id = data.get("agent_id")
+        appt = db.session.get(Appointment, appt_id)
+        if not appt or appt.agent_id != int(agent_id):
+            return jsonify({"error": "Not authorized"}), 403
+        note_text = data.get("note", "").strip()
+        if not note_text:
+            return jsonify({"error": "Note cannot be empty"}), 400
+        appt.notes = (appt.notes + "\n" if appt.notes else "") + note_text
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception:
+        return jsonify({"error": "Failed"}), 500
+
+
 # ─────────────────────────────────────────────────────
 # PHASE 2D ROUTES - PROPERTY LISTINGS
 # ─────────────────────────────────────────────────────
@@ -1755,6 +1931,16 @@ def parse_price(price_str):
         return float(clean)
     except:
         return None
+
+
+def infer_listing_purpose(title, description, explicit=None):
+    """Determines sale vs rent: explicit value wins, else guessed from text."""
+    if explicit in ('sale', 'rent'):
+        return explicit
+    text = f"{title or ''} {description or ''}".lower()
+    if 'for rent' in text or 'rental' in text or '/mo' in text or 'per month' in text:
+        return 'rent'
+    return 'sale'
 
 
 @app.route("/listings/<int:agency_id>")
@@ -1786,6 +1972,7 @@ def add_listing(agency_id):
             bedrooms=int(data["bedrooms"]) if data.get("bedrooms") else None,
             bathrooms=int(data["bathrooms"]) if data.get("bathrooms") else None,
             property_type=data.get("property_type", "").strip(),
+            listing_purpose=infer_listing_purpose(data.get("title", ""), data.get("description", ""), data.get("purpose")),
             features=data.get("features", "").strip(),
             description=data.get("description", "").strip(),
             status="available"
@@ -1846,6 +2033,7 @@ def upload_listings(agency_id):
                     bedrooms=beds,
                     bathrooms=baths,
                     property_type=row.get('type', row.get('property_type', '')),
+                    listing_purpose=infer_listing_purpose(title, row.get('description', ''), row.get('purpose')),
                     features=row.get('features', ''),
                     description=row.get('description', ''),
                     status='available'
@@ -1952,8 +2140,11 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
-        max_slot = agency.max_viewings_per_slot or 2
-        listings_context = get_listings_context(agency_id)
+        history, booked_slots = load_session(session_key)
+        history.append({"role": "user", "content": user_message})
+
+        max_slot = get_slot_capacity(agency)
+        listings_context = get_listings_context(agency_id, history)
         availability_context = get_availability_context(agency_id, max_slot)
 
         system_prompt = f"""You are {agency.assistant_name}, a real estate consultant at {agency.name}.
@@ -1979,9 +2170,11 @@ PACE - LET THE CLIENT LEAD:
 - Never interrogate. One relaxed question at a time.
 
 PROPERTY RECOMMENDATIONS:
-- When you know their budget or location, check listings above for a match.
-- If matched: mention it by name with price and key features in 1-2 sentences. Then ask ONE question: "Would you like to know more?"
-- If no match: "We don't have anything in that exact range right now, but I can keep an eye out and get back to you with options."
+- The list below has ALREADY been filtered and ranked by the customer's stated budget, property type, and buy/rent preference. Only recommend properties from THIS list - never invent or approximate one that isn't shown.
+- If the customer hasn't given a location yet, that's fine - go ahead and offer from the list, since it already reflects their budget and type across all locations.
+- Mention matches by name with price and key features in 1-2 sentences, then ask ONE question: "Would you like to know more?"
+- If the list is empty: "We don't have anything matching that combination right now, but I can keep an eye out and get back to you."
+- If the customer broadens or changes their criteria, treat the next matching list as the new source of truth.
 
 VIEWING FLOW:
 - If client selects a property FROM THE LISTINGS and shows interest, offer a viewing: "Would you like to see it in person?"
@@ -1993,11 +2186,12 @@ VIEWING FLOW:
 INFORMATION TO COLLECT (strictly one at a time, in this order):
 1. Name (at the very start)
 2. Property type ("What kind of property are you looking for?")
-3. Location ONLY ("Any particular area in mind?") - do NOT mention budget yet
-4. Budget ONLY (after location is answered: "And what budget are you working with?")
-5. Email (after they're satisfied or a viewing is planned)
-6. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
-7. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
+3. Buying or renting? ("Are you looking to buy or rent?")
+4. Location ONLY ("Any particular area in mind?") - do NOT mention budget yet
+5. Budget ONLY (after location is answered: "And what budget are you working with?")
+6. Email (after they're satisfied or a viewing is planned)
+7. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
+8. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
 
 NEVER combine location and budget in one question.
 WRONG: "Could you share the location and your budget?"
@@ -2026,9 +2220,6 @@ LANGUAGE:
 - When mentioning viewing time slots in another language, keep the exact time format like 10:00 AM, 2:00 PM so the customer can reply with it
 
 Respond naturally in plain text only:"""
-
-        history, booked_slots = load_session(session_key)
-        history.append({"role": "user", "content": user_message})
 
         objection = detect_objection(user_message)
         objection_context = ""
@@ -2083,9 +2274,6 @@ Respond naturally in plain text only:"""
                             refused = True
                 if refused and len(appt_data['slots']) > 1:
                     print(f"⚠️ Slot was refused by AI in chat: {slot['display']} at {slot['time']} - skipping")
-                    booked_slots.add(slot_id)
-                    continue
-                    print(f"⚠️ Slot full ({booked}/{max_slot}): {slot['display']} at {slot['time']} - not booking")
                     booked_slots.add(slot_id)
                     continue
                 existing_appt = Appointment.query.filter_by(
@@ -2430,6 +2618,21 @@ with app.app_context():
             print("✔ appointment.agent_id already exists")
     except Exception as e:
         print(f"⚠️ 4B migration error: {e}")
+        db.session.rollback()
+
+    # ── STEP 4C.1 MIGRATIONS (self-contained) ──
+    try:
+        from sqlalchemy import text as _text2, inspect as _inspect2
+        _insp2 = _inspect2(db.engine)
+        _listing_cols = [c['name'] for c in _insp2.get_columns('listing')]
+        if 'listing_purpose' not in _listing_cols:
+            db.session.execute(_text2("ALTER TABLE listing ADD COLUMN listing_purpose VARCHAR(10) DEFAULT 'sale';"))
+            db.session.commit()
+            print("✅ Migration: listing.listing_purpose added")
+        else:
+            print("✔ listing.listing_purpose already exists")
+    except Exception as e:
+        print(f"⚠️ 4C.1 migration error: {e}")
         db.session.rollback()
 
 # -------------------------
