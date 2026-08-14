@@ -67,7 +67,7 @@
       border-radius: 12px;
       overflow-x: auto;
     }
-    table { width: 100%; border-collapse: collapse; min-width: 800px; }
+    table { width: 100%; border-collapse: collapse; min-width: 950px; }
     th {
       text-align: left;
       padding: 14px 16px;
@@ -88,22 +88,51 @@
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: rgba(139,92,246,0.05); }
     .quality { color: #fbbf24; }
-    .status-tag {
-      display: inline-block;
-      padding: 3px 10px;
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-    .tag-new { background: rgba(56,189,248,0.15); color: #38bdf8; }
-    .tag-contacted { background: rgba(245,158,11,0.15); color: #f59e0b; }
-    .tag-meeting { background: rgba(139,92,246,0.15); color: #a78bfa; }
-    .tag-closed { background: rgba(34,197,94,0.15); color: #22c55e; }
-    .tag-lost { background: rgba(148,163,184,0.15); color: #94a3b8; }
-    .insight { font-size: 12px; color: #94a3b8; max-width: 320px; }
+    .insight { font-size: 12px; color: #94a3b8; max-width: 260px; }
     .wa-link { color: #22c55e; text-decoration: none; font-weight: 600; }
     .wa-link:hover { text-decoration: underline; }
+
+    .status-select {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 12px;
+      padding: 5px 8px;
+      outline: none;
+      cursor: pointer;
+    }
+    .status-select.st-new { color: #38bdf8; border-color: rgba(56,189,248,0.4); }
+    .status-select.st-contacted { color: #f59e0b; border-color: rgba(245,158,11,0.4); }
+    .status-select.st-meeting { color: #a78bfa; border-color: rgba(167,139,250,0.4); }
+    .status-select.st-closed { color: #22c55e; border-color: rgba(34,197,94,0.4); }
+    .status-select.st-lost { color: #94a3b8; border-color: rgba(148,163,184,0.4); }
+
+    .note-btn {
+      background: rgba(139,92,246,0.12);
+      color: #a78bfa;
+      border: 1px solid rgba(139,92,246,0.3);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      margin-top: 6px;
+    }
+    .note-btn:hover { background: rgba(139,92,246,0.25); }
+    .note-count {
+      font-size: 10px;
+      color: #64748b;
+      margin-left: 4px;
+    }
+    .notes-preview {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 6px;
+      max-width: 220px;
+      font-style: italic;
+    }
 
     /* Appointment cards */
     .appts-grid {
@@ -119,21 +148,26 @@
     }
     .appt-card.status-pending { border-left: 4px solid #f59e0b; }
     .appt-card.status-confirmed { border-left: 4px solid #22c55e; }
-    .appt-card.status-cancelled { border-left: 4px solid #ef4444; opacity: 0.65; }
+    .appt-card.status-completed { border-left: 4px solid #38bdf8; }
+    .appt-card.status-cancelled { border-left: 4px solid #ef4444; opacity: 0.75; }
     .appt-name { font-size: 16px; font-weight: 700; color: white; margin-bottom: 8px; }
     .appt-detail { font-size: 13px; color: #cbd5e1; margin-bottom: 5px; }
-    .appt-status {
-      display: inline-block;
-      margin-top: 8px;
-      padding: 3px 10px;
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
+    .appt-notes {
+      font-size: 12px;
+      color: #94a3b8;
+      background: #0f172a;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-top: 10px;
+      white-space: pre-wrap;
     }
-    .st-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
-    .st-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; }
-    .st-cancelled { background: rgba(239,68,68,0.15); color: #f87171; }
+    .appt-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
 
     .empty-state {
       text-align: center;
@@ -182,8 +216,8 @@
     </div>
     <div class="stat-card">
       <div class="stat-icon">✅</div>
-      <div class="stat-label">Confirmed Viewings</div>
-      <div class="stat-value">{{ appointments|selectattr('status', 'equalto', 'confirmed')|list|length }}</div>
+      <div class="stat-label">Closed Deals</div>
+      <div class="stat-value">{{ leads|selectattr('lead_status', 'equalto', 'closed')|list|length }}</div>
     </div>
   </div>
 
@@ -201,14 +235,24 @@
           <th>Contact</th>
           <th>Budget</th>
           <th>Customer Insights</th>
+          <th>Notes</th>
           <th>Date</th>
         </tr>
       </thead>
       <tbody>
         {% for lead in leads %}
-        <tr>
+        <tr id="lead-row-{{ lead.id }}">
           <td class="quality">{{ '⭐' * (lead.intent_score or 1) }}</td>
-          <td><span class="status-tag tag-{{ lead.lead_status or 'new' }}">{{ (lead.lead_status or 'new')|title }}</span></td>
+          <td>
+            <select class="status-select st-{{ lead.lead_status or 'new' }}"
+                    onchange="updateLeadStatus({{ lead.id }}, this.value, this)">
+              <option value="new" {{ 'selected' if lead.lead_status == 'new' }}>New</option>
+              <option value="contacted" {{ 'selected' if lead.lead_status == 'contacted' }}>Contacted</option>
+              <option value="meeting" {{ 'selected' if lead.lead_status == 'meeting' }}>Meeting</option>
+              <option value="closed" {{ 'selected' if lead.lead_status == 'closed' }}>Closed</option>
+              <option value="lost" {{ 'selected' if lead.lead_status == 'lost' }}>Lost</option>
+            </select>
+          </td>
           <td><b>{{ lead.name or '—' }}</b></td>
           <td>{{ lead.email or '—' }}</td>
           <td>
@@ -223,6 +267,11 @@
           </td>
           <td>{{ lead.budget or '—' }}</td>
           <td class="insight">{{ lead.message or '—' }}</td>
+          <td>
+            <button class="note-btn" onclick="addLeadNote({{ lead.id }})">📝 Add Note</button>
+            {% set notes = lead.notes|default('[]') %}
+            <div class="notes-preview" id="lead-notes-{{ lead.id }}"></div>
+          </td>
           <td style="white-space:nowrap;">{{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else '—' }}</td>
         </tr>
         {% endfor %}
@@ -241,25 +290,119 @@
   {% if appointments %}
   <div class="appts-grid">
     {% for appt in appointments %}
-    <div class="appt-card status-{{ appt.status }}">
+    <div class="appt-card status-{{ appt.status }}" id="appt-card-{{ appt.id }}">
       <div class="appt-name">{{ appt.customer_name or 'Unknown' }}</div>
       <div class="appt-detail">📅 {{ appt.appointment_date or '—' }}</div>
       <div class="appt-detail">🕐 {{ appt.appointment_time or '—' }}</div>
       {% if appt.customer_email %}<div class="appt-detail">📧 {{ appt.customer_email }}</div>{% endif %}
       {% if appt.property_interest %}<div class="appt-detail">🏠 {{ appt.property_interest }}</div>{% endif %}
-      <span class="appt-status st-{{ appt.status }}">
-        {% if appt.status == 'pending' %}⏳ Pending{% elif appt.status == 'confirmed' %}✅ Confirmed{% else %}❌ Cancelled{% endif %}
-      </span>
+
+      <div class="appt-controls">
+        <select class="status-select" onchange="updateApptStatus({{ appt.id }}, this.value, this)">
+          <option value="pending" {{ 'selected' if appt.status == 'pending' }}>⏳ Pending</option>
+          <option value="confirmed" {{ 'selected' if appt.status == 'confirmed' }}>✅ Confirmed</option>
+          <option value="completed" {{ 'selected' if appt.status == 'completed' }}>🏁 Completed</option>
+          <option value="cancelled" {{ 'selected' if appt.status == 'cancelled' }}>❌ Cancelled</option>
+        </select>
+        <button class="note-btn" onclick="addApptNote({{ appt.id }})">📝 Add Note</button>
+      </div>
+
+      {% if appt.notes %}
+      <div class="appt-notes">{{ appt.notes }}</div>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
   {% else %}
   <div class="empty-state">
     <div class="empty-icon">📅</div>
-    <div>No appointments on your calendar yet.<br>Bookings will appear here once assigned to you (coming in the next update).</div>
+    <div>No appointments on your calendar yet.<br>New viewings booked for you will appear here.</div>
   </div>
   {% endif %}
 
 </div>
+
+<script>
+  const agentId = {{ agent.id }};
+
+  async function updateLeadStatus(leadId, status, selectEl) {
+    selectEl.className = 'status-select st-' + status;
+    try {
+      const res = await fetch(`/agent-update-lead-status/${leadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId, status: status })
+      });
+      const d = await res.json();
+      if (!d.success) {
+        alert('❌ ' + (d.error || 'Failed to update'));
+        location.reload();
+      }
+    } catch (e) {
+      alert('❌ Network error');
+      location.reload();
+    }
+  }
+
+  async function addLeadNote(leadId) {
+    const note = prompt('Add a note for this lead:');
+    if (!note || !note.trim()) return;
+    try {
+      const res = await fetch(`/agent-add-lead-note/${leadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId, note: note.trim() })
+      });
+      const d = await res.json();
+      if (d.success) {
+        alert('✅ Note added');
+      } else {
+        alert('❌ ' + (d.error || 'Failed to add note'));
+      }
+    } catch (e) {
+      alert('❌ Network error');
+    }
+  }
+
+  async function updateApptStatus(apptId, status, selectEl) {
+    const card = document.getElementById(`appt-card-${apptId}`);
+    card.className = 'appt-card status-' + status;
+    try {
+      const res = await fetch(`/agent-update-appointment-status/${apptId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId, status: status })
+      });
+      const d = await res.json();
+      if (!d.success) {
+        alert('❌ ' + (d.error || 'Failed to update'));
+        location.reload();
+      }
+    } catch (e) {
+      alert('❌ Network error');
+      location.reload();
+    }
+  }
+
+  async function addApptNote(apptId) {
+    const note = prompt('Add a note for this appointment:');
+    if (!note || !note.trim()) return;
+    try {
+      const res = await fetch(`/agent-add-appointment-note/${apptId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId, note: note.trim() })
+      });
+      const d = await res.json();
+      if (d.success) {
+        location.reload();
+      } else {
+        alert('❌ ' + (d.error || 'Failed to add note'));
+      }
+    } catch (e) {
+      alert('❌ Network error');
+    }
+  }
+</script>
 </body>
 </html>
