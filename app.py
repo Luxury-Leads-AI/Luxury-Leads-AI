@@ -142,18 +142,32 @@ AFFIRMATIVE_WORDS = [
     'haan', 'han', 'jee', 'ji', 'bilkul', 'zaroor',
 ]
 
-NAME_FILLER_WORDS = {
-    'i', 'am', 'im', 'my', 'name', 'is', 'this', 'it', 'its', 'call', 'me', 'hello', 'hi', 'hey', 'and', 'you', 'who', 'are',
-    'soy', 'yo', 'llamo', 'mi', 'nombre', 'es', 'hola', 'y', 'tu', 'tú', 'quien', 'quién', 'eres', 'usted', 'cómo', 'como', 'estás', 'estas',
-    'ich', 'bin', 'mein', 'ist', 'heisse', 'heiße', 'hallo', 'und', 'wer', 'bist', 'du', 'sie', 'sind', 'da', 'jemand',
-    'je', 'suis', 'appelle', "m'appelle", 'mappelle', 'mon', 'nom', 'est', 'bonjour', 'et', 'qui', 'es', 'vous', 'êtes', 'etes', 'toi',
-    'sono', 'chiamo', 'il', 'mio', 'nome', 'è', 'ciao', 'e', 'chi', 'sei', 'lei',
-    'eu', 'sou', 'meu', 'chamo', 'olá', 'ola', 'quem', 'você', 'voce', 'és',
-    'jestem', 'nazywam', 'się', 'sie', 'mam', 'na', 'imię', 'imie', 'cześć', 'czesc', 'a', 'kim', 'jesteś', 'jestes', 'ty', 'witam',
-    'ik', 'ben', 'mijn', 'naam', 'heet', 'en', 'wie', 'jij',
-    'ben', 'benim', 'adım', 'adim', 'ismim', 'merhaba', 'sen', 'kimsin',
-    'mera', 'naam', 'hai', 'main', 'hoon', 'ap', 'aap', 'kaun',
-}
+NAME_INTRO_PREFIXES = [
+    # English
+    r"^i\s*am\b", r"^i'?m\b", r"^my\s+name\s+is\b", r"^this\s+is\b", r"^call\s+me\b", r"^it'?s\b", r"^name'?s\b",
+    # Spanish
+    r"^soy\b", r"^me\s+llamo\b", r"^mi\s+nombre\s+es\b",
+    # German
+    r"^ich\s+bin\b", r"^ich\s+hei(?:sse|\u00dfe)\b", r"^mein\s+name\s+ist\b",
+    # French
+    r"^je\s+suis\b", r"^je\s+m'?appelle\b", r"^mon\s+nom\s+est\b",
+    # Italian
+    r"^sono\b", r"^mi\s+chiamo\b", r"^il\s+mio\s+nome\s+\u00e8\b",
+    # Portuguese
+    r"^eu\s+sou\b", r"^meu\s+nome\s+\u00e9\b", r"^me\s+chamo\b",
+    # Polish
+    r"^jestem\b", r"^nazywam\s+si\u0119\b", r"^mam\s+na\s+imi\u0119\b",
+    # Dutch
+    r"^ik\s+ben\b", r"^mijn\s+naam\s+is\b",
+    # Turkish
+    r"^ben(?:im)?\s+ad[\u0131i]m\b", r"^ismim\b", r"^benim\b",
+    # Roman Urdu/Hindi
+    r"^mera\s+naam\b", r"^main\s+hoon\b",
+]
+NAME_GREETING_PREFIXES = [
+    'hello', 'hi', 'hey', 'hola', 'ciao', 'hallo', 'bonjour', 'salut',
+    'witam', 'cze\u015b\u0107', 'czesc', 'merhaba', 'ol\u00e1', 'ola',
+]
 
 VIEWING_OFFER_PHRASES = [
     'see it in person', 'seeing it in person', 'view it in person', 'would you like to see', 'would you like to view',
@@ -301,35 +315,59 @@ def resolve_next_date(day_word):
     }
 
 
-def resolve_date_from_daymonth(user_text):
-    """Language-agnostic: finds 'DD <month name>' patterns (including connector
-    words like 'de'/'den'/'of'/'di') and resolves to a valid future date.
-    Returns the LAST-mentioned valid date."""
-    pattern = r'\b(\d{1,2})\s*(?:st|nd|rd|th)?[.,]?\s*(?:de\s+|den\s+|of\s+|di\s+|van\s+)?([A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]+)'
+def find_all_dates_in_text(text):
+    """Language-agnostic: finds ALL valid calendar dates mentioned in a
+    single piece of text, supporting both 'DD Month' (17 August) and
+    'Month DD' (August 17) orderings - our own AI always writes dates in
+    the US 'Month DD' order, so both must be supported. Returns a list of
+    {'date','display','iso','pos'} dicts in the order they appear, so a
+    caller can pair multiple dates against multiple times mentioned
+    together in the same message."""
     today = datetime.now(PK_TZ).date()
-    best = None
-    best_pos = -1
-    for match in re.finditer(pattern, user_text, re.IGNORECASE):
-        day_num = int(match.group(1))
-        month_word = match.group(2).lower()
-        month_num = MONTH_NAMES.get(month_word)
+    found = []
+    seen_iso = set()
+
+    def try_add(day_num, month_num, pos):
         if not month_num or day_num < 1 or day_num > 31:
-            continue
+            return
         for year in (today.year, today.year + 1):
             try:
                 candidate = datetime(year, month_num, day_num).date()
             except ValueError:
                 continue
             if candidate >= today and candidate.weekday() != 6:
-                if match.start() > best_pos:
-                    best_pos = match.start()
-                    best = {
+                iso = candidate.strftime('%Y-%m-%d')
+                if iso not in seen_iso:
+                    seen_iso.add(iso)
+                    found.append({
                         'date': candidate,
                         'display': candidate.strftime('%A, %B %d, %Y'),
-                        'iso': candidate.strftime('%Y-%m-%d')
-                    }
+                        'iso': iso,
+                        'pos': pos
+                    })
                 break
-    return best
+
+    # Pattern A: "DD Month" (e.g. "17 August", "20 de julio")
+    pattern_dm = r'\b(\d{1,2})\s*(?:st|nd|rd|th)?[.,]?\s*(?:de\s+|den\s+|of\s+|di\s+|van\s+)?([A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]+)'
+    for match in re.finditer(pattern_dm, text, re.IGNORECASE):
+        month_num = MONTH_NAMES.get(match.group(2).lower())
+        try_add(int(match.group(1)), month_num, match.start())
+
+    # Pattern B: "Month DD" (e.g. "August 17") - the format our own AI uses
+    pattern_md = r'\b([A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]+)\s+(\d{1,2})(?:st|nd|rd|th)?\b'
+    for match in re.finditer(pattern_md, text, re.IGNORECASE):
+        month_num = MONTH_NAMES.get(match.group(1).lower())
+        try_add(int(match.group(2)), month_num, match.start())
+
+    found.sort(key=lambda d: d['pos'])
+    return found
+
+
+def resolve_date_from_daymonth(user_text):
+    """Convenience wrapper: returns only the LAST-mentioned valid date in
+    the text (used where a single date is expected)."""
+    all_dates = find_all_dates_in_text(user_text)
+    return all_dates[-1] if all_dates else None
 
 
 def slot_booked_count(agency_id, date_iso, time_label):
@@ -463,6 +501,31 @@ def detect_property_type(agency_id, conversation_history):
     return None
 
 
+def detect_location(agency_id, conversation_history):
+    """Matches conversation text against this agency's actual listing
+    locations (city and state parts), DB-driven so it adapts to whatever
+    markets the agency actually serves. Only matches city names and full
+    words 3+ letters long - short 2-letter state codes are deliberately
+    excluded because several collide with common English words (e.g. 'OR'
+    for Oregon, 'IN' for Indiana, 'HI' for Hawaii) and would false-match
+    constantly."""
+    if not conversation_history:
+        return None
+    user_text = " ".join([m['content'] for m in conversation_history if m['role'] == 'user']).lower()
+    db_locations = [l[0] for l in db.session.query(Listing.location)
+                     .filter_by(agency_id=agency_id).distinct().all() if l[0]]
+    candidates = set()
+    for loc in db_locations:
+        for part in loc.split(','):
+            part = part.strip().lower()
+            if len(part) >= 3:
+                candidates.add(part)
+    for c in sorted(candidates, key=len, reverse=True):
+        if re.search(r'\b' + re.escape(c) + r'\b', user_text):
+            return c
+    return None
+
+
 def format_num(x):
     """4.0 -> '4', 4.5 -> '4.5' - clean display for bedroom/bathroom counts."""
     if x is None:
@@ -503,13 +566,14 @@ def get_listings_context(agency_id, conversation_history=None):
         if not listings:
             return ""
 
-        budget_val, purpose, prop_type, min_beds, min_baths = None, None, None, None, None
+        budget_val, purpose, prop_type, min_beds, min_baths, location_val = None, None, None, None, None, None
         if conversation_history:
             lead_snapshot = extract_lead_data(conversation_history)
             budget_val = budget_string_to_numeric(lead_snapshot.get('budget'))
             purpose = detect_purpose(conversation_history)
             prop_type = detect_property_type(agency_id, conversation_history)
             min_beds, min_baths = detect_bed_bath_requirements(conversation_history)
+            location_val = detect_location(agency_id, conversation_history)
 
         def passes_bed_bath(l):
             if min_beds is not None and (l.bedrooms is None or l.bedrooms < min_beds):
@@ -518,18 +582,40 @@ def get_listings_context(agency_id, conversation_history=None):
                 return False
             return True
 
+        def passes_location(l):
+            if not location_val:
+                return True
+            return location_val in (l.location or '').lower()
+
         # Purpose is always a hard filter (never show a rental to a buyer or vice versa)
         purpose_ok = [l for l in listings if not purpose or not l.listing_purpose or l.listing_purpose == purpose]
 
-        # Try WITH the bed/bath requirement first (most precise, what fixes
-        # "show me 4 bed / 4+ bath" actually finding an exact match)
+        # Cascading hard-filter: try the most specific combination first
+        # (location + bed/bath), then relax bed/bath before relaxing
+        # location (a customer is usually firmer about which city they
+        # want than about an exact bathroom count), so the AI always gets
+        # the closest real alternatives instead of silently substituting
+        # a completely different city with no disclosure.
+        location_relaxed = False
         bed_bath_relaxed = False
-        candidates = [l for l in purpose_ok if passes_bed_bath(l)] if (min_beds or min_baths) else purpose_ok
-        if (min_beds or min_baths) and not candidates:
-            # Nobody meets the exact minimum - relax so the AI still has
-            # real alternatives to offer instead of a flat "we have nothing"
-            candidates = purpose_ok
-            bed_bath_relaxed = True
+
+        level1 = [l for l in purpose_ok if passes_location(l) and passes_bed_bath(l)]
+        if level1:
+            candidates = level1
+        else:
+            level2 = [l for l in purpose_ok if passes_location(l)]
+            if level2:
+                candidates = level2
+                bed_bath_relaxed = bool(min_beds or min_baths)
+            else:
+                level3 = [l for l in purpose_ok if passes_bed_bath(l)]
+                if level3:
+                    candidates = level3
+                    location_relaxed = bool(location_val)
+                else:
+                    candidates = purpose_ok
+                    location_relaxed = bool(location_val)
+                    bed_bath_relaxed = bool(min_beds or min_baths)
 
         scored = []
         for l in candidates:
@@ -553,9 +639,9 @@ def get_listings_context(agency_id, conversation_history=None):
                         continue  # too far outside budget - exclude
             scored.append((score, l))
 
-        # Nothing matched all filters? Fall back to purpose-correct listings
+        # Nothing matched at all? Fall back to purpose-correct listings
         # so the AI still has real options rather than nothing at all.
-        if not scored and (purpose or prop_type or budget_val):
+        if not scored and (purpose or prop_type or budget_val or location_val):
             scored = [(0, l) for l in purpose_ok]
 
         scored.sort(key=lambda x: (-x[0], x[1].price_numeric or 0))
@@ -576,13 +662,24 @@ def get_listings_context(agency_id, conversation_history=None):
             purpose_tag = " [FOR RENT]" if l.listing_purpose == 'rent' else " [FOR SALE]"
             features_str = f" | {l.features}" if l.features else ""
             desc_str = f" - {l.description[:80]}..." if l.description and len(l.description) > 30 else (f" - {l.description}" if l.description else "")
-            match_tag = " ✓ MATCHES bedroom/bathroom requirement" if (min_beds or min_baths) and not bed_bath_relaxed else ""
+            tags = []
+            if location_val and not location_relaxed and passes_location(l):
+                tags.append("MATCHES requested location")
+            if (min_beds or min_baths) and not bed_bath_relaxed and passes_bed_bath(l):
+                tags.append("MATCHES bedroom/bathroom requirement")
+            match_tag = f" ✓ {', '.join(tags)}" if tags else ""
             lines.append(
                 f"{i}. {l.title}{purpose_tag} | {l.location} | {price_str}"
                 f"{' | ' + bed_bath if bed_bath else ''}"
                 f"{features_str}"
                 f"{desc_str}"
                 f"{match_tag}"
+            )
+        if location_val and location_relaxed:
+            lines.append(
+                f"\nNote: none of our listings are in '{location_val}' with the customer's other criteria - "
+                "the list above are the closest alternatives in OTHER locations. Be upfront that these are not "
+                "in the area they asked for before describing them, then offer them as alternatives."
             )
         if (min_beds or min_baths) and bed_bath_relaxed:
             lines.append(
@@ -592,8 +689,10 @@ def get_listings_context(agency_id, conversation_history=None):
             )
         lines.append(
             "\nBe specific: mention price, bedrooms, bathrooms, location, and whether it's for sale or rent. "
-            "If a listing is tagged 'MATCHES bedroom/bathroom requirement', confirm clearly that it meets what the "
-            "customer asked for. Create mild urgency naturally."
+            "If a listing is tagged with a ✓ match, confirm clearly that it meets what the customer asked for. "
+            "If a listing is NOT tagged as matching location or bed/bath even though the customer specified one, "
+            "be upfront about that mismatch before describing it - never present a different city or a smaller "
+            "unit as if it were exactly what they asked for. Create mild urgency naturally."
         )
         return "\n".join(lines)
     except Exception as e:
@@ -926,19 +1025,42 @@ def extract_name_from_context(conversation_history):
     }
 
     # ── METHOD 0: Language-agnostic — reply to AI's very first message ──
+    # The AI always asks for the name first. history[1]=assistant question,
+    # history[2]=user's name reply. We strip a recognized SELF-INTRODUCTION
+    # PREFIX PHRASE ("I am", "Ich bin", "Jestem"...) rather than a bag of
+    # individually-strippable words, then take the very next token as the
+    # name. This matters because some real first names collide with short
+    # function words in other languages (e.g. "Kim" is also the Polish word
+    # for "who") - a phrase-prefix match only fires when that exact
+    # grammatical construction opens the message, so a name occupying the
+    # NAME position is never mistaken for a filler word it happens to
+    # resemble in an unrelated language.
     if (len(conversation_history) >= 3
             and conversation_history[1]['role'] == 'assistant'
             and conversation_history[2]['role'] == 'user'):
         candidate_msg = conversation_history[2]['content']
         cleaned = re.sub(r'[.,!?;:¿¡]', ' ', candidate_msg).strip()
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+
+        for greet in NAME_GREETING_PREFIXES:
+            gm = re.match(r'^' + re.escape(greet) + r'\b\s*', cleaned, re.IGNORECASE)
+            if gm:
+                cleaned = cleaned[gm.end():].strip()
+                break
+
+        for prefix_pattern in NAME_INTRO_PREFIXES:
+            pm = re.match(prefix_pattern, cleaned, re.IGNORECASE)
+            if pm:
+                cleaned = cleaned[pm.end():].strip()
+                break
+
         tokens = cleaned.split()
-        for tok in tokens:
-            tok_lower = tok.lower()
-            if tok_lower in NAME_FILLER_WORDS or tok_lower in not_a_name:
-                continue
-            if re.match(r'^[A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]{2,30}$', tok):
-                print(f"✅ Name (first-turn, lang-agnostic): {tok.title()}")
-                return tok.title()
+        if tokens:
+            candidate = tokens[0]
+            if (re.match(r'^[A-Za-zÀ-ÖØ-öø-ÿążćęłńóśźŻĄĆĘŁŃÓŚŹ]{2,30}$', candidate)
+                    and candidate.lower() not in not_a_name):
+                print(f"✅ Name (first-turn, lang-agnostic): {candidate.title()}")
+                return candidate.title()
 
     name_question_patterns = [
         "what's your name", "what is your name", "whats your name",
@@ -960,8 +1082,7 @@ def extract_name_from_context(conversation_history):
                             '', candidate, flags=re.IGNORECASE).strip()
                         first_word = candidate.split()[0] if candidate.split() else ''
                         if (first_word and re.match(r'^[a-zA-Z]{2,30}$', first_word)
-                                and first_word.lower() not in not_a_name
-                                and first_word.lower() not in NAME_FILLER_WORDS):
+                                and first_word.lower() not in not_a_name):
                             print(f"✅ Name (context): {first_word.title()}")
                             return first_word.title()
 
@@ -972,8 +1093,7 @@ def extract_name_from_context(conversation_history):
             for match in re.finditer(explicit_pattern, msg['content'], re.IGNORECASE):
                 candidate = match.group(1).strip()
                 if (re.match(r'^[a-zA-Z]{2,30}$', candidate)
-                        and candidate.lower() not in not_a_name
-                        and candidate.lower() not in NAME_FILLER_WORDS):
+                        and candidate.lower() not in not_a_name):
                     found_names.append(candidate.title())
     if found_names:
         print(f"✅ Name (explicit): {found_names[-1]}")
@@ -1137,42 +1257,77 @@ def extract_appointment_data(conversation_history):
         (r'\b(evening|late afternoon)\b', '4:00 PM'),
     ]
 
-    def find_time(text):
-        best_pos, best_label = -1, None
+    def find_all_times(text):
+        """ALL times mentioned in a message, in order - needed to pair
+        'two times in one message' with two pending days (e.g.
+        '4:00 PM and 6:00 PM')."""
+        matches = []
         for pattern, label in time_patterns:
             for m in re.finditer(pattern, text):
-                if m.start() > best_pos:
-                    best_pos, best_label = m.start(), label
-        return best_label
+                matches.append((m.start(), label))
+        matches.sort(key=lambda x: x[0])
+        result, seen_pos = [], set()
+        for pos, label in matches:
+            if pos in seen_pos:
+                continue
+            seen_pos.add(pos)
+            result.append(label)
+        return result
 
-    def find_day(text):
-        resolved = resolve_date_from_daymonth(text)
-        if resolved:
-            return resolved
-        best_pos, best_day = -1, None
+    def find_days_in_message(text):
+        """ALL days mentioned in a single message, in order. Prefers exact
+        calendar dates (most specific, e.g. 'August 17') when present;
+        falls back to weekday-name mentions (ALL of them, not just the
+        last) only when no specific date is given in that message."""
+        dates = find_all_dates_in_text(text)
+        if dates:
+            return dates
+        positions = []
         for word, normalized in WEEKDAY_WORDS.items():
             for m in re.finditer(r'\b' + re.escape(word) + r'\b', text):
-                if m.start() > best_pos:
-                    best_pos, best_day = m.start(), normalized
-        return best_day  # dict, string, or None
+                positions.append((m.start(), normalized))
+        positions.sort(key=lambda x: x[0])
+        result, seen_iso = [], set()
+        for pos, day_word in positions:
+            resolved = resolve_next_date(day_word)
+            if resolved and resolved['iso'] not in seen_iso:
+                seen_iso.add(resolved['iso'])
+                result.append(resolved)
+        return result
 
-    pending_day = None
+    # FIFO queue of resolved days awaiting a time. Handles:
+    #  - normal 1 day -> 1 time (classic single booking)
+    #  - N days mentioned together -> N times given later in one message
+    #    (paired in order, e.g. "4:00 PM and 6:00 PM")
+    #  - N days mentioned together -> a SINGLE time given later, meaning
+    #    that time applies to ALL of them (e.g. customer replies just
+    #    "2PM" intending it for both viewings - matches what the AI itself
+    #    confirms back to the customer)
+    pending_days = []
     for msg in user_msgs:
         text = msg.lower()
-        day_here = find_day(text)
-        time_here = find_time(text)
-        if day_here is not None:
-            pending_day = day_here
-        if time_here and pending_day is not None:
-            resolved = pending_day if isinstance(pending_day, dict) else resolve_next_date(pending_day)
-            if resolved:
-                already = any(s['iso'] == resolved['iso'] and s['time'] == time_here for s in data['slots'])
-                if not already:
-                    data['slots'].append({
-                        'iso': resolved['iso'],
-                        'display': resolved['display'],
-                        'time': time_here
-                    })
+        days_here = find_days_in_message(text)
+        times_here = find_all_times(text)
+
+        for d in days_here:
+            if not any(q['iso'] == d['iso'] for q in pending_days):
+                pending_days.append(d)
+
+        if times_here and pending_days:
+            if len(times_here) == 1 and len(pending_days) > 1:
+                # One time given for multiple pending days - apply to all
+                t = times_here[0]
+                for d in pending_days:
+                    if not any(s['iso'] == d['iso'] and s['time'] == t for s in data['slots']):
+                        data['slots'].append({'iso': d['iso'], 'display': d['display'], 'time': t})
+                pending_days = []
+            else:
+                pair_count = min(len(times_here), len(pending_days))
+                for i in range(pair_count):
+                    d, t = pending_days[i], times_here[i]
+                    if not any(s['iso'] == d['iso'] and s['time'] == t for s in data['slots']):
+                        data['slots'].append({'iso': d['iso'], 'display': d['display'], 'time': t})
+                pending_days = pending_days[pair_count:]
     return data
 
 
@@ -1572,6 +1727,7 @@ def add_lead_note(lead_id):
         new_note = {
             "id": len(notes) + 1,
             "text": note_text,
+            "author": "Owner",
             "timestamp": datetime.now(pytz.timezone('Asia/Karachi')).strftime('%B %d, %Y at %I:%M %p')
         }
         notes.append(new_note)
@@ -1612,6 +1768,26 @@ def get_lead_detail(lead_id):
             notes = []
         clean_num = clean_whatsapp_number(lead.whatsapp_number)
         wa_link = f"https://wa.me/{clean_num}" if clean_num else None
+
+        agent_name = None
+        if lead.agent_id:
+            assigned_agent = db.session.get(Agent, lead.agent_id)
+            if assigned_agent:
+                agent_name = assigned_agent.name
+
+        agency_agents = Agent.query.filter_by(agency_id=lead.agency_id).all()
+        agent_names_map = {a.id: a.name for a in agency_agents}
+        related = get_related_appointments(lead.agency_id, lead.email)
+        related_appointments = [{
+            "id": r.id,
+            "agent_name": agent_names_map.get(r.agent_id, "Unassigned"),
+            "date": r.appointment_date or "—",
+            "time": r.appointment_time or "—",
+            "property": r.property_interest or "—",
+            "status": r.status,
+            "notes": r.notes or ""
+        } for r in related]
+
         return jsonify({
             "id": lead.id, "name": lead.name or "—",
             "email": lead.email or "—", "phone": lead.phone or None,
@@ -1621,6 +1797,8 @@ def get_lead_detail(lead_id):
             "budget": lead.budget or "—", "message": lead.message or "—",
             "intent_score": lead.intent_score or 1,
             "lead_status": lead.lead_status or "new", "notes": notes,
+            "agent_name": agent_name,
+            "related_appointments": related_appointments,
             "created_at": lead.created_at.strftime('%B %d, %Y at %I:%M %p') if lead.created_at else "—"
         })
     except Exception as e:
@@ -1924,9 +2102,34 @@ def agent_dashboard(agent_id):
     # Cross-agent visibility: for each of my leads, show ALL appointments tied
     # to that customer's email agency-wide, so I see what other agents did too.
     related_by_lead = {lead.id: get_related_appointments(agent.agency_id, lead.email) for lead in my_leads}
+
+    # Parse each lead's notes server-side so the template can render them
+    # directly (with author attribution) without a separate AJAX call.
+    leads_notes = {}
+    for lead in my_leads:
+        try:
+            leads_notes[lead.id] = json.loads(lead.notes or '[]')
+        except Exception:
+            leads_notes[lead.id] = []
+
+    # "I'm handling a viewing for someone else's lead" awareness: for each
+    # of MY appointments, check if the customer is also a lead owned by a
+    # DIFFERENT agent, so that context surfaces right on my appointment card.
+    all_agency_leads = Lead.query.filter_by(agency_id=agent.agency_id).all()
+    leads_by_email = {l.email.strip().lower(): l for l in all_agency_leads if l.email}
+    appt_lead_owner = {}
+    for appt in my_appts:
+        if appt.customer_email:
+            owning_lead = leads_by_email.get(appt.customer_email.strip().lower())
+            if owning_lead and owning_lead.agent_id and owning_lead.agent_id != agent.id:
+                owner_agent = db.session.get(Agent, owning_lead.agent_id)
+                if owner_agent:
+                    appt_lead_owner[appt.id] = owner_agent.name
+
     return render_template("agent_dashboard.html", agent=agent, agency=agency,
                            leads=my_leads, appointments=my_appts,
-                           agent_names=agent_names, related_by_lead=related_by_lead)
+                           agent_names=agent_names, related_by_lead=related_by_lead,
+                           leads_notes=leads_notes, appt_lead_owner=appt_lead_owner)
 
 
 # ─────────────────────────────────────────────────────
@@ -1962,6 +2165,7 @@ def agent_add_lead_note(lead_id):
         note_text = data.get("note", "").strip()
         if not note_text:
             return jsonify({"error": "Note cannot be empty"}), 400
+        acting_agent = db.session.get(Agent, int(agent_id))
         try:
             notes = json.loads(lead.notes or '[]')
         except:
@@ -1969,6 +2173,7 @@ def agent_add_lead_note(lead_id):
         notes.append({
             "id": len(notes) + 1,
             "text": note_text,
+            "author": acting_agent.name if acting_agent else "Agent",
             "timestamp": datetime.now(pytz.timezone('Asia/Karachi')).strftime('%B %d, %Y at %I:%M %p')
         })
         lead.notes = json.dumps(notes)

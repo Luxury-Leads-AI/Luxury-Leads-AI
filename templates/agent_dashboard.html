@@ -139,6 +139,13 @@
       gap: 4px;
     }
     .related-toggle:hover { background: rgba(56,189,248,0.2); }
+    .related-toggle.notes-variant {
+      background: rgba(139,92,246,0.1);
+      color: #a78bfa;
+      border-color: rgba(139,92,246,0.3);
+    }
+    .related-toggle.notes-variant:hover { background: rgba(139,92,246,0.2); }
+    .related-toggle.notes-variant .rel-count { background: rgba(139,92,246,0.25); }
     .related-toggle .rel-count {
       background: rgba(56,189,248,0.25);
       border-radius: 10px;
@@ -221,6 +228,17 @@
       gap: 8px;
       margin-top: 12px;
       flex-wrap: wrap;
+    }
+    .lead-owner-badge {
+      display: inline-block;
+      background: rgba(245,158,11,0.12);
+      color: #f59e0b;
+      border: 1px solid rgba(245,158,11,0.3);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 8px;
     }
 
     .empty-state {
@@ -324,8 +342,27 @@
           <td>
             <button class="note-btn" onclick="addLeadNote({{ lead.id }})">📝 Add Note</button>
             <br>
+            {% set lead_notes = leads_notes.get(lead.id, []) if leads_notes else [] %}
+            <button class="related-toggle notes-variant" onclick="togglePanel('notes-panel-{{ lead.id }}')">
+              🗒️ Notes
+              {% if lead_notes|length > 0 %}<span class="rel-count">{{ lead_notes|length }}</span>{% endif %}
+            </button>
+            <div class="related-panel" id="notes-panel-{{ lead.id }}">
+              {% if lead_notes %}
+                {% for n in lead_notes %}
+                <div class="related-item">
+                  <span class="related-agent">{{ n.author | default('Team') }}</span>
+                  <div class="related-meta">🕐 {{ n.timestamp | default('—') }}</div>
+                  <div class="related-notes">{{ n.text }}</div>
+                </div>
+                {% endfor %}
+              {% else %}
+                <div class="no-related">No notes yet.</div>
+              {% endif %}
+            </div>
+            <br>
             {% set related = related_by_lead.get(lead.id, []) if related_by_lead else [] %}
-            <button class="related-toggle" onclick="toggleRelated({{ lead.id }})">
+            <button class="related-toggle" onclick="togglePanel('related-panel-{{ lead.id }}')">
               🔗 Related Activity
               {% if related|length > 0 %}<span class="rel-count">{{ related|length }}</span>{% endif %}
             </button>
@@ -365,6 +402,9 @@
   <div class="appts-grid">
     {% for appt in appointments %}
     <div class="appt-card status-{{ appt.status }}" id="appt-card-{{ appt.id }}">
+      {% if appt_lead_owner and appt_lead_owner.get(appt.id) %}
+      <div class="lead-owner-badge">🔔 Lead owned by {{ appt_lead_owner.get(appt.id) }}</div>
+      {% endif %}
       <div class="appt-name">{{ appt.customer_name or 'Unknown' }}</div>
       <div class="appt-detail">📅 {{ appt.appointment_date or '—' }}</div>
       <div class="appt-detail">🕐 {{ appt.appointment_time or '—' }}</div>
@@ -399,8 +439,8 @@
 <script>
   const agentId = {{ agent.id }};
 
-  function toggleRelated(leadId) {
-    const panel = document.getElementById(`related-panel-${leadId}`);
+  function togglePanel(panelId) {
+    const panel = document.getElementById(panelId);
     if (panel) panel.classList.toggle('open');
   }
 
@@ -434,7 +474,7 @@
       });
       const d = await res.json();
       if (d.success) {
-        alert('✅ Note added');
+        location.reload();
       } else {
         alert('❌ ' + (d.error || 'Failed to add note'));
       }

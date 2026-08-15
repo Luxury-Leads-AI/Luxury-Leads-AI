@@ -379,6 +379,34 @@
 
     .no-notes { color: #64748b; font-size: 13px; font-style: italic; padding: 8px 0; }
 
+    /* Assigned agent + related appointments */
+    .related-appt-item {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .related-appt-agent { font-weight: 700; color: #a78bfa; }
+    .related-appt-meta { color: #cbd5e1; margin-top: 4px; }
+    .related-appt-status {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-left: 6px;
+    }
+    .ras-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .ras-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .ras-completed { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .ras-cancelled { background: rgba(239,68,68,0.15); color: #f87171; }
+    .related-appt-notes { color: #64748b; font-style: italic; margin-top: 6px; white-space: pre-wrap; }
+    .no-related-appts { color: #64748b; font-size: 13px; font-style: italic; padding: 8px 0; }
+    .note-author { color: #a78bfa; font-weight: 700; }
+
     @media (max-width: 768px) {
       .container { padding: 16px; }
       .topbar { flex-direction: column; gap: 15px; text-align: center; padding: 16px; }
@@ -604,6 +632,12 @@
           <label>🌟 Quality</label>
           <div class="info-value" id="modal-quality">—</div>
         </div>
+        {% if agency.tier in ['agency', 'corporation'] %}
+        <div class="info-item">
+          <label>🧑‍💼 Assigned Agent</label>
+          <div class="info-value" id="modal-agent">—</div>
+        </div>
+        {% endif %}
       </div>
 
       <!-- Status -->
@@ -619,6 +653,10 @@
       <!-- Customer Insights -->
       <div class="section-title">📝 Customer Insights</div>
       <div class="insights-box" id="modal-insights">—</div>
+
+      <!-- Appointments & Activity (cross-agent) -->
+      <div class="section-title">🔗 Appointments &amp; Activity</div>
+      <div id="related-appts-list"><div class="no-related-appts">Loading...</div></div>
 
       <!-- Notes -->
       <div class="section-title">🗒️ Notes <span id="notes-count" style="color:#64748b; font-weight:400;"></span></div>
@@ -659,6 +697,10 @@
       document.getElementById('modal-quality').textContent = '⭐'.repeat(d.intent_score) + ` (${d.intent_score}/5)`;
       document.getElementById('modal-insights').textContent = d.message || 'No insights available';
 
+      // Assigned agent (only present in DOM for agency/corporation tier)
+      const agentField = document.getElementById('modal-agent');
+      if (agentField) agentField.textContent = d.agent_name || 'Unassigned';
+
       // Contact
       if (d.whatsapp_link) {
         document.getElementById('modal-contact').innerHTML = `<a href="${d.whatsapp_link}" target="_blank" style="color:#22c55e; text-decoration:none;">💬 ${d.whatsapp_number}</a>`;
@@ -671,6 +713,9 @@
       // Status buttons
       highlightStatusBtn(currentStatus);
 
+      // Related appointments (cross-agent activity)
+      renderRelatedAppts(d.related_appointments || []);
+
       // Notes
       renderNotes(d.notes || []);
 
@@ -678,6 +723,22 @@
       alert('❌ Failed to load lead details');
       closeModal();
     }
+  }
+
+  function renderRelatedAppts(related) {
+    const box = document.getElementById('related-appts-list');
+    if (!related.length) {
+      box.innerHTML = '<div class="no-related-appts">No appointments booked for this client yet.</div>';
+      return;
+    }
+    box.innerHTML = related.map(r => `
+      <div class="related-appt-item">
+        <span class="related-appt-agent">${escapeHtml(r.agent_name)}</span>
+        <span class="related-appt-status ras-${r.status}">${r.status}</span>
+        <div class="related-appt-meta">📅 ${escapeHtml(r.date)} 🕐 ${escapeHtml(r.time)}${r.property && r.property !== '—' ? ' 🏠 ' + escapeHtml(r.property) : ''}</div>
+        ${r.notes ? `<div class="related-appt-notes">📝 ${escapeHtml(r.notes)}</div>` : ''}
+      </div>
+    `).join('');
   }
 
   function closeModal() {
@@ -751,7 +812,7 @@
       <div class="note-item" id="note-item-${n.id}">
         <div class="note-text">${escapeHtml(n.text)}</div>
         <div class="note-meta">
-          <span class="note-time">🕐 ${n.timestamp}</span>
+          <span class="note-time"><span class="note-author">${escapeHtml(n.author || 'Team')}</span> · 🕐 ${n.timestamp}</span>
           <button class="note-delete-btn" onclick="deleteNote(${n.id})">🗑️ Remove</button>
         </div>
       </div>
