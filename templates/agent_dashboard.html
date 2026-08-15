@@ -60,14 +60,14 @@
       gap: 10px;
     }
 
-    /* Leads table */
+    /* Leads table - COMPACT, mirrors owner dashboard */
     .table-wrap {
       background: #1e293b;
       border: 1px solid #334155;
       border-radius: 12px;
       overflow-x: auto;
     }
-    table { width: 100%; border-collapse: collapse; min-width: 950px; }
+    table { width: 100%; border-collapse: collapse; }
     th {
       text-align: left;
       padding: 14px 16px;
@@ -77,123 +77,59 @@
       letter-spacing: 0.5px;
       border-bottom: 1px solid #334155;
       background: #0f172a;
+      white-space: nowrap;
     }
     td {
       padding: 14px 16px;
       font-size: 14px;
       color: #e2e8f0;
       border-bottom: 1px solid #26334a;
-      vertical-align: top;
+      vertical-align: middle;
     }
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(139,92,246,0.05); }
-    .quality { color: #fbbf24; }
-    .insight { font-size: 12px; color: #94a3b8; max-width: 260px; }
+    tr.lead-row { cursor: pointer; transition: background 0.15s; }
+    tr.lead-row:hover td { background: rgba(139,92,246,0.06); }
+    .quality { color: #fbbf24; white-space: nowrap; }
     .wa-link { color: #22c55e; text-decoration: none; font-weight: 600; }
     .wa-link:hover { text-decoration: underline; }
 
-    .status-select {
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 6px;
-      color: #e2e8f0;
-      font-size: 12px;
-      padding: 5px 8px;
-      outline: none;
-      cursor: pointer;
+    .status-pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      white-space: nowrap;
     }
-    .status-select.st-new { color: #38bdf8; border-color: rgba(56,189,248,0.4); }
-    .status-select.st-contacted { color: #f59e0b; border-color: rgba(245,158,11,0.4); }
-    .status-select.st-meeting { color: #a78bfa; border-color: rgba(167,139,250,0.4); }
-    .status-select.st-closed { color: #22c55e; border-color: rgba(34,197,94,0.4); }
-    .status-select.st-lost { color: #94a3b8; border-color: rgba(148,163,184,0.4); }
+    .sp-new { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .sp-contacted { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .sp-meeting { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .sp-closed { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .sp-lost { background: rgba(148,163,184,0.15); color: #94a3b8; }
 
-    .note-btn {
+    .btn-view {
       background: rgba(139,92,246,0.12);
       color: #a78bfa;
       border: 1px solid rgba(139,92,246,0.3);
       border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 5px 10px;
-      cursor: pointer;
-      white-space: nowrap;
-      margin-top: 6px;
-    }
-    .note-btn:hover { background: rgba(139,92,246,0.25); }
-
-    /* Related activity (cross-agent) */
-    .related-toggle {
-      background: rgba(56,189,248,0.1);
-      color: #38bdf8;
-      border: 1px solid rgba(56,189,248,0.3);
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 5px 10px;
-      cursor: pointer;
-      white-space: nowrap;
-      margin-top: 6px;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .related-toggle:hover { background: rgba(56,189,248,0.2); }
-    .related-toggle.notes-variant {
-      background: rgba(139,92,246,0.1);
-      color: #a78bfa;
-      border-color: rgba(139,92,246,0.3);
-    }
-    .related-toggle.notes-variant:hover { background: rgba(139,92,246,0.2); }
-    .related-toggle.notes-variant .rel-count { background: rgba(139,92,246,0.25); }
-    .related-toggle .rel-count {
-      background: rgba(56,189,248,0.25);
-      border-radius: 10px;
-      padding: 1px 6px;
-      font-size: 10px;
-    }
-    .related-panel {
-      display: none;
-      margin-top: 8px;
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 10px 12px;
-      max-width: 320px;
-    }
-    .related-panel.open { display: block; }
-    .related-item {
-      padding: 8px 0;
-      border-bottom: 1px solid #1e293b;
       font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      cursor: pointer;
+      white-space: nowrap;
     }
-    .related-item:last-child { border-bottom: none; }
-    .related-agent {
-      font-weight: 700;
-      color: #a78bfa;
-    }
-    .related-agent.is-me { color: #22c55e; }
-    .related-meta { color: #94a3b8; margin-top: 2px; }
-    .related-status {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      margin-left: 4px;
-    }
-    .rs-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
-    .rs-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; }
-    .rs-completed { background: rgba(56,189,248,0.15); color: #38bdf8; }
-    .rs-cancelled { background: rgba(239,68,68,0.15); color: #f87171; }
-    .related-notes {
+    .btn-view:hover { background: rgba(139,92,246,0.25); }
+
+    .empty-state {
+      text-align: center;
+      padding: 50px 20px;
       color: #64748b;
-      font-style: italic;
-      margin-top: 4px;
-      white-space: pre-wrap;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
     }
-    .no-related { color: #64748b; font-style: italic; font-size: 12px; }
+    .empty-icon { font-size: 50px; margin-bottom: 14px; opacity: 0.4; }
 
     /* Appointment cards */
     .appts-grid {
@@ -229,6 +165,28 @@
       margin-top: 12px;
       flex-wrap: wrap;
     }
+    .status-select {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 12px;
+      padding: 5px 8px;
+      outline: none;
+      cursor: pointer;
+    }
+    .note-btn {
+      background: rgba(139,92,246,0.12);
+      color: #a78bfa;
+      border: 1px solid rgba(139,92,246,0.3);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .note-btn:hover { background: rgba(139,92,246,0.25); }
     .lead-owner-badge {
       display: inline-block;
       background: rgba(245,158,11,0.12);
@@ -240,20 +198,185 @@
       font-weight: 600;
       margin-bottom: 8px;
     }
-
-    .empty-state {
-      text-align: center;
-      padding: 50px 20px;
-      color: #64748b;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 12px;
+    .owner-notes-toggle {
+      background: rgba(245,158,11,0.1);
+      color: #f59e0b;
+      border: 1px solid rgba(245,158,11,0.3);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 10px;
+      cursor: pointer;
+      white-space: nowrap;
     }
-    .empty-icon { font-size: 50px; margin-bottom: 14px; opacity: 0.4; }
+    .owner-notes-toggle:hover { background: rgba(245,158,11,0.2); }
+    .owner-notes-panel {
+      display: none;
+      margin-top: 10px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .owner-notes-panel.open { display: block; }
+    .owner-note-item { padding: 6px 0; border-bottom: 1px solid #1e293b; font-size: 12px; }
+    .owner-note-item:last-child { border-bottom: none; }
+    .owner-note-author { font-weight: 700; color: #f59e0b; }
+    .owner-note-meta { color: #64748b; margin-top: 2px; font-size: 11px; }
+    .owner-note-text { color: #cbd5e1; margin-top: 3px; }
+    .no-owner-notes { color: #64748b; font-style: italic; font-size: 12px; }
+
+    /* Lead Detail Modal (mirrors owner dashboard) */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 1000;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 20px;
+      overflow-y: auto;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #1e293b;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 640px;
+      border: 1px solid #334155;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-title { font-size: 18px; font-weight: 700; color: white; }
+    .modal-close {
+      background: transparent; border: none; color: #94a3b8;
+      font-size: 22px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+    }
+    .modal-close:hover { background: #334155; color: white; }
+    .modal-body { padding: 24px; }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .info-item label {
+      display: block;
+      font-size: 11px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .info-item .info-value { font-size: 14px; color: #e2e8f0; }
+
+    .status-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+    .status-btn {
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #94a3b8;
+      transition: all 0.2s;
+    }
+    .status-btn:hover { border-color: #8b5cf6; }
+    .status-btn.active-status { border-color: transparent; color: white; }
+    .status-btn-new.active-status { background: #38bdf8; }
+    .status-btn-contacted.active-status { background: #f59e0b; }
+    .status-btn-meeting.active-status { background: #a78bfa; }
+    .status-btn-closed.active-status { background: #22c55e; }
+    .status-btn-lost.active-status { background: #94a3b8; }
+
+    .insights-box {
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .related-item {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .related-agent { font-weight: 700; color: #a78bfa; }
+    .related-meta { color: #cbd5e1; margin-top: 4px; }
+    .related-status {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-left: 6px;
+    }
+    .ras-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .ras-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .ras-completed { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .ras-cancelled { background: rgba(239,68,68,0.15); color: #f87171; }
+    .related-notes { color: #64748b; font-style: italic; margin-top: 6px; white-space: pre-wrap; }
+    .no-related-appts { color: #64748b; font-size: 13px; font-style: italic; padding: 8px 0; }
+
+    .notes-list { margin-bottom: 16px; }
+    .note-item {
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .note-text { color: #e2e8f0; }
+    .note-meta { color: #64748b; font-size: 11px; margin-top: 4px; }
+    .note-author { color: #a78bfa; font-weight: 700; }
+    .no-notes { color: #64748b; font-size: 13px; font-style: italic; padding: 8px 0; }
+    .note-input-area { display: flex; gap: 8px; }
+    .note-input {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #e2e8f0;
+      font-size: 13px;
+      font-family: inherit;
+      resize: vertical;
+      outline: none;
+    }
+    .note-input:focus { border-color: #8b5cf6; }
+    .btn-add-note {
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 0 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-add-note:hover { opacity: 0.9; }
 
     @media (max-width: 768px) {
       .container { padding: 16px; }
       .topbar { flex-direction: column; gap: 15px; text-align: center; padding: 16px; }
+      .info-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -306,28 +429,26 @@
           <th>Email</th>
           <th>Contact</th>
           <th>Budget</th>
-          <th>Customer Insights</th>
-          <th>Notes &amp; Activity</th>
           <th>Date</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for lead in leads %}
-        <tr id="lead-row-{{ lead.id }}">
+        <tr class="lead-row" id="lead-row-{{ lead.id }}" onclick="handleRowClick(event, {{ lead.id }})">
           <td class="quality">{{ '⭐' * (lead.intent_score or 1) }}</td>
           <td>
-            <select class="status-select st-{{ lead.lead_status or 'new' }}"
-                    onchange="updateLeadStatus({{ lead.id }}, this.value, this)">
-              <option value="new" {{ 'selected' if lead.lead_status == 'new' }}>New</option>
-              <option value="contacted" {{ 'selected' if lead.lead_status == 'contacted' }}>Contacted</option>
-              <option value="meeting" {{ 'selected' if lead.lead_status == 'meeting' }}>Meeting</option>
-              <option value="closed" {{ 'selected' if lead.lead_status == 'closed' }}>Closed</option>
-              <option value="lost" {{ 'selected' if lead.lead_status == 'lost' }}>Lost</option>
-            </select>
+            <span class="status-pill sp-{{ lead.lead_status or 'new' }}" id="pill-{{ lead.id }}">
+              {% if lead.lead_status == 'contacted' %}Contacted
+              {% elif lead.lead_status == 'meeting' %}Meeting
+              {% elif lead.lead_status == 'closed' %}Closed
+              {% elif lead.lead_status == 'lost' %}Lost
+              {% else %}New{% endif %}
+            </span>
           </td>
           <td><b>{{ lead.name or '—' }}</b></td>
-          <td>{{ lead.email or '—' }}</td>
-          <td>
+          <td style="font-size:13px;">{{ lead.email or '—' }}</td>
+          <td onclick="event.stopPropagation()">
             {% if lead.whatsapp_number %}
               {% set clean_num = lead.whatsapp_number|regex_replace('[^0-9]', '') %}
               <a class="wa-link" href="https://wa.me/{{ clean_num.lstrip('0') }}" target="_blank">💬 {{ lead.whatsapp_number }}</a>
@@ -338,52 +459,10 @@
             {% endif %}
           </td>
           <td>{{ lead.budget or '—' }}</td>
-          <td class="insight">{{ lead.message or '—' }}</td>
-          <td>
-            <button class="note-btn" onclick="addLeadNote({{ lead.id }})">📝 Add Note</button>
-            <br>
-            {% set lead_notes = leads_notes.get(lead.id, []) if leads_notes else [] %}
-            <button class="related-toggle notes-variant" onclick="togglePanel('notes-panel-{{ lead.id }}')">
-              🗒️ Notes
-              {% if lead_notes|length > 0 %}<span class="rel-count">{{ lead_notes|length }}</span>{% endif %}
-            </button>
-            <div class="related-panel" id="notes-panel-{{ lead.id }}">
-              {% if lead_notes %}
-                {% for n in lead_notes %}
-                <div class="related-item">
-                  <span class="related-agent">{{ n.author | default('Team') }}</span>
-                  <div class="related-meta">🕐 {{ n.timestamp | default('—') }}</div>
-                  <div class="related-notes">{{ n.text }}</div>
-                </div>
-                {% endfor %}
-              {% else %}
-                <div class="no-related">No notes yet.</div>
-              {% endif %}
-            </div>
-            <br>
-            {% set related = related_by_lead.get(lead.id, []) if related_by_lead else [] %}
-            <button class="related-toggle" onclick="togglePanel('related-panel-{{ lead.id }}')">
-              🔗 Related Activity
-              {% if related|length > 0 %}<span class="rel-count">{{ related|length }}</span>{% endif %}
-            </button>
-            <div class="related-panel" id="related-panel-{{ lead.id }}">
-              {% if related %}
-                {% for r in related %}
-                <div class="related-item">
-                  <span class="related-agent {{ 'is-me' if r.agent_id == agent.id else '' }}">
-                    {% if r.agent_id == agent.id %}You{% elif r.agent_id and agent_names.get(r.agent_id) %}{{ agent_names.get(r.agent_id) }}{% else %}Unassigned{% endif %}
-                  </span>
-                  <span class="related-status rs-{{ r.status }}">{{ r.status }}</span>
-                  <div class="related-meta">📅 {{ r.appointment_date or '—' }} 🕐 {{ r.appointment_time or '—' }}</div>
-                  {% if r.notes %}<div class="related-notes">📝 {{ r.notes }}</div>{% endif %}
-                </div>
-                {% endfor %}
-              {% else %}
-                <div class="no-related">No other activity for this client yet.</div>
-              {% endif %}
-            </div>
+          <td style="white-space:nowrap; font-size:12px; color:#94a3b8;">{{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else '—' }}</td>
+          <td onclick="event.stopPropagation()">
+            <button class="btn-view" onclick="openModal({{ lead.id }})">👁 View</button>
           </td>
-          <td style="white-space:nowrap;">{{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else '—' }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -424,6 +503,27 @@
       {% if appt.notes %}
       <div class="appt-notes">{{ appt.notes }}</div>
       {% endif %}
+
+      {% if appt_lead_owner and appt_lead_owner.get(appt.id) %}
+        {% set owner_notes = appt_owner_lead_notes.get(appt.id, []) if appt_owner_lead_notes else [] %}
+        <button class="owner-notes-toggle" onclick="togglePanel('owner-notes-{{ appt.id }}')">
+          📋 Notes from {{ appt_lead_owner.get(appt.id) }}
+          {% if owner_notes|length > 0 %}({{ owner_notes|length }}){% endif %}
+        </button>
+        <div class="owner-notes-panel" id="owner-notes-{{ appt.id }}">
+          {% if owner_notes %}
+            {% for n in owner_notes %}
+            <div class="owner-note-item">
+              <span class="owner-note-author">{{ n.author | default('Team') }}</span>
+              <div class="owner-note-meta">🕐 {{ n.timestamp | default('—') }}</div>
+              <div class="owner-note-text">{{ n.text }}</div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="no-owner-notes">No notes left on this lead yet.</div>
+          {% endif %}
+        </div>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
@@ -436,49 +536,204 @@
 
 </div>
 
+<!-- LEAD DETAIL MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-lead-name">Loading...</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="info-grid">
+        <div class="info-item"><label>📧 Email</label><div class="info-value" id="modal-email">—</div></div>
+        <div class="info-item"><label>💬 Contact</label><div class="info-value" id="modal-contact">—</div></div>
+        <div class="info-item"><label>💰 Budget</label><div class="info-value" id="modal-budget">—</div></div>
+        <div class="info-item"><label>📅 Date</label><div class="info-value" id="modal-date">—</div></div>
+        <div class="info-item"><label>📞 Prefers</label><div class="info-value" id="modal-pref">—</div></div>
+        <div class="info-item"><label>🌟 Quality</label><div class="info-value" id="modal-quality">—</div></div>
+      </div>
+
+      <div class="section-title" style="margin-top:0;">📊 Lead Status</div>
+      <div class="status-buttons" id="modal-status-buttons">
+        <button class="status-btn status-btn-new" onclick="updateStatus('new')">🆕 New</button>
+        <button class="status-btn status-btn-contacted" onclick="updateStatus('contacted')">📞 Contacted</button>
+        <button class="status-btn status-btn-meeting" onclick="updateStatus('meeting')">🤝 Meeting</button>
+        <button class="status-btn status-btn-closed" onclick="updateStatus('closed')">✅ Closed</button>
+        <button class="status-btn status-btn-lost" onclick="updateStatus('lost')">❌ Lost</button>
+      </div>
+
+      <div class="section-title">📝 Customer Insights</div>
+      <div class="insights-box" id="modal-insights">—</div>
+
+      <div class="section-title">🔗 Appointments &amp; Activity</div>
+      <div id="related-appts-list"><div class="no-related-appts">Loading...</div></div>
+
+      <div class="section-title">🗒️ Notes <span id="notes-count" style="color:#64748b; font-weight:400;"></span></div>
+      <div class="notes-list" id="notes-list"></div>
+      <div class="note-input-area">
+        <textarea class="note-input" id="note-input" placeholder="Add a note..."
+          rows="2" onkeydown="if(event.ctrlKey&&event.key==='Enter') addNote()"></textarea>
+        <button class="btn-add-note" onclick="addNote()">+ Add</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
   const agentId = {{ agent.id }};
+  let currentLeadId = null;
+  let currentStatus = 'new';
 
   function togglePanel(panelId) {
     const panel = document.getElementById(panelId);
     if (panel) panel.classList.toggle('open');
   }
 
-  async function updateLeadStatus(leadId, status, selectEl) {
-    selectEl.className = 'status-select st-' + status;
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : str;
+    return div.innerHTML;
+  }
+
+  async function openModal(leadId) {
+    currentLeadId = leadId;
+    document.getElementById('modal-overlay').classList.add('open');
+    document.getElementById('modal-lead-name').textContent = 'Loading...';
+
     try {
-      const res = await fetch(`/agent-update-lead-status/${leadId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId, status: status })
-      });
+      const res = await fetch(`/get-lead-detail/${leadId}`);
       const d = await res.json();
-      if (!d.success) {
-        alert('❌ ' + (d.error || 'Failed to update'));
-        location.reload();
+      if (d.error) { alert('❌ ' + d.error); closeModal(); return; }
+
+      currentStatus = d.lead_status || 'new';
+
+      document.getElementById('modal-lead-name').textContent = '👤 ' + d.name;
+      document.getElementById('modal-email').textContent = d.email;
+      document.getElementById('modal-budget').textContent = d.budget;
+      document.getElementById('modal-date').textContent = d.created_at;
+      document.getElementById('modal-pref').textContent = (d.contact_preference || 'email').replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase());
+      document.getElementById('modal-quality').textContent = '⭐'.repeat(d.intent_score) + ` (${d.intent_score}/5)`;
+      document.getElementById('modal-insights').textContent = d.message || 'No insights available';
+
+      if (d.whatsapp_link) {
+        document.getElementById('modal-contact').innerHTML = `<a href="${d.whatsapp_link}" target="_blank" style="color:#22c55e; text-decoration:none;">💬 ${d.whatsapp_number}</a>`;
+      } else if (d.phone) {
+        document.getElementById('modal-contact').innerHTML = `<a href="tel:${d.phone}" style="color:#38bdf8; text-decoration:none;">📱 ${d.phone}</a>`;
+      } else {
+        document.getElementById('modal-contact').textContent = '—';
       }
-    } catch (e) {
-      alert('❌ Network error');
-      location.reload();
+
+      highlightStatusBtn(currentStatus);
+      renderRelatedAppts(d.related_appointments || []);
+      renderNotes(d.notes || []);
+
+    } catch(e) {
+      alert('❌ Failed to load lead details');
+      closeModal();
     }
   }
 
-  async function addLeadNote(leadId) {
-    const note = prompt('Add a note for this lead:');
-    if (!note || !note.trim()) return;
+  function renderRelatedAppts(related) {
+    const box = document.getElementById('related-appts-list');
+    if (!related.length) {
+      box.innerHTML = '<div class="no-related-appts">No appointments booked for this client yet.</div>';
+      return;
+    }
+    box.innerHTML = related.map(r => `
+      <div class="related-item">
+        <span class="related-agent">${escapeHtml(r.agent_name)}</span>
+        <span class="related-status ras-${r.status}">${r.status}</span>
+        <div class="related-meta">📅 ${escapeHtml(r.date)} 🕐 ${escapeHtml(r.time)}${r.property && r.property !== '—' ? ' 🏠 ' + escapeHtml(r.property) : ''}</div>
+        ${r.notes ? `<div class="related-notes">📝 ${escapeHtml(r.notes)}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    document.getElementById('note-input').value = '';
+    currentLeadId = null;
+  }
+
+  function closeModalOnOverlay(e) {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  }
+
+  function handleRowClick(e, leadId) {
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+    openModal(leadId);
+  }
+
+  function highlightStatusBtn(status) {
+    document.querySelectorAll('.status-btn').forEach(btn => btn.classList.remove('active-status'));
+    const btn = document.querySelector(`.status-btn-${status}`);
+    if (btn) btn.classList.add('active-status');
+  }
+
+  async function updateStatus(newStatus) {
+    if (!currentLeadId) return;
     try {
-      const res = await fetch(`/agent-add-lead-note/${leadId}`, {
+      const res = await fetch(`/agent-update-lead-status/${currentLeadId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId, note: note.trim() })
+        body: JSON.stringify({ agent_id: agentId, status: newStatus })
       });
       const d = await res.json();
       if (d.success) {
-        location.reload();
+        currentStatus = newStatus;
+        highlightStatusBtn(newStatus);
+        const pill = document.getElementById(`pill-${currentLeadId}`);
+        if (pill) {
+          const labels = { new: 'New', contacted: 'Contacted', meeting: 'Meeting', closed: 'Closed', lost: 'Lost' };
+          pill.textContent = labels[newStatus] || 'New';
+          pill.className = `status-pill sp-${newStatus}`;
+        }
+      } else {
+        alert('❌ ' + (d.error || 'Failed to update'));
+      }
+    } catch(e) {
+      alert('❌ Network error');
+    }
+  }
+
+  function renderNotes(notes) {
+    const list = document.getElementById('notes-list');
+    const count = document.getElementById('notes-count');
+    count.textContent = notes.length ? `(${notes.length})` : '';
+
+    if (!notes.length) {
+      list.innerHTML = '<div class="no-notes">No notes yet. Add the first one below.</div>';
+      return;
+    }
+    list.innerHTML = notes.map(n => `
+      <div class="note-item">
+        <div class="note-text">${escapeHtml(n.text)}</div>
+        <div class="note-meta"><span class="note-author">${escapeHtml(n.author || 'Team')}</span> · 🕐 ${n.timestamp}</div>
+      </div>
+    `).join('');
+  }
+
+  async function addNote() {
+    if (!currentLeadId) return;
+    const input = document.getElementById('note-input');
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+      const res = await fetch(`/agent-add-lead-note/${currentLeadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId, note: text })
+      });
+      const d = await res.json();
+      if (d.success) {
+        input.value = '';
+        openModal(currentLeadId);
       } else {
         alert('❌ ' + (d.error || 'Failed to add note'));
       }
-    } catch (e) {
+    } catch(e) {
       alert('❌ Network error');
     }
   }

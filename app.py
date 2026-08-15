@@ -486,8 +486,44 @@ def detect_purpose(conversation_history):
     return None
 
 
-GENERIC_PROPERTY_TYPES = ['villa', 'condo', 'condominium', 'apartment', 'house', 'townhouse',
-                           'mansion', 'estate', 'loft', 'penthouse', 'duplex', 'bungalow', 'cottage']
+GENERIC_PROPERTY_TYPES = ['villa', 'condo', 'condominium', 'apartment', 'house', 'home', 'townhouse',
+                           'town house', 'single family', 'mansion', 'estate', 'loft', 'penthouse',
+                           'duplex', 'bungalow', 'cottage']
+
+# Maps colloquial/generic terms a customer might say to the actual type
+# strings that show up in a listings database, since real inventories
+# rarely use the word "house" literally (they say "Single Family"), and a
+# naive substring check would otherwise let "house" wrongly match
+# "Townhouse" just because the letters happen to appear inside it.
+TYPE_SYNONYMS = {
+    'house': {'single family', 'house'},
+    'home': {'single family', 'house', 'home'},
+    'single family': {'single family'},
+    'single-family': {'single family'},
+    'condo': {'condo', 'condominium'},
+    'condominium': {'condo', 'condominium'},
+    'apartment': {'condo', 'apartment'},
+    'villa': {'villa'},
+    'townhouse': {'townhouse'},
+    'town house': {'townhouse'},
+    'mansion': {'luxury estate', 'mansion', 'estate'},
+    'estate': {'luxury estate', 'estate'},
+    'luxury estate': {'luxury estate'},
+    'penthouse': {'penthouse', 'condo'},
+    'duplex': {'duplex'},
+    'bungalow': {'bungalow', 'single family'},
+    'cottage': {'cottage', 'single family'},
+    'loft': {'loft', 'condo'},
+}
+
+
+def expand_type_synonyms(prop_type):
+    """A customer's stated type ('house') expands to every DB type string
+    that should count as a match ('single family', 'house')."""
+    if not prop_type:
+        return set()
+    return TYPE_SYNONYMS.get(prop_type, {prop_type})
+
 
 def detect_property_type(agency_id, conversation_history):
     """Matches conversation text against this agency's actual listing types + generic terms."""
@@ -495,7 +531,9 @@ def detect_property_type(agency_id, conversation_history):
     db_types = [t[0].lower() for t in db.session.query(Listing.property_type)
                 .filter_by(agency_id=agency_id).distinct().all() if t[0]]
     candidates = set(db_types) | set(GENERIC_PROPERTY_TYPES)
-    for c in candidates:
+    # Longest phrases first so "single family" matches before a shorter
+    # coincidental overlap would.
+    for c in sorted(candidates, key=len, reverse=True):
         if c and re.search(r'\b' + re.escape(c) + r'\b', user_text):
             return c
     return None
@@ -621,11 +659,12 @@ def get_listings_context(agency_id, conversation_history=None):
         for l in candidates:
             score = 0
             if prop_type:
+                expanded_types = expand_type_synonyms(prop_type)
                 type_field = (l.property_type or '').lower()
                 title_field = (l.title or '').lower()
-                if prop_type in type_field:
+                if type_field in expanded_types:
                     score += 3
-                elif prop_type in title_field:
+                elif any(re.search(r'\b' + re.escape(t) + r'\b', title_field) for t in expanded_types):
                     score += 2
             if budget_val and l.price_numeric:
                 lo, hi = budget_val * 0.7, budget_val * 1.3
@@ -802,6 +841,54 @@ def get_related_appointments(agency_id, customer_email):
     matched = [a for a in appts if (a.customer_email or '').strip().lower() == email_lower]
     matched.sort(key=lambda a: a.created_at or datetime.min, reverse=True)
     return matched
+
+
+def resolve_lead_identity(agency_id, email, new_name):
+    """Single source of truth for 'who is this customer' whenever we're
+    about to create a Lead or an Appointment. Looks up any existing lead
+    under this email and reconciles the name:
+      - no existing lead -> nothing to reconcile, just return the given name
+      - existing lead with no name yet -> adopt the new name
+      - existing lead with the SAME name (case-insensitive) -> no conflict
+      - existing lead with a DIFFERENT name -> the same email is now being
+        used under a different name (a genuine second person, a typo, or a
+        shared inbox). Rather than silently keeping stale data or losing
+        the new information, we treat the latest self-reported name as
+        current, update the lead, and leave a visible system note so staff
+        can see exactly what happened instead of a silent mismatch between
+        the lead record and its appointments.
+    Returns (canonical_name, lead_id_or_None)."""
+    if not email:
+        return new_name, None
+    existing = Lead.query.filter_by(agency_id=agency_id, email=email).first()
+    if not existing:
+        return new_name, None
+    if not existing.name:
+        if new_name:
+            existing.name = new_name
+            db.session.commit()
+        return existing.name or new_name, existing.id
+    if not new_name or existing.name.strip().lower() == new_name.strip().lower():
+        return existing.name, existing.id
+    # Names differ under the same email - flag it, then use the latest name
+    try:
+        notes = json.loads(existing.notes or '[]')
+    except Exception:
+        notes = []
+    notes.append({
+        "id": len(notes) + 1,
+        "text": (f"This email was previously associated with the name '{existing.name}'. "
+                 f"A new conversation under the same email used the name '{new_name}'. "
+                 f"Please verify with the customer which is correct."),
+        "author": "System",
+        "timestamp": datetime.now(pytz.timezone('Asia/Karachi')).strftime('%B %d, %Y at %I:%M %p')
+    })
+    existing.notes = json.dumps(notes)
+    old_name = existing.name
+    existing.name = new_name
+    db.session.commit()
+    print(f"⚠️ Name conflict on {email}: '{old_name}' -> '{new_name}' (flagged on lead {existing.id})")
+    return new_name, existing.id
 
 
 def notify_other_agents_of_update(appt, acting_agent, action_desc):
@@ -2114,10 +2201,13 @@ def agent_dashboard(agent_id):
 
     # "I'm handling a viewing for someone else's lead" awareness: for each
     # of MY appointments, check if the customer is also a lead owned by a
-    # DIFFERENT agent, so that context surfaces right on my appointment card.
+    # DIFFERENT agent, so that context - AND the owner's/lead-owner's notes -
+    # surfaces right on my appointment card, even though that lead never
+    # appears on my own dashboard.
     all_agency_leads = Lead.query.filter_by(agency_id=agent.agency_id).all()
     leads_by_email = {l.email.strip().lower(): l for l in all_agency_leads if l.email}
     appt_lead_owner = {}
+    appt_owner_lead_notes = {}
     for appt in my_appts:
         if appt.customer_email:
             owning_lead = leads_by_email.get(appt.customer_email.strip().lower())
@@ -2125,11 +2215,16 @@ def agent_dashboard(agent_id):
                 owner_agent = db.session.get(Agent, owning_lead.agent_id)
                 if owner_agent:
                     appt_lead_owner[appt.id] = owner_agent.name
+                try:
+                    appt_owner_lead_notes[appt.id] = json.loads(owning_lead.notes or '[]')
+                except Exception:
+                    appt_owner_lead_notes[appt.id] = []
 
     return render_template("agent_dashboard.html", agent=agent, agency=agency,
                            leads=my_leads, appointments=my_appts,
                            agent_names=agent_names, related_by_lead=related_by_lead,
-                           leads_notes=leads_notes, appt_lead_owner=appt_lead_owner)
+                           leads_notes=leads_notes, appt_lead_owner=appt_lead_owner,
+                           appt_owner_lead_notes=appt_owner_lead_notes)
 
 
 # ─────────────────────────────────────────────────────
@@ -2594,18 +2689,21 @@ Respond naturally in plain text only:"""
                     booked_slots.add(slot_id)
                     continue
                 try:
+                    canonical_name, existing_lead_id = resolve_lead_identity(
+                        agency_id, lead_data['email'], lead_data.get('name'))
                     preferred_id = None
-                    lead_row = Lead.query.filter_by(
-                        agency_id=agency_id, email=lead_data['email']).first()
-                    if lead_row:
-                        preferred_id = lead_row.agent_id
+                    if existing_lead_id:
+                        lead_row = db.session.get(Lead, existing_lead_id)
+                        if lead_row:
+                            preferred_id = lead_row.agent_id
                     chosen_agent = pick_agent_for_slot(agency, slot['iso'], slot['time'], preferred_id)
                     if chosen_agent:
                         print(f"👥 Appointment → agent {chosen_agent.name} (ID {chosen_agent.id})")
                     new_appt = Appointment(
                         agency_id=agency_id,
                         agent_id=chosen_agent.id if chosen_agent else None,
-                        customer_name=lead_data.get('name'),
+                        lead_id=existing_lead_id,
+                        customer_name=canonical_name,
                         customer_email=lead_data['email'],
                         appointment_date=slot['display'],
                         appointment_date_iso=slot['iso'],
@@ -2628,9 +2726,9 @@ Respond naturally in plain text only:"""
 
         if is_lead_qualified(lead_data, history, has_booking=bool(booked_slots)):
             try:
-                existing_lead = Lead.query.filter_by(
-                    agency_id=agency_id, email=lead_data['email']
-                ).first()
+                canonical_name, existing_lead_id = resolve_lead_identity(
+                    agency_id, lead_data['email'], lead_data.get('name'))
+                existing_lead = db.session.get(Lead, existing_lead_id) if existing_lead_id else None
                 if existing_lead:
                     updated = False
                     if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
@@ -2640,9 +2738,6 @@ Respond naturally in plain text only:"""
                     if not existing_lead.phone and lead_data.get('phone'):
                         existing_lead.phone = lead_data['phone']
                         existing_lead.contact_preference = lead_data['contact_preference']
-                        updated = True
-                    if not existing_lead.name and lead_data.get('name'):
-                        existing_lead.name = lead_data['name']
                         updated = True
                     if updated:
                         db.session.commit()
@@ -2656,7 +2751,7 @@ Respond naturally in plain text only:"""
                     lead = Lead(
                         agency_id=agency_id,
                         agent_id=assigned.id if assigned else None,
-                        name=lead_data['name'],
+                        name=canonical_name,
                         email=lead_data['email'],
                         phone=lead_data.get('phone'),
                         whatsapp_number=lead_data.get('whatsapp_number'),
