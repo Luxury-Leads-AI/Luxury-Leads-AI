@@ -112,6 +112,7 @@
 
     .appt-card.status-pending { border-left: 4px solid #f59e0b; }
     .appt-card.status-confirmed { border-left: 4px solid #22c55e; }
+    .appt-card.status-completed { border-left: 4px solid #38bdf8; }
     .appt-card.status-cancelled { border-left: 4px solid #ef4444; opacity: 0.7; }
 
     .appt-header {
@@ -135,6 +136,7 @@
     }
     .badge-pending { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
     .badge-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .badge-completed { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); }
     .badge-cancelled { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
 
     .appt-details { margin-bottom: 16px; }
@@ -190,6 +192,8 @@
     }
     .btn-confirm { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
     .btn-confirm:hover { background: rgba(34,197,94,0.3); }
+    .btn-complete { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); }
+    .btn-complete:hover { background: rgba(56,189,248,0.3); }
     .btn-cancel { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
     .btn-cancel:hover { background: rgba(239,68,68,0.3); }
     .btn-delete-appt { background: rgba(148,163,184,0.1); color: #94a3b8; border: 1px solid #334155; }
@@ -329,6 +333,11 @@
       <div class="stat-value">{{ appointments|selectattr('status', 'equalto', 'confirmed')|list|length }}</div>
     </div>
     <div class="stat-card">
+      <div class="stat-icon">🏁</div>
+      <div class="stat-label">Completed</div>
+      <div class="stat-value">{{ appointments|selectattr('status', 'equalto', 'completed')|list|length }}</div>
+    </div>
+    <div class="stat-card">
       <div class="stat-icon">❌</div>
       <div class="stat-label">Cancelled</div>
       <div class="stat-value">{{ appointments|selectattr('status', 'equalto', 'cancelled')|list|length }}</div>
@@ -342,7 +351,7 @@
       style="width:70px; padding:8px 10px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:14px; outline:none; text-align:center;">
     <button onclick="saveCapacity()"
       style="background:#667eea; color:white; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">Save</button>
-    <span style="font-size:12px; color:#64748b;">How many customers can book the same date & time. Full slots are automatically hidden from the AI.</span>
+    <span style="font-size:12px; color:#64748b;">How many customers can book the same date & time. Full slots are automatically hidden from the AI.{% if agency.tier in ['agency', 'corporation'] %} On the Agency/Corporation plan, effective capacity is based on your active agent count.{% endif %}</span>
   </div>
 
   <!-- FILTER -->
@@ -351,6 +360,7 @@
       <div class="filter-tab active" onclick="filterAppts('all', this)">📋 All</div>
       <div class="filter-tab" onclick="filterAppts('pending', this)">⏳ Pending</div>
       <div class="filter-tab" onclick="filterAppts('confirmed', this)">✅ Confirmed</div>
+      <div class="filter-tab" onclick="filterAppts('completed', this)">🏁 Completed</div>
       <div class="filter-tab" onclick="filterAppts('cancelled', this)">❌ Cancelled</div>
     </div>
     <input type="text" placeholder="🔍 Search by name or email..."
@@ -378,9 +388,11 @@
           <span class="status-badge badge-{{ appt.status }}">
             {% if appt.status == 'pending' %}⏳ Pending
             {% elif appt.status == 'confirmed' %}✅ Confirmed
+            {% elif appt.status == 'completed' %}🏁 Completed
             {% else %}❌ Cancelled{% endif %}
           </span>
         </div>
+
         {% if agency.tier in ['agency', 'corporation'] %}
         <div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
           <span style="font-size:12px; color:#94a3b8;">👤 Agent:</span>
@@ -393,6 +405,7 @@
           </select>
         </div>
         {% endif %}
+
         <!-- Date & Time Box -->
         <div class="appt-datetime">
           <div class="datetime-item">
@@ -419,7 +432,7 @@
           {% if appt.notes %}
           <div class="detail-row">
             <span class="detail-icon">📝</span>
-            <span class="detail-value" style="color:#94a3b8;">{{ appt.notes }}</span>
+            <span class="detail-value" style="color:#94a3b8; white-space:pre-wrap;">{{ appt.notes }}</span>
           </div>
           {% endif %}
         </div>
@@ -434,10 +447,14 @@
             ❌ Cancel
           </button>
           {% elif appt.status == 'confirmed' %}
+          <button class="btn-action btn-complete" onclick="updateApptStatus({{ appt.id }}, 'completed')">
+            🏁 Complete
+          </button>
           <button class="btn-action btn-cancel" onclick="updateApptStatus({{ appt.id }}, 'cancelled')">
             ❌ Cancel
           </button>
-          <button class="btn-action btn-confirm" style="flex:0;" onclick="updateApptStatus({{ appt.id }}, 'pending')">
+          {% elif appt.status == 'completed' %}
+          <button class="btn-action btn-confirm" style="flex:0;" onclick="updateApptStatus({{ appt.id }}, 'confirmed')">
             ↩ Revert
           </button>
           {% elif appt.status == 'cancelled' %}
@@ -544,6 +561,26 @@
       }
     } catch(e) {
       alert('❌ Network error');
+    }
+  }
+
+  // ── REASSIGN AGENT ──────────────────────────────
+
+  async function reassignAppt(apptId, agentId) {
+    try {
+      const res = await fetch(`/reassign-appointment/${apptId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId || null })
+      });
+      const d = await res.json();
+      if (!d.success) {
+        alert('❌ ' + (d.error || 'Failed to reassign'));
+        location.reload();
+      }
+    } catch(e) {
+      alert('❌ Network error');
+      location.reload();
     }
   }
 
@@ -696,23 +733,6 @@
     } catch(e) {
       alert('❌ Network error');
     }
-  }
-  async function reassignAppt(apptId, agentId) {
-    try {
-      const res = await fetch(`/reassign-appointment/${apptId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId || null })
-      });
-      const d = await res.json();
-      if (!d.success) {
-        alert('❌ ' + (d.error || 'Failed to reassign'));
-        location.reload();
-      }
-    } catch(e) {
-      alert('❌ Network error');
-      location.reload();
-     }
   }
 </script>
 </body>

@@ -482,7 +482,6 @@
         <th>Email</th>
         <th>Contact</th>
         <th>Budget</th>
-        <th>Insights</th>
         <th>Date</th>
         <th>Actions</th>
       </tr>
@@ -543,7 +542,6 @@
       {% endif %}
     </td>
     <td>{{ lead.budget or '—' }}</td>
-    <td class="insights-cell">{{ lead.message or '—' }}</td>
     <td style="white-space:nowrap; font-size:12px; color:#94a3b8;">
       {% if lead.created_at %}{{ lead.created_at.strftime('%b %d, %Y') }}{% else %}—{% endif %}
     </td>
@@ -555,7 +553,7 @@
   {% endfor %}
 {% else %}
   <tr>
-    <td colspan="11" class="empty">
+    <td colspan="10" class="empty">
       <div class="empty-icon">📭</div>
       <div style="font-size:18px; margin-bottom:8px; font-weight:600;">No Leads Yet</div>
       <div style="font-size:14px; color:#64748b;">
@@ -957,7 +955,7 @@
     if (!visible.length) {
       const emptyRow = document.createElement('tr');
       emptyRow.id = 'filter-empty';
-      emptyRow.innerHTML = `<td colspan="11" class="empty"><div class="empty-icon">🔍</div><div>No leads match your filters</div></td>`;
+      emptyRow.innerHTML = `<td colspan="10" class="empty"><div class="empty-icon">🔍</div><div>No leads match your filters</div></td>`;
       document.querySelector('tbody').appendChild(emptyRow);
     }
   }

@@ -463,26 +463,76 @@ def detect_property_type(agency_id, conversation_history):
     return None
 
 
+def format_num(x):
+    """4.0 -> '4', 4.5 -> '4.5' - clean display for bedroom/bathroom counts."""
+    if x is None:
+        return None
+    try:
+        return str(int(x)) if float(x) == int(x) else str(x)
+    except (TypeError, ValueError):
+        return str(x)
+
+
+def detect_bed_bath_requirements(conversation_history):
+    """Scans ALL user messages for bedroom/bathroom count requirements.
+    Any number mentioned is treated as a MINIMUM threshold (the way real
+    estate searches conventionally work: '4 beds' or 'at least 4 baths'
+    both mean >= 4). The LAST mention in the conversation wins, so a
+    customer can revise their requirement mid-chat."""
+    if not conversation_history:
+        return None, None
+    user_msgs = [m['content'] for m in conversation_history if m['role'] == 'user']
+    min_beds, min_baths = None, None
+    bed_pattern = re.compile(r'(\d+)\s*\+?\s*(?:bed|beds|bedroom|bedrooms)', re.IGNORECASE)
+    bath_pattern = re.compile(r'(\d+)\s*\+?\s*(?:bath|baths|bathroom|bathrooms)', re.IGNORECASE)
+    for msg in user_msgs:
+        for m in bed_pattern.finditer(msg):
+            min_beds = int(m.group(1))
+        for m in bath_pattern.finditer(msg):
+            min_baths = int(m.group(1))
+    return min_beds, min_baths
+
+
 def get_listings_context(agency_id, conversation_history=None):
     """Filters and ranks listings by the customer's stated budget, property
-    type, and buy/rent purpose BEFORE handing anything to the AI - so the
-    model only ever sees relevant, correctly-scoped options."""
+    type, buy/rent purpose, AND bedroom/bathroom requirements BEFORE handing
+    anything to the AI - so the model only ever sees relevant, correctly-
+    scoped options and never has to eyeball a bed/bath match itself."""
     try:
         listings = Listing.query.filter_by(agency_id=agency_id, status='available').all()
         if not listings:
             return ""
 
-        budget_val, purpose, prop_type = None, None, None
+        budget_val, purpose, prop_type, min_beds, min_baths = None, None, None, None, None
         if conversation_history:
             lead_snapshot = extract_lead_data(conversation_history)
             budget_val = budget_string_to_numeric(lead_snapshot.get('budget'))
             purpose = detect_purpose(conversation_history)
             prop_type = detect_property_type(agency_id, conversation_history)
+            min_beds, min_baths = detect_bed_bath_requirements(conversation_history)
+
+        def passes_bed_bath(l):
+            if min_beds is not None and (l.bedrooms is None or l.bedrooms < min_beds):
+                return False
+            if min_baths is not None and (l.bathrooms is None or l.bathrooms < min_baths):
+                return False
+            return True
+
+        # Purpose is always a hard filter (never show a rental to a buyer or vice versa)
+        purpose_ok = [l for l in listings if not purpose or not l.listing_purpose or l.listing_purpose == purpose]
+
+        # Try WITH the bed/bath requirement first (most precise, what fixes
+        # "show me 4 bed / 4+ bath" actually finding an exact match)
+        bed_bath_relaxed = False
+        candidates = [l for l in purpose_ok if passes_bed_bath(l)] if (min_beds or min_baths) else purpose_ok
+        if (min_beds or min_baths) and not candidates:
+            # Nobody meets the exact minimum - relax so the AI still has
+            # real alternatives to offer instead of a flat "we have nothing"
+            candidates = purpose_ok
+            bed_bath_relaxed = True
 
         scored = []
-        for l in listings:
-            if purpose and l.listing_purpose and l.listing_purpose != purpose:
-                continue  # hard filter: never show a rental to a buyer or vice versa
+        for l in candidates:
             score = 0
             if prop_type:
                 type_field = (l.property_type or '').lower()
@@ -506,8 +556,7 @@ def get_listings_context(agency_id, conversation_history=None):
         # Nothing matched all filters? Fall back to purpose-correct listings
         # so the AI still has real options rather than nothing at all.
         if not scored and (purpose or prop_type or budget_val):
-            fallback = [l for l in listings if not purpose or not l.listing_purpose or l.listing_purpose == purpose]
-            scored = [(0, l) for l in fallback]
+            scored = [(0, l) for l in purpose_ok]
 
         scored.sort(key=lambda x: (-x[0], x[1].price_numeric or 0))
         top = [l for s, l in scored[:8]]
@@ -522,20 +571,29 @@ def get_listings_context(agency_id, conversation_history=None):
             if l.bedrooms:
                 bed_bath += f"{l.bedrooms}bed"
             if l.bathrooms:
-                bed_bath += f"/{l.bathrooms}bath"
+                bed_bath += f"/{format_num(l.bathrooms)}bath"
             price_str = f"${l.price:,.0f}" if l.price else l.price_raw or "Price on request"
             purpose_tag = " [FOR RENT]" if l.listing_purpose == 'rent' else " [FOR SALE]"
             features_str = f" | {l.features}" if l.features else ""
             desc_str = f" - {l.description[:80]}..." if l.description and len(l.description) > 30 else (f" - {l.description}" if l.description else "")
+            match_tag = " ✓ MATCHES bedroom/bathroom requirement" if (min_beds or min_baths) and not bed_bath_relaxed else ""
             lines.append(
                 f"{i}. {l.title}{purpose_tag} | {l.location} | {price_str}"
                 f"{' | ' + bed_bath if bed_bath else ''}"
                 f"{features_str}"
                 f"{desc_str}"
+                f"{match_tag}"
+            )
+        if (min_beds or min_baths) and bed_bath_relaxed:
+            lines.append(
+                f"\nNote: none of our listings have at least {min_beds or '?'} bed / {min_baths or '?'} bath exactly - "
+                "the list above are the closest alternatives. Be honest that the exact combination isn't available "
+                "and offer these as alternatives instead."
             )
         lines.append(
-            "\nBe specific: mention price, bedrooms, location, and whether it's for sale or rent. "
-            "Create mild urgency naturally."
+            "\nBe specific: mention price, bedrooms, bathrooms, location, and whether it's for sale or rent. "
+            "If a listing is tagged 'MATCHES bedroom/bathroom requirement', confirm clearly that it meets what the "
+            "customer asked for. Create mild urgency naturally."
         )
         return "\n".join(lines)
     except Exception as e:
@@ -632,6 +690,41 @@ def notify_agent(agent, subject, body):
     if agent and agent.email:
         return send_email_brevo(agent.email, subject, body)
     return False
+
+
+def get_related_appointments(agency_id, customer_email):
+    """All appointments across the agency for this customer email, regardless
+    of which agent they're assigned to - so every agent working with the
+    same client can see the full picture, not just their own bookings."""
+    if not customer_email:
+        return []
+    email_lower = customer_email.strip().lower()
+    appts = Appointment.query.filter_by(agency_id=agency_id).all()
+    matched = [a for a in appts if (a.customer_email or '').strip().lower() == email_lower]
+    matched.sort(key=lambda a: a.created_at or datetime.min, reverse=True)
+    return matched
+
+
+def notify_other_agents_of_update(appt, acting_agent, action_desc):
+    """If this appointment's customer is also a lead assigned to a DIFFERENT
+    agent, let that agent know so nobody is left out of the loop when a
+    client is being worked by more than one agent at the same agency."""
+    if not appt.customer_email or not acting_agent:
+        return
+    email_lower = appt.customer_email.strip().lower()
+    leads = Lead.query.filter_by(agency_id=appt.agency_id).all()
+    for lead in leads:
+        if (lead.email and lead.email.strip().lower() == email_lower
+                and lead.agent_id and lead.agent_id != acting_agent.id):
+            other_agent = db.session.get(Agent, lead.agent_id)
+            if other_agent:
+                notify_agent(other_agent,
+                    f"🔔 Update on shared client: {appt.customer_name or lead.name or ''}",
+                    f"Hi {other_agent.name},\n\n{acting_agent.name} just {action_desc} for a client you're also working with:\n\n"
+                    f"Client: {lead.name or appt.customer_name}\nEmail: {appt.customer_email}\n"
+                    f"Appointment date: {appt.appointment_date}\nTime: {appt.appointment_time}\n"
+                    f"Status: {appt.status}\nNotes: {appt.notes or '-'}\n\n"
+                    f"Login to see the full picture: https://luxury-leads-ai.onrender.com/agent-login")
 
 
 def send_crm_webhook(agency, lead):
@@ -1264,7 +1357,7 @@ class Listing(db.Model):
     price = db.Column(db.Float, nullable=True)
     price_numeric = db.Column(db.Float, nullable=True)
     bedrooms = db.Column(db.Integer, nullable=True)
-    bathrooms = db.Column(db.Integer, nullable=True)
+    bathrooms = db.Column(db.Float, nullable=True)   # supports half-baths e.g. 4.5
     property_type = db.Column(db.String(50))
     listing_purpose = db.Column(db.String(10), default='sale')  # 'sale' or 'rent'
     features = db.Column(db.String(500))
@@ -1826,8 +1919,14 @@ def agent_dashboard(agent_id):
         .order_by(Lead.intent_score.desc(), Lead.created_at.desc()).all()
     my_appts = Appointment.query.filter_by(agency_id=agent.agency_id, agent_id=agent_id)\
         .order_by(Appointment.created_at.desc()).all()
+    all_agents = Agent.query.filter_by(agency_id=agent.agency_id).all()
+    agent_names = {a.id: a.name for a in all_agents}
+    # Cross-agent visibility: for each of my leads, show ALL appointments tied
+    # to that customer's email agency-wide, so I see what other agents did too.
+    related_by_lead = {lead.id: get_related_appointments(agent.agency_id, lead.email) for lead in my_leads}
     return render_template("agent_dashboard.html", agent=agent, agency=agency,
-                           leads=my_leads, appointments=my_appts)
+                           leads=my_leads, appointments=my_appts,
+                           agent_names=agent_names, related_by_lead=related_by_lead)
 
 
 # ─────────────────────────────────────────────────────
@@ -1892,6 +1991,8 @@ def agent_update_appointment_status(appt_id):
             return jsonify({"error": "Invalid status"}), 400
         appt.status = new_status
         db.session.commit()
+        acting_agent = db.session.get(Agent, int(agent_id))
+        notify_other_agents_of_update(appt, acting_agent, f"changed an appointment status to '{new_status}'")
         return jsonify({"success": True, "status": new_status})
     except Exception:
         return jsonify({"error": "Failed to update"}), 500
@@ -1910,6 +2011,8 @@ def agent_add_appointment_note(appt_id):
             return jsonify({"error": "Note cannot be empty"}), 400
         appt.notes = (appt.notes + "\n" if appt.notes else "") + note_text
         db.session.commit()
+        acting_agent = db.session.get(Agent, int(agent_id))
+        notify_other_agents_of_update(appt, acting_agent, "added a note to an appointment")
         return jsonify({"success": True})
     except Exception:
         return jsonify({"error": "Failed"}), 500
@@ -1970,7 +2073,7 @@ def add_listing(agency_id):
             price=price_numeric,
             price_numeric=price_numeric,
             bedrooms=int(data["bedrooms"]) if data.get("bedrooms") else None,
-            bathrooms=int(data["bathrooms"]) if data.get("bathrooms") else None,
+            bathrooms=float(data["bathrooms"]) if data.get("bathrooms") else None,
             property_type=data.get("property_type", "").strip(),
             listing_purpose=infer_listing_purpose(data.get("title", ""), data.get("description", ""), data.get("purpose")),
             features=data.get("features", "").strip(),
@@ -2020,7 +2123,7 @@ def upload_listings(agency_id):
                     pass
                 try:
                     if row.get('bathrooms'):
-                        baths = int(float(row['bathrooms']))
+                        baths = float(row['bathrooms'])
                 except:
                     pass
                 listing = Listing(
@@ -2634,6 +2737,18 @@ with app.app_context():
     except Exception as e:
         print(f"⚠️ 4C.1 migration error: {e}")
         db.session.rollback()
+
+    # ── STEP 4C.2 MIGRATIONS (self-contained) ──
+    # Upgrades bathrooms from INTEGER to FLOAT so half-baths (e.g. 4.5)
+    # survive instead of being silently truncated to 4.
+    try:
+        from sqlalchemy import text as _text3
+        db.session.execute(_text3("ALTER TABLE listing ALTER COLUMN bathrooms TYPE FLOAT USING bathrooms::float;"))
+        db.session.commit()
+        print("✅ Migration: listing.bathrooms upgraded to FLOAT")
+    except Exception as e:
+        db.session.rollback()
+        print(f"✔ listing.bathrooms FLOAT migration skipped (already applied or n/a): {e}")
 
 # -------------------------
 # RUN

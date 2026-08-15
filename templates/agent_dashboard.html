@@ -121,18 +121,72 @@
       margin-top: 6px;
     }
     .note-btn:hover { background: rgba(139,92,246,0.25); }
-    .note-count {
+
+    /* Related activity (cross-agent) */
+    .related-toggle {
+      background: rgba(56,189,248,0.1);
+      color: #38bdf8;
+      border: 1px solid rgba(56,189,248,0.3);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      margin-top: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .related-toggle:hover { background: rgba(56,189,248,0.2); }
+    .related-toggle .rel-count {
+      background: rgba(56,189,248,0.25);
+      border-radius: 10px;
+      padding: 1px 6px;
       font-size: 10px;
-      color: #64748b;
+    }
+    .related-panel {
+      display: none;
+      margin-top: 8px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 12px;
+      max-width: 320px;
+    }
+    .related-panel.open { display: block; }
+    .related-item {
+      padding: 8px 0;
+      border-bottom: 1px solid #1e293b;
+      font-size: 12px;
+    }
+    .related-item:last-child { border-bottom: none; }
+    .related-agent {
+      font-weight: 700;
+      color: #a78bfa;
+    }
+    .related-agent.is-me { color: #22c55e; }
+    .related-meta { color: #94a3b8; margin-top: 2px; }
+    .related-status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
       margin-left: 4px;
     }
-    .notes-preview {
-      font-size: 11px;
+    .rs-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .rs-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .rs-completed { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .rs-cancelled { background: rgba(239,68,68,0.15); color: #f87171; }
+    .related-notes {
       color: #64748b;
-      margin-top: 6px;
-      max-width: 220px;
       font-style: italic;
+      margin-top: 4px;
+      white-space: pre-wrap;
     }
+    .no-related { color: #64748b; font-style: italic; font-size: 12px; }
 
     /* Appointment cards */
     .appts-grid {
@@ -235,7 +289,7 @@
           <th>Contact</th>
           <th>Budget</th>
           <th>Customer Insights</th>
-          <th>Notes</th>
+          <th>Notes &amp; Activity</th>
           <th>Date</th>
         </tr>
       </thead>
@@ -269,8 +323,28 @@
           <td class="insight">{{ lead.message or '—' }}</td>
           <td>
             <button class="note-btn" onclick="addLeadNote({{ lead.id }})">📝 Add Note</button>
-            {% set notes = lead.notes|default('[]') %}
-            <div class="notes-preview" id="lead-notes-{{ lead.id }}"></div>
+            <br>
+            {% set related = related_by_lead.get(lead.id, []) if related_by_lead else [] %}
+            <button class="related-toggle" onclick="toggleRelated({{ lead.id }})">
+              🔗 Related Activity
+              {% if related|length > 0 %}<span class="rel-count">{{ related|length }}</span>{% endif %}
+            </button>
+            <div class="related-panel" id="related-panel-{{ lead.id }}">
+              {% if related %}
+                {% for r in related %}
+                <div class="related-item">
+                  <span class="related-agent {{ 'is-me' if r.agent_id == agent.id else '' }}">
+                    {% if r.agent_id == agent.id %}You{% elif r.agent_id and agent_names.get(r.agent_id) %}{{ agent_names.get(r.agent_id) }}{% else %}Unassigned{% endif %}
+                  </span>
+                  <span class="related-status rs-{{ r.status }}">{{ r.status }}</span>
+                  <div class="related-meta">📅 {{ r.appointment_date or '—' }} 🕐 {{ r.appointment_time or '—' }}</div>
+                  {% if r.notes %}<div class="related-notes">📝 {{ r.notes }}</div>{% endif %}
+                </div>
+                {% endfor %}
+              {% else %}
+                <div class="no-related">No other activity for this client yet.</div>
+              {% endif %}
+            </div>
           </td>
           <td style="white-space:nowrap;">{{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else '—' }}</td>
         </tr>
@@ -324,6 +398,11 @@
 
 <script>
   const agentId = {{ agent.id }};
+
+  function toggleRelated(leadId) {
+    const panel = document.getElementById(`related-panel-${leadId}`);
+    if (panel) panel.classList.toggle('open');
+  }
 
   async function updateLeadStatus(leadId, status, selectEl) {
     selectEl.className = 'status-select st-' + status;
