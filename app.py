@@ -546,7 +546,9 @@ def detect_location(agency_id, conversation_history):
     words 3+ letters long - short 2-letter state codes are deliberately
     excluded because several collide with common English words (e.g. 'OR'
     for Oregon, 'IN' for Indiana, 'HI' for Hawaii) and would false-match
-    constantly."""
+    constantly. This also means a customer saying just the city name
+    ('Boston') matches correctly even though listings store the full
+    'Boston, MA' - the state code was never part of the candidate set."""
     if not conversation_history:
         return None
     user_text = " ".join([m['content'] for m in conversation_history if m['role'] == 'user']).lower()
@@ -562,6 +564,52 @@ def detect_location(agency_id, conversation_history):
         if re.search(r'\b' + re.escape(c) + r'\b', user_text):
             return c
     return None
+
+
+def detect_listing_titles_in_text(agency_id, text):
+    """Returns this agency's listing titles that are literally mentioned in
+    a piece of text (case-insensitive), longest-first so a more specific
+    title is preferred over a shorter overlapping one. Used to figure out
+    WHICH property a day/time is being booked for - titles are proper
+    nouns the AI carries through unchanged even in non-English replies, so
+    this stays multilingual-safe without any translation logic."""
+    if not text:
+        return []
+    titles = [t[0] for t in db.session.query(Listing.title)
+              .filter_by(agency_id=agency_id).distinct().all() if t[0]]
+    text_lower = text.lower()
+    found = []
+    for title in sorted(titles, key=len, reverse=True):
+        if title.lower() in text_lower:
+            found.append(title)
+    return found
+
+
+def infer_budget_from_discussed_listings(agency_id, conversation_history):
+    """When no explicit number was ever stated, use the HIGHEST price among
+    listings that were actually named anywhere in the conversation as a
+    reasonable stand-in for the customer's budget ceiling - most relevant
+    once they've gone as far as asking questions about, or booking a
+    viewing for, one of those specific properties. Replaces the old
+    'next message must be a bare yes/sure' check, which was too brittle
+    for normal conversational replies like 'That's great, tell me more'."""
+    if not conversation_history:
+        return None
+    all_text = " ".join(m['content'] for m in conversation_history)
+    rows = db.session.query(Listing.title, Listing.price_numeric) \
+        .filter_by(agency_id=agency_id).all()
+    all_text_lower = all_text.lower()
+    mentioned_prices = [price for title, price in rows
+                         if title and price and title.lower() in all_text_lower]
+    if not mentioned_prices:
+        return None
+    highest = max(mentioned_prices)
+    if highest >= 1_000_000:
+        formatted = f"{highest / 1_000_000:.1f}".rstrip('0').rstrip('.')
+        return f"{formatted} million USD (based on properties discussed)"
+    elif highest >= 1_000:
+        return f"{highest / 1_000:.0f} thousand USD (based on properties discussed)"
+    return f"{highest:.0f} USD (based on properties discussed)"
 
 
 def format_num(x):
@@ -606,7 +654,7 @@ def get_listings_context(agency_id, conversation_history=None):
 
         budget_val, purpose, prop_type, min_beds, min_baths, location_val = None, None, None, None, None, None
         if conversation_history:
-            lead_snapshot = extract_lead_data(conversation_history)
+            lead_snapshot = extract_lead_data(agency_id, conversation_history)
             budget_val = budget_string_to_numeric(lead_snapshot.get('budget'))
             purpose = detect_purpose(conversation_history)
             prop_type = detect_property_type(agency_id, conversation_history)
@@ -1189,7 +1237,7 @@ def extract_name_from_context(conversation_history):
     return None
 
 
-def extract_lead_data(conversation_history):
+def extract_lead_data(agency_id, conversation_history):
     full_conversation_user = " ".join([
         msg['content'] for msg in conversation_history if msg['role'] == 'user'
     ])
@@ -1277,34 +1325,25 @@ def extract_lead_data(conversation_history):
             print(f"✅ Budget: {lead_data['budget']}")
             break
 
-    # Fallback: budget implied by accepting a specific listing's price
+    # Fallback: no explicit number was ever stated - use the highest price
+    # among listings actually named in the conversation as a reasonable
+    # stand-in for their budget ceiling.
     if not lead_data['budget']:
-        price_pattern = r'[\$]?\s?\d{1,3}(?:[.,]\d{3}){1,3}\s?[\$]?'
-        for i, msg in enumerate(conversation_history):
-            if msg['role'] == 'assistant':
-                price_match = re.search(price_pattern, msg['content'])
-                if price_match and i + 1 < len(conversation_history):
-                    next_msg = conversation_history[i + 1]
-                    if next_msg['role'] == 'user':
-                        user_reply = re.sub(r'[^\w\sÀ-ÖØ-öø-ÿążćęłńóśźäöüß]', '', next_msg['content'].lower()).strip()
-                        if any(user_reply == w or user_reply.startswith(w + ' ') for w in AFFIRMATIVE_WORDS):
-                            digits = re.sub(r'\D', '', price_match.group(0))
-                            if len(digits) >= 6:
-                                millions = int(digits) / 1_000_000
-                                formatted = f"{millions:.1f}".rstrip('0').rstrip('.')
-                                lead_data['budget'] = f"{formatted} million USD (selected property)"
-                            else:
-                                lead_data['budget'] = f"{digits} USD (selected property)"
-                            print(f"✅ Budget (implied from listing): {lead_data['budget']}")
-                            break
+        lead_data['budget'] = infer_budget_from_discussed_listings(agency_id, conversation_history)
+        if lead_data['budget']:
+            print(f"✅ Budget (inferred from discussed listings): {lead_data['budget']}")
     return lead_data
 
 
-def extract_appointment_data(conversation_history):
-    """Extracts viewing intent and ALL requested (date, time) slots.
-    Date and time are paired following the message flow (day mentioned →
-    time mentioned pairs with that day), so multiple viewings in one chat
-    are each captured correctly."""
+def extract_appointment_data(agency_id, conversation_history):
+    """Extracts viewing intent and ALL requested (date, time, property)
+    slots. Date and time are paired following the message flow (day
+    mentioned -> time mentioned pairs with that day), so multiple viewings
+    in one chat are each captured correctly. Property attribution walks
+    BOTH roles' messages (the AI usually names the property just before
+    asking for a day, e.g. "Which day for the Boston Luxury Estate?" - the
+    customer's reply is just a bare day/time), so each slot gets tagged
+    with whichever listing was most recently named by either side."""
     user_msgs = [m['content'] for m in conversation_history if m['role'] == 'user']
     user_text = " ".join(user_msgs).lower()
 
@@ -1391,8 +1430,18 @@ def extract_appointment_data(conversation_history):
     #    "2PM" intending it for both viewings - matches what the AI itself
     #    confirms back to the customer)
     pending_days = []
-    for msg in user_msgs:
-        text = msg.lower()
+    pending_property = None
+    for msg in conversation_history:
+        # Property mentions can come from EITHER side - the AI almost
+        # always names the property right before asking for a day.
+        titles_here = detect_listing_titles_in_text(agency_id, msg['content'])
+        if titles_here:
+            pending_property = titles_here[-1]
+
+        if msg['role'] != 'user':
+            continue
+
+        text = msg['content'].lower()
         days_here = find_days_in_message(text)
         times_here = find_all_times(text)
 
@@ -1406,14 +1455,14 @@ def extract_appointment_data(conversation_history):
                 t = times_here[0]
                 for d in pending_days:
                     if not any(s['iso'] == d['iso'] and s['time'] == t for s in data['slots']):
-                        data['slots'].append({'iso': d['iso'], 'display': d['display'], 'time': t})
+                        data['slots'].append({'iso': d['iso'], 'display': d['display'], 'time': t, 'property': pending_property})
                 pending_days = []
             else:
                 pair_count = min(len(times_here), len(pending_days))
                 for i in range(pair_count):
                     d, t = pending_days[i], times_here[i]
                     if not any(s['iso'] == d['iso'] and s['time'] == t for s in data['slots']):
-                        data['slots'].append({'iso': d['iso'], 'display': d['display'], 'time': t})
+                        data['slots'].append({'iso': d['iso'], 'display': d['display'], 'time': t, 'property': pending_property})
                 pending_days = pending_days[pair_count:]
     return data
 
@@ -2579,11 +2628,16 @@ PROPERTY RECOMMENDATIONS:
 - If the list is empty: "We don't have anything matching that combination right now, but I can keep an eye out and get back to you."
 - If the customer broadens or changes their criteria, treat the next matching list as the new source of truth.
 
-VIEWING FLOW:
-- If client selects a property FROM THE LISTINGS and shows interest, offer a viewing: "Would you like to see it in person?"
+VIEWING FLOW - ONE PROPERTY AT A TIME, ONE STEP AT A TIME:
+- If client selects a property FROM THE LISTINGS and shows interest, offer a viewing: "Would you like to see it in person?" Always say WHICH property by name when offering or asking about a viewing.
 {availability_context}
-- Ask day first: list ALL available days from the availability above, each with its date. Then time from that day's open slots. Then email if you don't have it yet. Then confirm: "You're booked for [full date] at [Time], [Name]. Confirmation will go to your email."
-- If the customer wants to view MORE THAN ONE property, happily book a separate day and time for each one.
+- STRICT SEQUENCE for EACH property being booked:
+  1. Ask which DAY works, and list ONLY the day names with their dates from the availability above (e.g. "Monday Aug 17, Tuesday Aug 18, Wednesday Aug 19, Thursday Aug 20, Friday Aug 21, Saturday Aug 22"). Do NOT list any time slots yet - that comes after they pick a day.
+  2. Once they pick a day, THEN list the open time slots for THAT DAY ONLY (e.g. "10:00 AM, 12:00 PM, 2:00 PM, 4:00 PM, 6:00 PM").
+  3. Once they pick a time, confirm that ONE property's booking by name: "You're booked for [Property Name] on [full date] at [Time]."
+- NEVER list multiple days' worth of time slots in a single message. NEVER dump every day and every time slot together - this is overwhelming and error-prone. One day list, then later one time list, per property.
+- If the customer wants to view MORE THAN ONE property, handle them ONE AT A TIME, start to finish (day, then time, then confirm) before starting the next property's day/time from step 1. Never mix days or times for two different properties in the same message.
+- After the LAST property's time is confirmed, ask for email if you don't have it yet. Then a short recap of all bookings together, each naming its property.
 - If client wants to view a property NOT in the listings: say "Unfortunately we don't currently have a property matching your requirements. I'll find suitable options and get back to you to plan a viewing." Do NOT offer any dates or time slots in this case. Just collect their email and contact preference so the agency can follow up.
 
 INFORMATION TO COLLECT (strictly one at a time, in this order):
@@ -2636,17 +2690,17 @@ Respond naturally in plain text only:"""
             model="gpt-4o-mini",
             messages=messages,
             temperature=0.7,
-            max_tokens=300,
+            max_tokens=350,
             presence_penalty=0.8,
             frequency_penalty=0.5
         )
         ai_reply = response.choices[0].message.content.strip()
         history.append({"role": "assistant", "content": ai_reply})
 
-        lead_data = extract_lead_data(history)
+        lead_data = extract_lead_data(agency_id, history)
 
         # ─── Auto-appointment: books ALL requested slots (multi-property support) ───
-        appt_data = extract_appointment_data(history)
+        appt_data = extract_appointment_data(agency_id, history)
 
         if (appt_data['requested']
                 and appt_data['slots']
@@ -2665,18 +2719,6 @@ Respond naturally in plain text only:"""
                 booked = slot_booked_count(agency_id, slot['iso'], slot['time'])
                 if booked >= max_slot:
                     print(f"⚠️ Slot full ({booked}/{max_slot}): {slot['display']} at {slot['time']} - not booking")
-                    booked_slots.add(slot_id)
-                    continue
-                # Guard: skip slots the AI explicitly refused in conversation
-                refused = False
-                for i, m in enumerate(history):
-                    if (m['role'] == 'user' and slot['time'].split(':')[0] in m['content']
-                            and i + 1 < len(history) and history[i+1]['role'] == 'assistant'):
-                        nxt = history[i+1]['content'].lower()
-                        if 'unavailable' in nxt or 'not available' in nxt or 'unfortunately' in nxt:
-                            refused = True
-                if refused and len(appt_data['slots']) > 1:
-                    print(f"⚠️ Slot was refused by AI in chat: {slot['display']} at {slot['time']} - skipping")
                     booked_slots.add(slot_id)
                     continue
                 existing_appt = Appointment.query.filter_by(
@@ -2708,7 +2750,7 @@ Respond naturally in plain text only:"""
                         appointment_date=slot['display'],
                         appointment_date_iso=slot['iso'],
                         appointment_time=slot['time'],
-                        property_interest=(lead_data.get('budget') or '') + ' property viewing',
+                        property_interest=slot.get('property') or ((lead_data.get('budget') or '') + ' property viewing'),
                         status='pending'
                     )
                     db.session.add(new_appt)
