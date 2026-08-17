@@ -142,6 +142,55 @@ AFFIRMATIVE_WORDS = [
     'haan', 'han', 'jee', 'ji', 'bilkul', 'zaroor',
 ]
 
+# Spelled-out numbers 1-10 across all supported languages, since customers
+# very commonly say "five bedrooms" / "fünf Schlafzimmer" rather than a
+# digit, and bedroom/bathroom counts in real estate are almost always
+# small numbers in this range.
+NUMBER_WORDS = {
+    # English
+    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    # Spanish
+    'uno': 1, 'una': 1, 'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5, 'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9, 'diez': 10,
+    # German
+    'ein': 1, 'eine': 1, 'eins': 1, 'zwei': 2, 'drei': 3, 'vier': 4, 'fünf': 5, 'funf': 5, 'sechs': 6, 'sieben': 7, 'acht': 8, 'neun': 9, 'zehn': 10,
+    # French
+    'un': 1, 'une': 1, 'deux': 2, 'trois': 3, 'quatre': 4, 'cinq': 5, 'sept': 7, 'huit': 8, 'neuf': 9, 'dix': 10,
+    # Italian
+    'due': 2, 'tre': 3, 'quattro': 4, 'cinque': 5, 'sei': 6, 'sette': 7, 'otto': 8, 'nove': 9, 'dieci': 10,
+    # Portuguese
+    'um': 1, 'uma': 1, 'dois': 2, 'duas': 2, 'três': 3, 'quatro': 4, 'sete': 7, 'oito': 8, 'dez': 10,
+    # Polish
+    'jeden': 1, 'jedna': 1, 'dwa': 2, 'trzy': 3, 'cztery': 4, 'pięć': 5, 'piec': 5, 'sześć': 6, 'szesc': 6, 'siedem': 7, 'osiem': 8, 'dziewięć': 9, 'dziewiec': 9, 'dziesięć': 10, 'dziesiec': 10,
+    # Dutch
+    'een': 1, 'twee': 2, 'drie': 3, 'vijf': 5, 'zes': 6, 'zeven': 7, 'negen': 9, 'tien': 10,
+    # Turkish
+    'bir': 1, 'iki': 2, 'üç': 3, 'uc': 3, 'dört': 4, 'dort': 4, 'beş': 5, 'bes': 5, 'altı': 6, 'alti': 6, 'yedi': 7, 'sekiz': 8, 'dokuz': 9,
+}
+
+BEDROOM_WORDS = [
+    'bed', 'beds', 'bedroom', 'bedrooms',
+    'habitacion', 'habitación', 'habitaciones', 'dormitorio', 'dormitorios', 'recamara', 'recamaras',
+    'schlafzimmer',
+    'chambre', 'chambres',
+    'camera da letto', 'camere da letto',
+    'quarto', 'quartos',
+    'sypialnia', 'sypialnie', 'sypialni',
+    'slaapkamer', 'slaapkamers',
+    'yatak odası', 'yatak odasi', 'yatak odaları', 'yatak odalari',
+]
+
+BATHROOM_WORDS = [
+    'bath', 'baths', 'bathroom', 'bathrooms',
+    'baño', 'baños', 'bano', 'banos', 'aseo', 'aseos',
+    'badezimmer', 'bad',
+    'salle de bain', 'salles de bain',
+    'bagno', 'bagni',
+    'banheiro', 'banheiros', 'casa de banho',
+    'łazienka', 'łazienki', 'lazienka', 'lazienki',
+    'badkamer', 'badkamers',
+    'banyo', 'banyolar',
+]
+
 NAME_INTRO_PREFIXES = [
     # English
     r"^i\s*am\b", r"^i'?m\b", r"^my\s+name\s+is\b", r"^this\s+is\b", r"^call\s+me\b", r"^it'?s\b", r"^name'?s\b",
@@ -533,8 +582,17 @@ def detect_property_type(agency_id, conversation_history):
     candidates = set(db_types) | set(GENERIC_PROPERTY_TYPES)
     # Longest phrases first so "single family" matches before a shorter
     # coincidental overlap would.
-    for c in sorted(candidates, key=len, reverse=True):
+    ordered = sorted(candidates, key=len, reverse=True)
+    for c in ordered:
         if c and re.search(r'\b' + re.escape(c) + r'\b', user_text):
+            return c
+    # Fallback: plain substring match (no word boundaries). Needed for
+    # compound-word languages like German, where a qualifier attaches
+    # directly to the noun with no space ("Luxusvilla" = "Luxus"+"villa"),
+    # so a strict \bvilla\b never matches even though the word is right
+    # there. Minimum length guards against short-word false positives.
+    for c in ordered:
+        if c and len(c) >= 4 and c in user_text:
             return c
     return None
 
@@ -622,8 +680,23 @@ def format_num(x):
         return str(x)
 
 
+_NUMBER_WORD_ALT = '|'.join(re.escape(w) for w in sorted(NUMBER_WORDS.keys(), key=len, reverse=True))
+_BED_WORD_ALT = '|'.join(re.escape(w) for w in sorted(BEDROOM_WORDS, key=len, reverse=True))
+_BATH_WORD_ALT = '|'.join(re.escape(w) for w in sorted(BATHROOM_WORDS, key=len, reverse=True))
+_BED_PATTERN = re.compile(rf'\b(\d+|{_NUMBER_WORD_ALT})\s*\+?\s*(?:{_BED_WORD_ALT})', re.IGNORECASE)
+_BATH_PATTERN = re.compile(rf'\b(\d+|{_NUMBER_WORD_ALT})\s*\+?\s*(?:{_BATH_WORD_ALT})', re.IGNORECASE)
+
+
+def _number_token_to_int(token):
+    if token.isdigit():
+        return int(token)
+    return NUMBER_WORDS.get(token.lower())
+
+
 def detect_bed_bath_requirements(conversation_history):
-    """Scans ALL user messages for bedroom/bathroom count requirements.
+    """Scans ALL user messages for bedroom/bathroom count requirements, in
+    any of our supported languages, and accepts BOTH digits ('5 bedrooms')
+    and spelled-out numbers ('fünf Schlafzimmer', 'cinco habitaciones').
     Any number mentioned is treated as a MINIMUM threshold (the way real
     estate searches conventionally work: '4 beds' or 'at least 4 baths'
     both mean >= 4). The LAST mention in the conversation wins, so a
@@ -632,13 +705,15 @@ def detect_bed_bath_requirements(conversation_history):
         return None, None
     user_msgs = [m['content'] for m in conversation_history if m['role'] == 'user']
     min_beds, min_baths = None, None
-    bed_pattern = re.compile(r'(\d+)\s*\+?\s*(?:bed|beds|bedroom|bedrooms)', re.IGNORECASE)
-    bath_pattern = re.compile(r'(\d+)\s*\+?\s*(?:bath|baths|bathroom|bathrooms)', re.IGNORECASE)
     for msg in user_msgs:
-        for m in bed_pattern.finditer(msg):
-            min_beds = int(m.group(1))
-        for m in bath_pattern.finditer(msg):
-            min_baths = int(m.group(1))
+        for m in _BED_PATTERN.finditer(msg):
+            n = _number_token_to_int(m.group(1))
+            if n:
+                min_beds = n
+        for m in _BATH_PATTERN.finditer(msg):
+            n = _number_token_to_int(m.group(1))
+            if n:
+                min_baths = n
     return min_beds, min_baths
 
 
@@ -833,6 +908,15 @@ Default Password: admin123
 
 
 def send_appointment_confirmation(agency, appointment):
+    assigned_agent_name = None
+    if appointment.agent_id:
+        assigned_agent = db.session.get(Agent, appointment.agent_id)
+        if assigned_agent:
+            assigned_agent_name = assigned_agent.name
+
+    agent_line_customer = f"🧑‍💼 Your Agent:  {assigned_agent_name}\n" if assigned_agent_name else ""
+    agent_line_agency = f"🧑‍💼 Assigned Agent: {assigned_agent_name}\n" if assigned_agent_name else ""
+
     customer_subject = f"✅ Appointment Confirmed - {agency.name}"
     customer_body = f"""
 Dear {appointment.customer_name},
@@ -841,7 +925,7 @@ Your property viewing appointment has been confirmed!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏠 Agency:       {agency.name}
-📅 Date:         {appointment.appointment_date}
+{agent_line_customer}📅 Date:         {appointment.appointment_date}
 🕐 Time:         {appointment.appointment_time}
 🏡 Property:     {appointment.property_interest or 'To be discussed'}
 📋 Status:       Confirmed
@@ -859,7 +943,7 @@ New Appointment Booked!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 Customer:     {appointment.customer_name}
 📧 Email:        {appointment.customer_email}
-📅 Date:         {appointment.appointment_date}
+{agent_line_agency}📅 Date:         {appointment.appointment_date}
 🕐 Time:         {appointment.appointment_time}
 🏡 Interested In: {appointment.property_interest or 'General viewing'}
 📋 Status:       {appointment.status.title()}
@@ -900,11 +984,11 @@ def resolve_lead_identity(agency_id, email, new_name):
       - existing lead with the SAME name (case-insensitive) -> no conflict
       - existing lead with a DIFFERENT name -> the same email is now being
         used under a different name (a genuine second person, a typo, or a
-        shared inbox). Rather than silently keeping stale data or losing
-        the new information, we treat the latest self-reported name as
-        current, update the lead, and leave a visible system note so staff
-        can see exactly what happened instead of a silent mismatch between
-        the lead record and its appointments.
+        shared inbox). We do NOT silently overwrite the established
+        identity - the ORIGINAL name is kept as canonical (so the lead
+        record and every appointment tied to it stay consistent with each
+        other), and a visible system note is added flagging the conflict
+        so staff can verify with the customer which name is correct.
     Returns (canonical_name, lead_id_or_None)."""
     if not email:
         return new_name, None
@@ -918,25 +1002,25 @@ def resolve_lead_identity(agency_id, email, new_name):
         return existing.name or new_name, existing.id
     if not new_name or existing.name.strip().lower() == new_name.strip().lower():
         return existing.name, existing.id
-    # Names differ under the same email - flag it, then use the latest name
+    # Names differ under the same email - flag it, but keep the ORIGINAL
+    # name as canonical rather than silently switching identities.
     try:
         notes = json.loads(existing.notes or '[]')
     except Exception:
         notes = []
     notes.append({
         "id": len(notes) + 1,
-        "text": (f"This email was previously associated with the name '{existing.name}'. "
-                 f"A new conversation under the same email used the name '{new_name}'. "
-                 f"Please verify with the customer which is correct."),
+        "text": (f"⚠️ Possible duplicate: this email was already used here as '{existing.name}'. "
+                 f"A new conversation under the SAME email just used the name '{new_name}' instead. "
+                 f"We kept '{existing.name}' as the name on file - please verify with the customer "
+                 f"which name is correct, or whether this is a different person sharing the same email."),
         "author": "System",
         "timestamp": datetime.now(pytz.timezone('Asia/Karachi')).strftime('%B %d, %Y at %I:%M %p')
     })
     existing.notes = json.dumps(notes)
-    old_name = existing.name
-    existing.name = new_name
     db.session.commit()
-    print(f"⚠️ Name conflict on {email}: '{old_name}' -> '{new_name}' (flagged on lead {existing.id})")
-    return new_name, existing.id
+    print(f"⚠️ Name conflict on {email}: kept '{existing.name}' (new session used '{new_name}') - flagged on lead {existing.id}")
+    return existing.name, existing.id
 
 
 def notify_other_agents_of_update(appt, acting_agent, action_desc):
@@ -2605,12 +2689,15 @@ def chat():
 GOLDEN RULE - ONE QUESTION PER MESSAGE:
 - Never ask two questions in one response. Ever.
 - WRONG: "Interested in learning more? When are you hoping to move in?"
+- WRONG: "Would you like to see it in person? Which day works best - Monday, Tuesday, Wednesday...?" (this is TWO questions: confirm interest, THEN ask the day - always separate messages)
 - RIGHT: "Interested in learning more about it?"
 - Wait for their answer before asking the next thing.
 
-CONVERSATION START - GET NAME FIRST:
-- When the client greets you or sends their first message, warmly ask who you're speaking with.
+CONVERSATION START - GET NAME FIRST, ALWAYS, NO EXCEPTIONS:
+- The client's FIRST message is asked who you're speaking with - no matter what that first message contains, even a greeting with small talk or a question back to you ("Hi, how are you?", "Hola, ¿cómo estás?").
+- Do NOT answer small talk or reciprocate a question in the first message. Skip straight to asking their name.
 - Example: Client says "Hi" → You say "Hello! May I know who I'm speaking with?"
+- Example: Client says "Hi, how are you?" → You STILL say "Hello! May I know who I'm speaking with?" - do not answer "how are you" first.
 - Client gives name → "Nice to meet you, [Name]! What's on your mind today?"
 - Use their name naturally throughout the conversation.
 - NEVER ask for the name again once given.
@@ -2622,17 +2709,17 @@ PACE - LET THE CLIENT LEAD:
 - Never interrogate. One relaxed question at a time.
 
 PROPERTY RECOMMENDATIONS:
-- The list below has ALREADY been filtered and ranked by the customer's stated budget, property type, and buy/rent preference. Only recommend properties from THIS list - never invent or approximate one that isn't shown.
+- The list below has ALREADY been filtered and ranked by the customer's stated budget, property type, bedroom/bathroom count, and buy/rent preference. Only recommend properties from THIS list - never invent or approximate one that isn't shown.
 - If the customer hasn't given a location yet, that's fine - go ahead and offer from the list, since it already reflects their budget and type across all locations.
 - Mention matches by name with price and key features in 1-2 sentences, then ask ONE question: "Would you like to know more?"
-- If the list is empty: "We don't have anything matching that combination right now, but I can keep an eye out and get back to you."
+- If the list is empty: "We don't have anything matching that combination right now, but I can keep an eye out and get back to you with options." Even with no match, STILL continue the normal information flow afterward - ask for budget if you don't have it yet, then email, then contact preference - so we can follow up once something becomes available. Do not end the conversation early just because nothing matched right now.
 - If the customer broadens or changes their criteria, treat the next matching list as the new source of truth.
 
 VIEWING FLOW - ONE PROPERTY AT A TIME, ONE STEP AT A TIME:
-- If client selects a property FROM THE LISTINGS and shows interest, offer a viewing: "Would you like to see it in person?" Always say WHICH property by name when offering or asking about a viewing.
+- If client selects a property FROM THE LISTINGS and shows interest, offer a viewing in its OWN message: "Would you like to see it in person?" and STOP - wait for their answer. Do NOT list any days in this same message.
 {availability_context}
 - STRICT SEQUENCE for EACH property being booked:
-  1. Ask which DAY works, and list ONLY the day names with their dates from the availability above (e.g. "Monday Aug 17, Tuesday Aug 18, Wednesday Aug 19, Thursday Aug 20, Friday Aug 21, Saturday Aug 22"). Do NOT list any time slots yet - that comes after they pick a day.
+  1. Only after they confirm they want a viewing, ask which DAY works, and list ONLY the day names with their dates from the availability above (e.g. "Monday Aug 17, Tuesday Aug 18, Wednesday Aug 19, Thursday Aug 20, Friday Aug 21, Saturday Aug 22"). Do NOT list any time slots yet - that comes after they pick a day.
   2. Once they pick a day, THEN list the open time slots for THAT DAY ONLY (e.g. "10:00 AM, 12:00 PM, 2:00 PM, 4:00 PM, 6:00 PM").
   3. Once they pick a time, confirm that ONE property's booking by name: "You're booked for [Property Name] on [full date] at [Time]."
 - NEVER list multiple days' worth of time slots in a single message. NEVER dump every day and every time slot together - this is overwhelming and error-prone. One day list, then later one time list, per property.
