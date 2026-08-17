@@ -606,22 +606,41 @@ def detect_location(agency_id, conversation_history):
     for Oregon, 'IN' for Indiana, 'HI' for Hawaii) and would false-match
     constantly. This also means a customer saying just the city name
     ('Boston') matches correctly even though listings store the full
-    'Boston, MA' - the state code was never part of the candidate set."""
+    'Boston, MA' - the state code was never part of the candidate set.
+
+    Returns a LIST of every distinct city mentioned, in the order they
+    appear in the conversation - a customer saying "New York or Nashville"
+    means EITHER is acceptable, not just whichever one our old
+    single-value version happened to check first. Also recognizes the
+    Spanish-translated form of city names containing 'New' (e.g. 'Nueva
+    York' -> 'New York'), since that's the one common case where a US
+    city name genuinely changes across our supported languages."""
     if not conversation_history:
-        return None
+        return []
     user_text = " ".join([m['content'] for m in conversation_history if m['role'] == 'user']).lower()
     db_locations = [l[0] for l in db.session.query(Listing.location)
                      .filter_by(agency_id=agency_id).distinct().all() if l[0]]
-    candidates = set()
+    # candidate -> canonical city name (usually itself, except translated aliases)
+    candidates = {}
     for loc in db_locations:
         for part in loc.split(','):
             part = part.strip().lower()
             if len(part) >= 3:
-                candidates.add(part)
-    for c in sorted(candidates, key=len, reverse=True):
-        if re.search(r'\b' + re.escape(c) + r'\b', user_text):
-            return c
-    return None
+                candidates[part] = part
+                if part.startswith('new '):
+                    candidates['nueva ' + part[4:]] = part  # Spanish "Nueva York" -> "new york"
+
+    found = []
+    seen_canonical = set()
+    for c in sorted(candidates.keys(), key=len, reverse=True):
+        m = re.search(r'\b' + re.escape(c) + r'\b', user_text)
+        if m:
+            canonical = candidates[c]
+            if canonical not in seen_canonical:
+                seen_canonical.add(canonical)
+                found.append((m.start(), canonical))
+    found.sort(key=lambda x: x[0])
+    return [c for _, c in found]
 
 
 def detect_listing_titles_in_text(agency_id, text):
@@ -727,7 +746,7 @@ def get_listings_context(agency_id, conversation_history=None):
         if not listings:
             return ""
 
-        budget_val, purpose, prop_type, min_beds, min_baths, location_val = None, None, None, None, None, None
+        budget_val, purpose, prop_type, min_beds, min_baths, location_val = None, None, None, None, None, []
         if conversation_history:
             lead_snapshot = extract_lead_data(agency_id, conversation_history)
             budget_val = budget_string_to_numeric(lead_snapshot.get('budget'))
@@ -746,7 +765,8 @@ def get_listings_context(agency_id, conversation_history=None):
         def passes_location(l):
             if not location_val:
                 return True
-            return location_val in (l.location or '').lower()
+            listing_loc = (l.location or '').lower()
+            return any(loc in listing_loc for loc in location_val)
 
         # Purpose is always a hard filter (never show a rental to a buyer or vice versa)
         purpose_ok = [l for l in listings if not purpose or not l.listing_purpose or l.listing_purpose == purpose]
@@ -838,10 +858,11 @@ def get_listings_context(agency_id, conversation_history=None):
                 f"{match_tag}"
             )
         if location_val and location_relaxed:
+            location_list_str = "' or '".join(location_val)
             lines.append(
-                f"\nNote: none of our listings are in '{location_val}' with the customer's other criteria - "
+                f"\nNote: none of our listings are in '{location_list_str}' with the customer's other criteria - "
                 "the list above are the closest alternatives in OTHER locations. Be upfront that these are not "
-                "in the area they asked for before describing them, then offer them as alternatives."
+                "in the area(s) they asked for before describing them, then offer them as alternatives."
             )
         if (min_beds or min_baths) and bed_bath_relaxed:
             lines.append(
@@ -2799,8 +2820,19 @@ Respond naturally in plain text only:"""
                 if slot_id in booked_slots:
                     continue
                 slot_date = datetime.strptime(slot['iso'], '%Y-%m-%d').date()
-                if (slot_date - today_pk).days > 7 or slot_date < today_pk:
-                    print(f"⚠️ Date outside 7-day window: {slot['display']} - not auto-booking")
+                # Only block genuinely nonsensical dates (past, or wildly far
+                # out) - NOT a tight 7-day ceiling. The availability list
+                # shown to the customer is recalculated fresh from "now" on
+                # every message, so a date that was validly offered can
+                # legitimately fall outside a narrow window by the time
+                # they confirm it later in the same conversation (customers
+                # often take minutes or hours between replies). Rejecting
+                # a date the AI already confirmed to the customer, silently,
+                # is worse than allowing a generous buffer here - the
+                # capacity check right below remains the real business
+                # constraint.
+                if (slot_date - today_pk).days > 30 or slot_date < today_pk:
+                    print(f"⚠️ Date out of sane range: {slot['display']} - not auto-booking")
                     booked_slots.add(slot_id)
                     continue
                 booked = slot_booked_count(agency_id, slot['iso'], slot['time'])
