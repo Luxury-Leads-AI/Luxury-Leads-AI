@@ -19,7 +19,12 @@ pip install -r requirements.txt
 gunicorn app:app --bind 0.0.0.0:10000
 ```
 
-There are no tests or linting configurations in this project.
+**Run tests:**
+```bash
+pip install pytest
+pytest tests/
+```
+Tests live in `tests/` and import `app.py` directly (no test client, no live server). `tests/conftest.py` sets dummy `OPENAI_API_KEY`/`SECRET_KEY` env vars and a throwaway temp-file SQLite `DATABASE_URL` *before* importing `app`, since `app.py` does real setup work (env validation, DB connection, migrations) at import time — never point tests at the real database or a real API key. Coverage so far is deliberately narrow: pure/DB-backed logic functions that don't call OpenAI (e.g. `detect_location`, `is_slot_within_booking_window`), not the full `/chat` endpoint. There is no linting configuration.
 
 ## Environment Variables
 

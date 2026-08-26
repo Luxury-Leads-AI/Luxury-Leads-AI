@@ -419,6 +419,19 @@ def resolve_date_from_daymonth(user_text):
     return all_dates[-1] if all_dates else None
 
 
+def is_slot_within_booking_window(slot_date, today, max_days_ahead=30):
+    """True if slot_date is not in the past and not more than max_days_ahead
+    days from today. Only blocks genuinely nonsensical dates - NOT a tight
+    ceiling. The availability list shown to the customer is recalculated
+    fresh from "now" on every message, so a date that was validly offered
+    can legitimately fall outside a narrow window by the time they confirm
+    it later in the same conversation (customers often take minutes or
+    hours between replies). Rejecting a date the AI already confirmed to
+    the customer, silently, is worse than allowing a generous buffer here -
+    the slot-capacity check remains the real business constraint."""
+    return today <= slot_date <= today + timedelta(days=max_days_ahead)
+
+
 def slot_booked_count(agency_id, date_iso, time_label):
     """Count non-cancelled appointments for an exact date+time slot."""
     return Appointment.query.filter(
@@ -2820,18 +2833,7 @@ Respond naturally in plain text only:"""
                 if slot_id in booked_slots:
                     continue
                 slot_date = datetime.strptime(slot['iso'], '%Y-%m-%d').date()
-                # Only block genuinely nonsensical dates (past, or wildly far
-                # out) - NOT a tight 7-day ceiling. The availability list
-                # shown to the customer is recalculated fresh from "now" on
-                # every message, so a date that was validly offered can
-                # legitimately fall outside a narrow window by the time
-                # they confirm it later in the same conversation (customers
-                # often take minutes or hours between replies). Rejecting
-                # a date the AI already confirmed to the customer, silently,
-                # is worse than allowing a generous buffer here - the
-                # capacity check right below remains the real business
-                # constraint.
-                if (slot_date - today_pk).days > 30 or slot_date < today_pk:
+                if not is_slot_within_booking_window(slot_date, today_pk):
                     print(f"⚠️ Date out of sane range: {slot['display']} - not auto-booking")
                     booked_slots.add(slot_id)
                     continue
@@ -3216,4 +3218,4 @@ with app.app_context():
 # -------------------------
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
