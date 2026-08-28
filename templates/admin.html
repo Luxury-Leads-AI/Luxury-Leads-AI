@@ -435,9 +435,67 @@
     {% if leads %}
     <button onclick="clearAllLeads()" class="clear-all-btn">🗑️ Clear All Leads</button>
     {% endif %}
-    <a href="/owner-login" class="logout-btn">🚪 Logout</a>
+    <button onclick="openChangePassword()" class="logout-btn">🔑 Change Password</button>
+    <a href="/owner-logout" class="logout-btn">🚪 Logout</a>
   </div>
 </div>
+
+<!-- CHANGE PASSWORD MODAL -->
+<div id="changePasswordModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#1e293b; padding:30px; border-radius:12px; width:100%; max-width:380px; border:1px solid #334155;">
+    <h3 style="color:#38bdf8; margin-bottom:16px;">🔑 Change Password</h3>
+    <input type="password" id="newPasswordInput" placeholder="New password (min 6 characters)"
+           style="width:100%; padding:12px; border-radius:6px; border:1px solid #334155; background:#0f172a; color:white; font-size:14px; box-sizing:border-box; margin-bottom:14px;">
+    <div id="changePasswordMsg" style="font-size:13px; margin-bottom:10px; display:none;"></div>
+    <div style="display:flex; gap:10px;">
+      <button onclick="submitChangePassword()" style="flex:1; background:#22c55e; color:black; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Save</button>
+      <button onclick="closeChangePassword()" style="flex:1; background:#334155; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openChangePassword() {
+  document.getElementById("newPasswordInput").value = "";
+  document.getElementById("changePasswordMsg").style.display = "none";
+  document.getElementById("changePasswordModal").style.display = "flex";
+}
+function closeChangePassword() {
+  document.getElementById("changePasswordModal").style.display = "none";
+}
+async function submitChangePassword() {
+  const newPassword = document.getElementById("newPasswordInput").value.trim();
+  const msg = document.getElementById("changePasswordMsg");
+  if (newPassword.length < 6) {
+    msg.textContent = "❌ Password must be at least 6 characters.";
+    msg.style.color = "#fca5a5";
+    msg.style.display = "block";
+    return;
+  }
+  try {
+    const res = await fetch("/change-owner-password/{{ agency.id }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ new_password: newPassword })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msg.textContent = "✅ Password updated!";
+      msg.style.color = "#86efac";
+      msg.style.display = "block";
+      setTimeout(closeChangePassword, 1200);
+    } else {
+      msg.textContent = "❌ " + (data.error || "Failed to update password");
+      msg.style.color = "#fca5a5";
+      msg.style.display = "block";
+    }
+  } catch (e) {
+    msg.textContent = "❌ Network error. Please try again.";
+    msg.style.color = "#fca5a5";
+    msg.style.display = "block";
+  }
+}
+</script>
 
 <div class="container">
 
@@ -1035,4 +1093,4 @@
   });
 </script>
 </body>
-</html>
+</html>

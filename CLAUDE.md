@@ -64,4 +64,4 @@ DATABASE_URL=          # Optional; defaults to SQLite (luxury_leads.db)
 
 Hosted on Render. The `DATABASE_URL` env var on Render uses `postgresql://` which is rewritten to `postgresql+psycopg://` at startup to satisfy SQLAlchemy 2.x.
 
-Admin login at `/owner-login` uses a hardcoded password `admin123` — there is no real auth system yet.
+**Auth** — Agency owners log in at `/owner-login` with a real per-agency hashed password (`Agency.set_password`/`check_password`, Werkzeug); agents log in at `/agent-login` the same way. New agencies/agents get a random one-time password generated with `secrets.token_urlsafe`, returned once in the API response — never a shared hardcoded default. The Super Admin panel (`/owner`, `/agencies`, `/delete-agency/<id>`) is gated behind `/super-admin-login`, checked against the `SUPER_ADMIN_PASSWORD` env var, with `session['super_admin']` as the guard. Owner/agent dashboard and management routes (`/admin`, `/agents/<id>`, `/agent-dashboard/<id>`, `/add-agent`, `/toggle-agent`, `/delete-agent`) all check that the request's session matches the agency/agent being accessed, not just a truthy ID in the URL.

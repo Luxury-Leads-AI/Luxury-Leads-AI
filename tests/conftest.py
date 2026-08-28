@@ -16,6 +16,7 @@ import uuid
 # risking) a real key.
 os.environ.setdefault("OPENAI_API_KEY", "test-dummy-key-not-real")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("SUPER_ADMIN_PASSWORD", "test-super-admin-pw")
 
 # A fresh, empty SQLite file per test run - never the real luxury_leads.db.
 _db_fd, _db_path = tempfile.mkstemp(suffix=".db")
@@ -33,6 +34,15 @@ def _flask_app_context():
     """All app.py DB calls expect an active Flask app context."""
     with app_module.app.app_context():
         yield
+
+
+@pytest.fixture()
+def client():
+    """Flask test client, for exercising real HTTP routes (auth, sessions,
+    redirects) rather than calling functions directly."""
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as c:
+        yield c
 
 
 @pytest.fixture()
