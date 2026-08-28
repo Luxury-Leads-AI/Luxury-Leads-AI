@@ -274,7 +274,8 @@ async function submitForm(event) {
         📦 <strong>Plan:</strong> ${tierLabels[json.tier] || json.tier}<br>
         🗓️ <strong>Free trial until:</strong> ${json.trial_ends}<br>
         📝 <strong>Your Agency ID:</strong> ${json.agency_id}<br>
-        🔑 <strong>Default Password:</strong> admin123<br><br>
+        🔑 <strong>Your Password:</strong> ${json.temp_password}<br>
+        <span style="font-size:12px; color:#a7f3d0;">Save this now - it won't be shown again. You can change it after logging in.</span><br><br>
 
         <strong>📋 Embed Code (Copy & Paste on your website):</strong>
         <div class="embed-code">&lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="${json.agency_id}"&gt;&lt;/script&gt;</div>
@@ -307,4 +308,4 @@ async function submitForm(event) {
 </script>
 
 </body>
-</html>
+</html>

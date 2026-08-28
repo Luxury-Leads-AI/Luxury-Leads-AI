@@ -14,6 +14,7 @@ import json
 import csv
 from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
+import secrets
 import pytz
 from collections import defaultdict
 import httpx  # used for Brevo email API + webhooks
@@ -44,6 +45,11 @@ if database_url.startswith('postgresql://'):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-this-in-production')
+
+# Super Admin panel password (protects /owner, /agencies, /delete-agency/<id>).
+# Must be set in the environment on Render - if it's blank, the login route
+# refuses every attempt rather than silently allowing access.
+SUPER_ADMIN_PASSWORD = os.getenv('SUPER_ADMIN_PASSWORD', '')
 
 db = SQLAlchemy(app)
 
@@ -936,7 +942,6 @@ Login to view all leads:
 https://luxury-leads-ai.onrender.com/owner-login
 
 Agency ID: {agency.id}
-Default Password: admin123
 """
     return send_email_brevo(agency.email, subject, body)
 
@@ -1824,16 +1829,23 @@ def owner_login():
         return redirect("/owner-login?error=Invalid+Agency+ID")
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
-    if password == "admin123":
+    if agency.password_hash and agency.check_password(password):
         session['agency_id'] = str(agency_id)
         return redirect(f"/admin?agency_id={agency_id}")
     else:
         return redirect("/owner-login?error=Invalid+password")
 
+@app.route("/owner-logout")
+def owner_logout():
+    session.pop('agency_id', None)
+    return redirect("/owner-login")
+
 @app.route("/admin")
 def admin():
     agency_id = request.args.get("agency_id")
     if not agency_id:
+        return redirect("/owner-login?error=Please+login+first")
+    if session.get('agency_id') != str(agency_id):
         return redirect("/owner-login?error=Please+login+first")
     try:
         leads = Lead.query.filter_by(
@@ -1847,8 +1859,25 @@ def admin():
         print(f"❌ ADMIN ERROR: {e}")
         return redirect("/owner-login?error=Something+went+wrong")
 
+@app.route("/super-admin-login", methods=["GET", "POST"])
+def super_admin_login():
+    if request.method == "GET":
+        return render_template("super_admin_login.html")
+    password = request.form.get("password", "").strip()
+    if SUPER_ADMIN_PASSWORD and password == SUPER_ADMIN_PASSWORD:
+        session['super_admin'] = True
+        return redirect("/owner")
+    return redirect("/super-admin-login?error=Invalid+password")
+
+@app.route("/super-admin-logout")
+def super_admin_logout():
+    session.pop('super_admin', None)
+    return redirect("/super-admin-login")
+
 @app.route("/owner")
 def owner():
+    if not session.get('super_admin'):
+        return redirect("/super-admin-login?error=Please+login+first")
     return render_template("owner.html")
 
 @app.route("/ping")
@@ -1867,6 +1896,12 @@ def create_agency():
     if tier not in TIER_LIMITS:
         tier = "solo"
 
+    # If the caller (a future signup form) already collected a real password,
+    # use it. Otherwise generate a random one-time temporary password - never
+    # a shared hardcoded default like the old "admin123".
+    supplied_password = (data.get("password") or "").strip()
+    temp_password = supplied_password or secrets.token_urlsafe(9)
+
     agency = Agency(
         name=data.get("name"),
         prompt=data.get("prompt", "You are a luxury real estate assistant."),
@@ -1881,7 +1916,7 @@ def create_agency():
         trial_ends_at=datetime.utcnow() + timedelta(days=14),
         billing_email=data.get("billing_email") or data.get("email")
     )
-    agency.set_password("admin123")
+    agency.set_password(temp_password)
     db.session.add(agency)
     db.session.commit()
     print(f"✅ Agency created: ID {agency.id} | Tier: {tier} | Trial ends: {agency.trial_ends_at.date()}")
@@ -1889,8 +1924,28 @@ def create_agency():
         "agency_id": agency.id,
         "tier": tier,
         "trial_ends": agency.trial_ends_at.strftime('%Y-%m-%d'),
+        # Only handed back when we generated it ourselves - if the caller
+        # supplied their own password, it already knows it.
+        "temp_password": None if supplied_password else temp_password,
         "message": "Agency created"
     })
+
+@app.route("/change-owner-password/<int:agency_id>", methods=["POST"])
+def change_owner_password(agency_id):
+    """Lets an agency owner (or the super admin) rotate an agency's login
+    password. Used right now to get agencies off the old admin123 default."""
+    if session.get('agency_id') != str(agency_id) and not session.get('super_admin'):
+        return jsonify({"error": "Unauthorized"}), 401
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return jsonify({"error": "Agency not found"}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    new_password = (data.get("new_password") or "").strip()
+    if len(new_password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+    agency.set_password(new_password)
+    db.session.commit()
+    return jsonify({"message": "Password updated"})
 
 @app.route("/paddle-webhook", methods=["POST"])
 def paddle_webhook():
@@ -1910,6 +1965,8 @@ def paddle_webhook():
 
 @app.route("/agencies")
 def get_agencies():
+    if not session.get('super_admin'):
+        return jsonify({"error": "Unauthorized"}), 401
     agencies = Agency.query.all()
     return jsonify([{
         "id": a.id, "name": a.name,
@@ -1921,6 +1978,8 @@ def get_agencies():
 
 @app.route("/delete-agency/<int:agency_id>", methods=["DELETE"])
 def delete_agency(agency_id):
+    if not session.get('super_admin'):
+        return jsonify({"error": "Unauthorized"}), 401
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return jsonify({"error": "Agency not found"}), 404
@@ -2257,6 +2316,8 @@ def get_appointments_count(agency_id):
 
 @app.route("/agents/<int:agency_id>")
 def agents_page(agency_id):
+    if session.get('agency_id') != str(agency_id):
+        return redirect("/owner-login?error=Please+login+first")
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
@@ -2271,6 +2332,8 @@ def agents_page(agency_id):
 
 @app.route("/add-agent/<int:agency_id>", methods=["POST"])
 def add_agent(agency_id):
+    if session.get('agency_id') != str(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         agency = db.session.get(Agency, agency_id)
         if not agency:
@@ -2282,7 +2345,9 @@ def add_agent(agency_id):
         data = request.get_json(force=True)
         name = data.get("name", "").strip()
         email = data.get("email", "").strip().lower()
-        password = data.get("password", "").strip() or "agent123"
+        # No more shared hardcoded "agent123" default - generate a random
+        # one-time temp password unless the owner supplied one.
+        password = data.get("password", "").strip() or secrets.token_urlsafe(9)
         if not name or not email:
             return jsonify({"error": "Name and email required"}), 400
         if Agent.query.filter_by(agency_id=agency_id, email=email).first():
@@ -2304,6 +2369,8 @@ def toggle_agent(agent_id):
         agent = db.session.get(Agent, agent_id)
         if not agent:
             return jsonify({"error": "Agent not found"}), 404
+        if session.get('agency_id') != str(agent.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         agent.status = 'disabled' if agent.status == 'active' else 'active'
         db.session.commit()
         return jsonify({"success": True, "status": agent.status})
@@ -2317,6 +2384,8 @@ def delete_agent(agent_id):
         agent = db.session.get(Agent, agent_id)
         if not agent:
             return jsonify({"error": "Agent not found"}), 404
+        if session.get('agency_id') != str(agent.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         # Unassign their leads (leads stay with the agency)
         Lead.query.filter_by(agent_id=agent_id).update({"agent_id": None})
         Appointment.query.filter_by(agent_id=agent_id).update({"agent_id": None})
@@ -2341,8 +2410,16 @@ def agent_login():
     return redirect("/agent-login?error=Invalid+credentials")
 
 
+@app.route("/agent-logout")
+def agent_logout():
+    session.pop('agent_id', None)
+    return redirect("/agent-login")
+
+
 @app.route("/agent-dashboard/<int:agent_id>")
 def agent_dashboard(agent_id):
+    if session.get('agent_id') != agent_id:
+        return redirect("/agent-login?error=Please+login+first")
     agent = db.session.get(Agent, agent_id)
     if not agent:
         return redirect("/agent-login?error=Agent+not+found")

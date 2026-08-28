@@ -135,9 +135,12 @@
 </head>
 <body>
 
-<div class="header">
-    <h2>⚙️ Super Admin Panel</h2>
-    <p>Manage all agencies and their configurations</p>
+<div class="header" style="display:flex; justify-content:space-between; align-items:center;">
+    <div>
+        <h2>⚙️ Super Admin Panel</h2>
+        <p>Manage all agencies and their configurations</p>
+    </div>
+    <a href="/super-admin-logout" style="color:#94a3b8; text-decoration:none; font-size:14px; border:1px solid #334155; padding:8px 16px; border-radius:6px;">🚪 Logout</a>
 </div>
 
 <div class="container">
@@ -268,8 +271,11 @@ async function createAgency() {
         const result = await res.json();
         
         if (res.ok) {
-            alert(`✅ Agency created successfully!\n\nAgency ID: ${result.agency_id}\nDefault Password: admin123`);
-            
+            const pwLine = result.temp_password
+                ? `Temporary Password: ${result.temp_password}\n(Share this with the agency owner - it won't be shown again.)`
+                : "The agency owner sets their own password.";
+            alert(`✅ Agency created successfully!\n\nAgency ID: ${result.agency_id}\n${pwLine}`);
+
             // Clear form
             document.getElementById("name").value = "";
             document.getElementById("assistant_name").value = "";
@@ -319,4 +325,4 @@ loadAgencies();
 </script>
 
 </body>
-</html>
+</html>
