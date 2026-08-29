@@ -1845,7 +1845,11 @@ def admin():
     agency_id = request.args.get("agency_id")
     if not agency_id:
         return redirect("/owner-login?error=Please+login+first")
-    if session.get('agency_id') != str(agency_id):
+    try:
+        agency_id_int = int(agency_id)
+    except ValueError:
+        return redirect("/owner-login?error=Invalid+Agency+ID")
+    if not _owner_owns_agency(agency_id_int):
         return redirect("/owner-login?error=Please+login+first")
     try:
         leads = Lead.query.filter_by(
@@ -2006,12 +2010,28 @@ def agency_info(agency_id):
 # PHASE 2B ROUTES
 # ─────────────────────────────────────────────────────
 
+def _owner_owns_agency(agency_id):
+    return session.get('agency_id') == str(agency_id) or session.get('super_admin')
+
+
+def _agent_in_agency(agency_id):
+    """True if the logged-in agent (if any) belongs to this agency - used
+    for routes both the owner dashboard and the agent dashboard call."""
+    agent_id = session.get('agent_id')
+    if not agent_id:
+        return False
+    agent = db.session.get(Agent, agent_id)
+    return bool(agent and agent.agency_id == agency_id)
+
+
 @app.route("/update-lead-status/<int:lead_id>", methods=["POST"])
 def update_lead_status(lead_id):
     try:
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
+        if not _owner_owns_agency(lead.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
         new_status = data.get("status", "new")
         if new_status not in ['new', 'contacted', 'meeting', 'closed', 'lost']:
@@ -2029,6 +2049,8 @@ def add_lead_note(lead_id):
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
+        if not _owner_owns_agency(lead.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
         note_text = data.get("note", "").strip()
         if not note_text:
@@ -2057,6 +2079,8 @@ def delete_lead_note(lead_id, note_id):
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
+        if not _owner_owns_agency(lead.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         try:
             notes = json.loads(lead.notes or '[]')
         except:
@@ -2075,6 +2099,10 @@ def get_lead_detail(lead_id):
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
+        # Called from both the owner dashboard and any agent's dashboard
+        # (agents can see leads beyond their own via cross-agent visibility).
+        if not (_owner_owns_agency(lead.agency_id) or _agent_in_agency(lead.agency_id)):
+            return jsonify({"error": "Unauthorized"}), 401
         try:
             notes = json.loads(lead.notes or '[]')
         except:
@@ -2121,6 +2149,8 @@ def get_lead_detail(lead_id):
 @app.route("/bulk-delete-leads", methods=["POST"])
 def bulk_delete_leads():
     try:
+        if not session.get('agency_id') and not session.get('super_admin'):
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
         lead_ids = data.get("lead_ids", [])
         if not lead_ids:
@@ -2128,7 +2158,9 @@ def bulk_delete_leads():
         deleted = 0
         for lead_id in lead_ids:
             lead = db.session.get(Lead, int(lead_id))
-            if lead:
+            # Only delete leads that actually belong to the caller's own
+            # agency - a lead ID from a different agency is silently skipped.
+            if lead and _owner_owns_agency(lead.agency_id):
                 db.session.delete(lead)
                 deleted += 1
         db.session.commit()
@@ -2143,6 +2175,8 @@ def bulk_delete_leads():
 
 @app.route("/appointments/<int:agency_id>")
 def appointments(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return redirect("/owner-login?error=Please+login+first")
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
@@ -2160,6 +2194,8 @@ def reassign_appointment(appt_id):
         appt = db.session.get(Appointment, appt_id)
         if not appt:
             return jsonify({"error": "Appointment not found"}), 404
+        if not _owner_owns_agency(appt.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
         new_agent_id = data.get("agent_id")
         if not new_agent_id:
@@ -2183,6 +2219,8 @@ def reassign_appointment(appt_id):
 @app.route("/update-slot-capacity/<int:agency_id>", methods=["POST"])
 def update_slot_capacity(agency_id):
     """Agency sets how many customers can book the same slot"""
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         agency = db.session.get(Agency, agency_id)
         if not agency:
@@ -2276,6 +2314,8 @@ def update_appointment_status(appt_id):
         appt = db.session.get(Appointment, appt_id)
         if not appt:
             return jsonify({"error": "Appointment not found"}), 404
+        if not _owner_owns_agency(appt.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
         new_status = data.get("status", "pending")
         if new_status not in ['pending', 'confirmed', 'cancelled', 'completed']:
@@ -2293,6 +2333,8 @@ def delete_appointment(appt_id):
         appt = db.session.get(Appointment, appt_id)
         if not appt:
             return jsonify({"error": "Appointment not found"}), 404
+        if not _owner_owns_agency(appt.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         db.session.delete(appt)
         db.session.commit()
         return jsonify({"success": True})
@@ -2302,6 +2344,8 @@ def delete_appointment(appt_id):
 
 @app.route("/get-appointments-count/<int:agency_id>")
 def get_appointments_count(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         total = Appointment.query.filter_by(agency_id=agency_id).count()
         pending = Appointment.query.filter_by(agency_id=agency_id, status='pending').count()
@@ -2316,7 +2360,7 @@ def get_appointments_count(agency_id):
 
 @app.route("/agents/<int:agency_id>")
 def agents_page(agency_id):
-    if session.get('agency_id') != str(agency_id):
+    if not _owner_owns_agency(agency_id):
         return redirect("/owner-login?error=Please+login+first")
     agency = db.session.get(Agency, agency_id)
     if not agency:
@@ -2332,7 +2376,7 @@ def agents_page(agency_id):
 
 @app.route("/add-agent/<int:agency_id>", methods=["POST"])
 def add_agent(agency_id):
-    if session.get('agency_id') != str(agency_id):
+    if not _owner_owns_agency(agency_id):
         return jsonify({"error": "Unauthorized"}), 401
     try:
         agency = db.session.get(Agency, agency_id)
@@ -2369,7 +2413,7 @@ def toggle_agent(agent_id):
         agent = db.session.get(Agent, agent_id)
         if not agent:
             return jsonify({"error": "Agent not found"}), 404
-        if session.get('agency_id') != str(agent.agency_id):
+        if not _owner_owns_agency(agent.agency_id):
             return jsonify({"error": "Unauthorized"}), 401
         agent.status = 'disabled' if agent.status == 'active' else 'active'
         db.session.commit()
@@ -2384,7 +2428,7 @@ def delete_agent(agent_id):
         agent = db.session.get(Agent, agent_id)
         if not agent:
             return jsonify({"error": "Agent not found"}), 404
-        if session.get('agency_id') != str(agent.agency_id):
+        if not _owner_owns_agency(agent.agency_id):
             return jsonify({"error": "Unauthorized"}), 401
         # Unassign their leads (leads stay with the agency)
         Lead.query.filter_by(agent_id=agent_id).update({"agent_id": None})
@@ -2471,6 +2515,28 @@ def agent_dashboard(agent_id):
                            appt_owner_lead_notes=appt_owner_lead_notes)
 
 
+@app.route("/change-agent-password/<int:agent_id>", methods=["POST"])
+def change_agent_password(agent_id):
+    """Lets an agent (or the agency owner, or the super admin) rotate an
+    agent's own login password - the agent-side equivalent of
+    /change-owner-password."""
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return jsonify({"error": "Agent not found"}), 404
+    is_self = session.get('agent_id') == agent_id
+    is_owner = session.get('agency_id') == str(agent.agency_id)
+    is_super_admin = session.get('super_admin')
+    if not (is_self or is_owner or is_super_admin):
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    new_password = (data.get("new_password") or "").strip()
+    if len(new_password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+    agent.set_password(new_password)
+    db.session.commit()
+    return jsonify({"message": "Password updated"})
+
+
 # ─────────────────────────────────────────────────────
 # STEP 4C.1 - AGENT CLOSE/NOTE CAPABILITIES
 # ─────────────────────────────────────────────────────
@@ -2478,8 +2544,12 @@ def agent_dashboard(agent_id):
 @app.route("/agent-update-lead-status/<int:lead_id>", methods=["POST"])
 def agent_update_lead_status(lead_id):
     try:
+        # Who's acting comes from the session, never from the request body -
+        # a client-supplied agent_id could otherwise be swapped for any agent.
+        agent_id = session.get('agent_id')
+        if not agent_id:
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
-        agent_id = data.get("agent_id")
         lead = db.session.get(Lead, lead_id)
         if not lead or lead.agent_id != int(agent_id):
             return jsonify({"error": "Not authorized for this lead"}), 403
@@ -2496,8 +2566,10 @@ def agent_update_lead_status(lead_id):
 @app.route("/agent-add-lead-note/<int:lead_id>", methods=["POST"])
 def agent_add_lead_note(lead_id):
     try:
+        agent_id = session.get('agent_id')
+        if not agent_id:
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
-        agent_id = data.get("agent_id")
         lead = db.session.get(Lead, lead_id)
         if not lead or lead.agent_id != int(agent_id):
             return jsonify({"error": "Not authorized"}), 403
@@ -2525,8 +2597,10 @@ def agent_add_lead_note(lead_id):
 @app.route("/agent-update-appointment-status/<int:appt_id>", methods=["POST"])
 def agent_update_appointment_status(appt_id):
     try:
+        agent_id = session.get('agent_id')
+        if not agent_id:
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
-        agent_id = data.get("agent_id")
         appt = db.session.get(Appointment, appt_id)
         if not appt or appt.agent_id != int(agent_id):
             return jsonify({"error": "Not authorized for this appointment"}), 403
@@ -2545,8 +2619,10 @@ def agent_update_appointment_status(appt_id):
 @app.route("/agent-add-appointment-note/<int:appt_id>", methods=["POST"])
 def agent_add_appointment_note(appt_id):
     try:
+        agent_id = session.get('agent_id')
+        if not agent_id:
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
-        agent_id = data.get("agent_id")
         appt = db.session.get(Appointment, appt_id)
         if not appt or appt.agent_id != int(agent_id):
             return jsonify({"error": "Not authorized"}), 403
@@ -2592,6 +2668,8 @@ def infer_listing_purpose(title, description, explicit=None):
 
 @app.route("/listings/<int:agency_id>")
 def listings(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return redirect("/owner-login?error=Please+login+first")
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
@@ -2603,6 +2681,8 @@ def listings(agency_id):
 
 @app.route("/add-listing/<int:agency_id>", methods=["POST"])
 def add_listing(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         agency = db.session.get(Agency, agency_id)
         if not agency:
@@ -2636,6 +2716,8 @@ def add_listing(agency_id):
 
 @app.route("/upload-listings/<int:agency_id>", methods=["POST"])
 def upload_listings(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         agency = db.session.get(Agency, agency_id)
         if not agency:
@@ -2709,6 +2791,8 @@ def toggle_listing_status(listing_id):
         listing = db.session.get(Listing, listing_id)
         if not listing:
             return jsonify({"error": "Listing not found"}), 404
+        if not _owner_owns_agency(listing.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
         new_status = data.get("status", "available")
         if new_status not in ['available', 'sold', 'pending']:
@@ -2726,6 +2810,8 @@ def delete_listing(listing_id):
         listing = db.session.get(Listing, listing_id)
         if not listing:
             return jsonify({"error": "Listing not found"}), 404
+        if not _owner_owns_agency(listing.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         db.session.delete(listing)
         db.session.commit()
         return jsonify({"success": True})
@@ -2735,6 +2821,8 @@ def delete_listing(listing_id):
 
 @app.route("/delete-all-listings/<int:agency_id>", methods=["DELETE"])
 def delete_all_listings(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         count = Listing.query.filter_by(agency_id=agency_id).delete()
         db.session.commit()
@@ -2746,6 +2834,8 @@ def delete_all_listings(agency_id):
 
 @app.route("/get-listings/<int:agency_id>")
 def get_listings_api(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         status_filter = request.args.get('status', 'all')
         query = Listing.query.filter_by(agency_id=agency_id)
@@ -3029,6 +3119,8 @@ def delete_lead(lead_id):
         lead = db.session.get(Lead, lead_id)
         if not lead:
             return jsonify({"error": "Lead not found"}), 404
+        if not _owner_owns_agency(lead.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
         db.session.delete(lead)
         db.session.commit()
         return jsonify({"message": "Lead deleted"})
@@ -3038,6 +3130,8 @@ def delete_lead(lead_id):
 
 @app.route("/clear-all-leads/<int:agency_id>", methods=["DELETE"])
 def clear_all_leads(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         ConversationSession.query.filter(
             ConversationSession.session_key.like(f"{agency_id}_%")
@@ -3052,6 +3146,8 @@ def clear_all_leads(agency_id):
 
 @app.route("/export/<int:agency_id>")
 def export_leads(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return redirect("/owner-login?error=Please+login+first")
     try:
         leads = Lead.query.filter_by(
             agency_id=agency_id
@@ -3113,6 +3209,8 @@ def pricing():
 
 @app.route("/analytics/<int:agency_id>")
 def analytics(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return redirect("/owner-login?error=Please+login+first")
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return redirect("/owner-login?error=Agency+not+found")
@@ -3157,6 +3255,8 @@ def analytics(agency_id):
 
 @app.route("/update-agency-webhook/<int:agency_id>", methods=["POST"])
 def update_agency_webhook(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return redirect("/owner-login?error=Please+login+first")
     agency = db.session.get(Agency, agency_id)
     if not agency:
         return jsonify({"error": "Agency not found"}), 404
