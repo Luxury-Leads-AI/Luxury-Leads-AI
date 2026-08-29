@@ -402,6 +402,7 @@
     <div class="subtitle">{{ agency.name }} — My Leads & Appointments</div>
   </div>
   <div>
+    <a href="/agent-profile/{{ agent.id }}" class="btn-changepw">⚙️ Profile</a>
     <button onclick="openChangePassword()" class="btn-changepw">🔑 Change Password</button>
     <a href="/agent-logout" class="btn-logout">🚪 Logout</a>
   </div>
@@ -572,6 +573,16 @@ async function submitChangePassword() {
           <option value="cancelled" {{ 'selected' if appt.status == 'cancelled' }}>❌ Cancelled</option>
         </select>
         <button class="note-btn" onclick="addApptNote({{ appt.id }})">📝 Add Note</button>
+      </div>
+
+      <div class="appt-controls">
+        <span style="font-size:11px; color:#94a3b8;">📋 Outcome:</span>
+        <select class="status-select" onchange="setApptOutcome({{ appt.id }}, this.value)">
+          <option value="" {{ 'selected' if not appt.outcome }}>No response yet</option>
+          <option value="wants_to_buy" {{ 'selected' if appt.outcome == 'wants_to_buy' }}>✅ Wants to buy</option>
+          <option value="wants_other_options" {{ 'selected' if appt.outcome == 'wants_other_options' }}>🔍 Wants other options</option>
+          <option value="not_interested" {{ 'selected' if appt.outcome == 'not_interested' }}>🚫 Not interested</option>
+        </select>
       </div>
 
       {% if appt.notes %}
@@ -824,6 +835,30 @@ async function submitChangePassword() {
       const d = await res.json();
       if (!d.success) {
         alert('❌ ' + (d.error || 'Failed to update'));
+        location.reload();
+      }
+    } catch (e) {
+      alert('❌ Network error');
+      location.reload();
+    }
+  }
+
+  async function setApptOutcome(apptId, outcome) {
+    if (!outcome) {
+      // "No response yet" can't be selected back to once an outcome is
+      // recorded - just resync the dropdown to the real, saved value.
+      location.reload();
+      return;
+    }
+    try {
+      const res = await fetch(`/agent-set-appointment-outcome/${apptId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outcome: outcome })
+      });
+      const d = await res.json();
+      if (!d.success) {
+        alert('❌ ' + (d.error || 'Failed to update outcome'));
         location.reload();
       }
     } catch (e) {

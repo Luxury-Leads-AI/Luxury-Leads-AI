@@ -51,6 +51,13 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-this-in-production')
 # refuses every attempt rather than silently allowing access.
 SUPER_ADMIN_PASSWORD = os.getenv('SUPER_ADMIN_PASSWORD', '')
 
+# Feature flag: whether the Corporation tier is shown on the signup page and
+# pricing page. Nothing about the tier's backend logic (TIER_LIMITS, the
+# agency.tier in ['agency', 'corporation'] checks elsewhere) is removed -
+# this only controls whether a new visitor can see/pick it. Flip to "true"
+# on Render (no code change needed) to bring it back when it's ready.
+SHOW_TIER_3 = os.getenv('SHOW_TIER_3', 'false').strip().lower() == 'true'
+
 db = SQLAlchemy(app)
 
 # -------------------------
@@ -1188,6 +1195,147 @@ def process_pending_followups():
 
 
 # ─────────────────────────────────────────────────────
+# POST-APPOINTMENT LOOP (Item 6) - the AI qualifies and books, but every
+# comparative analysis flagged the same gap: nothing happens after the
+# viewing. This closes it with two paths that both land on the same
+# Appointment.outcome field:
+#   1) automated: once the appointment's date/time is in the past, email
+#      the CUSTOMER a 3-option check-in (buy / other options / not
+#      interested) with a link back to /appointment-feedback/<token>.
+#   2) manual: the agent (or owner) can set the same outcome directly
+#      from their dashboard, for viewings the customer discusses by phone
+#      instead of clicking the email link.
+# "Wants to buy" notifies the assigned agent (or the owner, solo tier) -
+# no automatic pipeline change, no e-signature, nothing legal, per Moaz's
+# explicit instruction. "Wants other options" hands them straight back to
+# the same AI chat widget a first-time visitor gets - full re-qualification
+# and re-booking, no separate matching logic to build or maintain here.
+# ─────────────────────────────────────────────────────
+
+APPOINTMENT_OUTCOMES = ('wants_to_buy', 'wants_other_options', 'not_interested')
+
+
+def _appointment_datetime(appt):
+    """Best-effort combine of appointment_date_iso + appointment_time (e.g.
+    '2026-08-20' + '2:00 PM', matching the fixed TIME_SLOTS format) into a
+    timezone-aware datetime in the business's own timezone. Returns None for
+    rows where either half is missing or unparseable, so callers can safely
+    skip anything they can't make sense of instead of guessing."""
+    if not appt.appointment_date_iso or not appt.appointment_time:
+        return None
+    try:
+        tz = pytz.timezone('Asia/Karachi')
+        naive = datetime.strptime(
+            f"{appt.appointment_date_iso} {appt.appointment_time}", "%Y-%m-%d %I:%M %p"
+        )
+        return tz.localize(naive)
+    except (ValueError, TypeError):
+        return None
+
+
+def send_appointment_checkin_email(agency, appt, token):
+    base_url = "https://luxury-leads-ai.onrender.com"
+    subject = f"How did your viewing go? - {agency.name}"
+    body = f"""
+Hi {appt.customer_name or 'there'},
+
+Thanks for viewing {appt.property_interest or 'the property'} with {agency.name} on {appt.appointment_date} at {appt.appointment_time}.
+
+We'd love to know how it went — just click whichever fits:
+
+✅ I want to move forward with this one:
+{base_url}/appointment-feedback/{token}?choice=buy
+
+🔍 Show me other options:
+{base_url}/appointment-feedback/{token}?choice=other
+
+🚫 Not interested right now:
+{base_url}/appointment-feedback/{token}?choice=no
+
+Thanks!
+{agency.name}
+"""
+    return send_email_brevo(appt.customer_email, subject, body)
+
+
+def notify_agent_customer_wants_to_buy(agency, appt):
+    """The one automatic notification the post-appointment loop sends: the
+    assigned agent (or the owner, if this is a solo agency or nobody was
+    assigned) finds out a customer is ready to move forward. Nothing else
+    is automated from here per Moaz's instruction - no pipeline change, no
+    e-signature."""
+    agent = db.session.get(Agent, appt.agent_id) if appt.agent_id else None
+    subject = f"🎉 {appt.customer_name or 'A customer'} wants to move forward!"
+    body = f"""
+Hi {agent.name if agent else (agency.owner_name or agency.name)},
+
+Great news — {appt.customer_name or 'your customer'} just confirmed after their viewing on {appt.appointment_date} that they want to move forward with {appt.property_interest or 'the property'}.
+
+📧 Email: {appt.customer_email or '—'}
+
+Reach out to them as soon as you can to keep the momentum going!
+"""
+    if agent:
+        return notify_agent(agent, subject, body)
+    return send_email_brevo(agency.email, subject, body)
+
+
+def apply_appointment_outcome(appt, outcome, source):
+    """Shared by the customer-facing feedback link and the owner/agent
+    manual-entry routes. Returns True on a valid outcome, False otherwise -
+    callers turn False into a 400. The auto-notify-the-agent email only
+    fires for a customer's own click (source='customer') - a human
+    recording the outcome manually already knows it, so there's nothing to
+    tell them that they didn't just type in themselves."""
+    if outcome not in APPOINTMENT_OUTCOMES:
+        return False
+    appt.outcome = outcome
+    appt.outcome_source = source
+    appt.outcome_at = datetime.utcnow()
+    db.session.commit()
+    if outcome == 'wants_to_buy' and source == 'customer':
+        agency = db.session.get(Agency, appt.agency_id)
+        if agency:
+            notify_agent_customer_wants_to_buy(agency, appt)
+    return True
+
+
+def process_appointment_checkins():
+    """Cron-driven half of the loop - finds appointments whose slot has
+    already passed with no outcome recorded and no check-in email sent yet,
+    and emails the customer. Mirrors process_pending_followups()'s
+    only-mark-as-sent-on-success pattern so a Brevo hiccup just means it
+    gets retried on the next run instead of silently going dark forever."""
+    try:
+        now = datetime.now(pytz.timezone('Asia/Karachi'))
+        candidates = Appointment.query.filter(
+            Appointment.status != 'cancelled',
+            Appointment.outcome.is_(None),
+            Appointment.checkin_sent_at.is_(None),
+        ).all()
+        sent = 0
+        for appt in candidates:
+            appt_dt = _appointment_datetime(appt)
+            if not appt_dt or appt_dt > now or not appt.customer_email:
+                continue
+            agency = db.session.get(Agency, appt.agency_id)
+            if not agency:
+                continue
+            token = secrets.token_urlsafe(32)
+            if send_appointment_checkin_email(agency, appt, token):
+                appt.checkin_token = token
+                appt.checkin_sent_at = datetime.utcnow()
+                db.session.commit()
+                sent += 1
+        print(f"✅ Appointment check-ins processed: {sent} sent")
+        return {"checkins_sent": sent}
+    except Exception as e:
+        print(f"⚠️ Appointment check-in error: {e}")
+        db.session.rollback()
+        return {"error": str(e)}
+
+
+# ─────────────────────────────────────────────────────
 # DB-BACKED CONVERSATION SESSIONS (survive restarts)
 # ─────────────────────────────────────────────────────
 
@@ -1720,6 +1868,8 @@ class Agency(db.Model):
     trial_ends_at = db.Column(db.DateTime, nullable=True)
     billing_email = db.Column(db.String(150), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reset_token = db.Column(db.String(100), nullable=True)
+    reset_token_expires = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -1760,6 +1910,13 @@ class Appointment(db.Model):
     status = db.Column(db.String(20), default='pending')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
+    # ── Post-appointment loop (Item 6) ──
+    # outcome: None (no answer yet) / 'wants_to_buy' / 'wants_other_options' / 'not_interested'
+    outcome = db.Column(db.String(30), nullable=True)
+    outcome_source = db.Column(db.String(20), nullable=True)   # 'customer' / 'owner' / 'agent'
+    outcome_at = db.Column(db.DateTime, nullable=True)
+    checkin_token = db.Column(db.String(100), nullable=True)   # customer-facing feedback link
+    checkin_sent_at = db.Column(db.DateTime, nullable=True)
 
 
 class Listing(db.Model):
@@ -1796,6 +1953,8 @@ class Agent(db.Model):
     password_hash = db.Column(db.String(200))
     status = db.Column(db.String(20), default='active')   # active / disabled
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reset_token = db.Column(db.String(100), nullable=True)
+    reset_token_expires = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -1813,7 +1972,15 @@ def home():
 
 @app.route("/signup")
 def signup():
-    return render_template("signup.html")
+    return render_template("signup.html", show_tier_3=SHOW_TIER_3)
+
+@app.route("/signup/solo")
+def signup_solo():
+    return render_template("signup_solo.html")
+
+@app.route("/signup/agency")
+def signup_agency():
+    return render_template("signup_agency.html")
 
 @app.route("/owner-login", methods=["GET", "POST"])
 def owner_login():
@@ -1971,14 +2138,61 @@ def paddle_webhook():
 def get_agencies():
     if not session.get('super_admin'):
         return jsonify({"error": "Unauthorized"}), 401
-    agencies = Agency.query.all()
-    return jsonify([{
-        "id": a.id, "name": a.name,
-        "assistant_name": a.assistant_name or "AI Assistant",
-        "owner_name": a.owner_name or "—",
-        "email": a.email, "status": a.status,
-        "created_at": a.created_at.isoformat()
-    } for a in agencies])
+    agencies = Agency.query.order_by(Agency.created_at.desc()).all()
+    now = datetime.utcnow()
+    result = []
+    for a in agencies:
+        trial_days_left = None
+        if a.trial_ends_at:
+            trial_days_left = max(0, (a.trial_ends_at - now).days + 1) if a.trial_ends_at > now else 0
+        result.append({
+            "id": a.id, "name": a.name,
+            "assistant_name": a.assistant_name or "AI Assistant",
+            "owner_name": a.owner_name or "—",
+            "email": a.email, "status": a.status,
+            "tier": a.tier or "solo",
+            "subscription_status": a.subscription_status or "active",
+            "trial_ends_at": a.trial_ends_at.isoformat() if a.trial_ends_at else None,
+            "trial_days_left": trial_days_left,
+            "created_at": a.created_at.isoformat(),
+            "lead_count": Lead.query.filter_by(agency_id=a.id).count(),
+            "appointment_count": Appointment.query.filter_by(agency_id=a.id).count(),
+            "agent_count": Agent.query.filter_by(agency_id=a.id).count(),
+        })
+    return jsonify(result)
+
+
+@app.route("/platform-stats")
+def platform_stats():
+    """Basic, at-a-glance counts for the Super Admin panel's overview
+    cards - deliberately lean per Moaz's instruction (agency list + trial/
+    subscription status + basic counts), not a full analytics build-out."""
+    if not session.get('super_admin'):
+        return jsonify({"error": "Unauthorized"}), 401
+    now = datetime.utcnow()
+    active_trials = Agency.query.filter(
+        Agency.subscription_status == 'trialing',
+        Agency.trial_ends_at.isnot(None),
+        Agency.trial_ends_at >= now,
+    ).count()
+    expired_trials = Agency.query.filter(
+        Agency.subscription_status == 'trialing',
+        Agency.trial_ends_at.isnot(None),
+        Agency.trial_ends_at < now,
+    ).count()
+    return jsonify({
+        "total_agencies": Agency.query.count(),
+        "active_trials": active_trials,
+        "expired_trials": expired_trials,
+        "paying_agencies": Agency.query.filter_by(subscription_status='active').count(),
+        "by_tier": {
+            tier: Agency.query.filter_by(tier=tier).count()
+            for tier in ('solo', 'agency', 'corporation')
+        },
+        "total_leads": Lead.query.count(),
+        "total_appointments": Appointment.query.count(),
+        "total_agents": Agent.query.count(),
+    })
 
 @app.route("/delete-agency/<int:agency_id>", methods=["DELETE"])
 def delete_agency(agency_id):
@@ -2538,6 +2752,214 @@ def change_agent_password(agent_id):
 
 
 # ─────────────────────────────────────────────────────
+# FORGOT / RESET PASSWORD - shared by Agency owners and Agents.
+# Same design in both directions: never reveal whether an email matched
+# (prevents account enumeration), token is single-use with a 1-hour
+# expiry, and the reset landing page needs the raw token from the emailed
+# link (never stored anywhere but hashed... actually stored raw here since
+# it's single-use + time-boxed + never displayed back to the user).
+# ─────────────────────────────────────────────────────
+
+RESET_TOKEN_TTL_HOURS = 1
+_GENERIC_RESET_MESSAGE = (
+    "If an account exists with that email, we've sent a password reset link to it."
+)
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "GET":
+        return render_template("forgot_password.html")
+
+    email = (request.form.get("email") or "").strip().lower()
+    if not email:
+        return render_template("forgot_password.html", message=_GENERIC_RESET_MESSAGE)
+
+    base_url = request.host_url.rstrip("/")
+
+    agency = Agency.query.filter(db.func.lower(Agency.email) == email).first()
+    if agency:
+        token = secrets.token_urlsafe(32)
+        agency.reset_token = token
+        agency.reset_token_expires = datetime.utcnow() + timedelta(hours=RESET_TOKEN_TTL_HOURS)
+        db.session.commit()
+        reset_link = f"{base_url}/reset-password/{token}"
+        send_email_brevo(
+            agency.email,
+            "Reset your Luxury Leads AI password",
+            f"Hi {agency.owner_name or agency.name},\n\n"
+            f"We received a request to reset your Luxury Leads AI login password.\n\n"
+            f"Reset it here (valid for {RESET_TOKEN_TTL_HOURS} hour): {reset_link}\n\n"
+            f"If you didn't request this, you can safely ignore this email."
+        )
+
+    agent = Agent.query.filter(db.func.lower(Agent.email) == email, Agent.status == 'active').first()
+    if agent:
+        token = secrets.token_urlsafe(32)
+        agent.reset_token = token
+        agent.reset_token_expires = datetime.utcnow() + timedelta(hours=RESET_TOKEN_TTL_HOURS)
+        db.session.commit()
+        reset_link = f"{base_url}/reset-password/{token}"
+        send_email_brevo(
+            agent.email,
+            "Reset your Luxury Leads AI password",
+            f"Hi {agent.name},\n\n"
+            f"We received a request to reset your Luxury Leads AI login password.\n\n"
+            f"Reset it here (valid for {RESET_TOKEN_TTL_HOURS} hour): {reset_link}\n\n"
+            f"If you didn't request this, you can safely ignore this email."
+        )
+
+    # Same message whether or not anything matched - never leak which
+    # emails exist in the system.
+    return render_template("forgot_password.html", message=_GENERIC_RESET_MESSAGE)
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    now = datetime.utcnow()
+    agency = Agency.query.filter_by(reset_token=token).first()
+    agent = None if agency else Agent.query.filter_by(reset_token=token).first()
+    account = agency or agent
+
+    token_valid = bool(
+        account and account.reset_token_expires and account.reset_token_expires > now
+    )
+
+    if request.method == "GET":
+        if not token_valid:
+            return render_template("reset_password.html", token=token, invalid=True)
+        return render_template("reset_password.html", token=token, invalid=False)
+
+    if not token_valid:
+        return render_template("reset_password.html", token=token, invalid=True)
+
+    new_password = (request.form.get("new_password") or "").strip()
+    confirm_password = (request.form.get("confirm_password") or "").strip()
+    if len(new_password) < 6:
+        return render_template("reset_password.html", token=token, invalid=False,
+                                error="Password must be at least 6 characters")
+    if new_password != confirm_password:
+        return render_template("reset_password.html", token=token, invalid=False,
+                                error="Passwords do not match")
+
+    account.set_password(new_password)
+    # Single-use: clear the token immediately so the same link can't be
+    # replayed, whether it's an Agency or an Agent account.
+    account.reset_token = None
+    account.reset_token_expires = None
+    db.session.commit()
+
+    login_url = "/owner-login" if agency else "/agent-login"
+    return render_template("reset_password.html", token=token, invalid=False,
+                            success=True, login_url=login_url)
+
+
+# ─────────────────────────────────────────────────────
+# PROFILE MANAGEMENT (Item 5) - self-service editing of contact/business
+# info. Separate from the password-change routes above on purpose: those
+# are security-sensitive (session invalidation isn't needed here since
+# nothing here touches password_hash), these are everyday detail edits.
+# ─────────────────────────────────────────────────────
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@app.route("/agency-profile/<int:agency_id>")
+def agency_profile(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return redirect("/owner-login?error=Please+login+first")
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return redirect("/owner-login?error=Agency+not+found")
+    return render_template("agency_profile.html", agency=agency)
+
+
+@app.route("/update-agency-profile/<int:agency_id>", methods=["POST"])
+def update_agency_profile(agency_id):
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return jsonify({"error": "Agency not found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    if not name:
+        return jsonify({"error": "Business name is required"}), 400
+    if not email or not _EMAIL_RE.match(email):
+        return jsonify({"error": "A valid email address is required"}), 400
+
+    max_viewings_raw = data.get("max_viewings_per_slot", agency.max_viewings_per_slot)
+    try:
+        max_viewings = int(max_viewings_raw)
+        if max_viewings < 1:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "Max viewings per slot must be a positive number"}), 400
+
+    agency.name = name
+    agency.email = email
+    agency.owner_name = (data.get("owner_name") or "").strip() or None
+    agency.whatsapp = (data.get("whatsapp") or "").strip() or None
+    agency.assistant_name = (data.get("assistant_name") or "").strip() or "AI Assistant"
+    agency.max_viewings_per_slot = max_viewings
+    db.session.commit()
+    return jsonify({"success": True, "message": "Profile updated"})
+
+
+@app.route("/agent-profile/<int:agent_id>")
+def agent_profile(agent_id):
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return redirect("/agent-login?error=Agent+not+found")
+    is_self = session.get('agent_id') == agent_id
+    is_owner = session.get('agency_id') == str(agent.agency_id)
+    is_super_admin = session.get('super_admin')
+    if not (is_self or is_owner or is_super_admin):
+        return redirect("/agent-login?error=Please+login+first")
+    agency = db.session.get(Agency, agent.agency_id)
+    return render_template("agent_profile.html", agent=agent, agency=agency)
+
+
+@app.route("/update-agent-profile/<int:agent_id>", methods=["POST"])
+def update_agent_profile(agent_id):
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return jsonify({"error": "Agent not found"}), 404
+    is_self = session.get('agent_id') == agent_id
+    is_owner = session.get('agency_id') == str(agent.agency_id)
+    is_super_admin = session.get('super_admin')
+    if not (is_self or is_owner or is_super_admin):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    if not name:
+        return jsonify({"error": "Name is required"}), 400
+    if not email or not _EMAIL_RE.match(email):
+        return jsonify({"error": "A valid email address is required"}), 400
+
+    # Same-agency uniqueness, matching /add-agent's existing rule. A
+    # different agency using this same email is a separate, pre-existing
+    # issue with /agent-login's global-by-email lookup - not something to
+    # silently paper over here.
+    conflict = Agent.query.filter(
+        Agent.agency_id == agent.agency_id,
+        Agent.id != agent.id,
+        db.func.lower(Agent.email) == email,
+    ).first()
+    if conflict:
+        return jsonify({"error": "Another agent in your agency already uses this email"}), 400
+
+    agent.name = name
+    agent.email = email
+    db.session.commit()
+    return jsonify({"success": True, "message": "Profile updated"})
+
+
+# ─────────────────────────────────────────────────────
 # STEP 4C.1 - AGENT CLOSE/NOTE CAPABILITIES
 # ─────────────────────────────────────────────────────
 
@@ -2636,6 +3058,71 @@ def agent_add_appointment_note(appt_id):
         return jsonify({"success": True})
     except Exception:
         return jsonify({"error": "Failed"}), 500
+
+
+@app.route("/set-appointment-outcome/<int:appt_id>", methods=["POST"])
+def set_appointment_outcome(appt_id):
+    """Owner-side manual entry - for viewings the customer discussed by
+    phone or in person instead of clicking the emailed check-in link."""
+    try:
+        appt = db.session.get(Appointment, appt_id)
+        if not appt:
+            return jsonify({"error": "Appointment not found"}), 404
+        if not _owner_owns_agency(appt.agency_id):
+            return jsonify({"error": "Unauthorized"}), 401
+        data = request.get_json(force=True, silent=True) or {}
+        outcome = data.get("outcome", "")
+        if not apply_appointment_outcome(appt, outcome, "owner"):
+            return jsonify({"error": "Invalid outcome"}), 400
+        return jsonify({"success": True, "outcome": outcome})
+    except Exception:
+        return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/agent-set-appointment-outcome/<int:appt_id>", methods=["POST"])
+def agent_set_appointment_outcome(appt_id):
+    """Agent-side equivalent of /set-appointment-outcome - same guard
+    pattern as the other agent-* appointment routes above (session
+    agent_id must match the appointment's assigned agent)."""
+    try:
+        agent_id = session.get('agent_id')
+        if not agent_id:
+            return jsonify({"error": "Unauthorized"}), 401
+        appt = db.session.get(Appointment, appt_id)
+        if not appt or appt.agent_id != int(agent_id):
+            return jsonify({"error": "Not authorized for this appointment"}), 403
+        data = request.get_json(force=True, silent=True) or {}
+        outcome = data.get("outcome", "")
+        if not apply_appointment_outcome(appt, outcome, "agent"):
+            return jsonify({"error": "Invalid outcome"}), 400
+        acting_agent = db.session.get(Agent, int(agent_id))
+        notify_other_agents_of_update(appt, acting_agent, f"set an appointment outcome to '{outcome}'")
+        return jsonify({"success": True, "outcome": outcome})
+    except Exception:
+        return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/appointment-feedback/<token>")
+def appointment_feedback(token):
+    """Public landing page behind the check-in email's links - no login,
+    since the customer isn't a platform user. A ?choice= query param (buy /
+    other / no) records the outcome on first visit; revisiting the same
+    link (or a manually-recorded outcome beating them to it) just shows
+    whatever outcome is already on file instead of overwriting it."""
+    appt = Appointment.query.filter_by(checkin_token=token).first()
+    if not appt:
+        return render_template("appointment_feedback.html", invalid=True)
+
+    choice = request.args.get("choice")
+    choice_map = {"buy": "wants_to_buy", "other": "wants_other_options", "no": "not_interested"}
+    if choice and not appt.outcome:
+        outcome = choice_map.get(choice)
+        if not outcome or not apply_appointment_outcome(appt, outcome, "customer"):
+            return render_template("appointment_feedback.html", invalid=True)
+
+    agency = db.session.get(Agency, appt.agency_id)
+    return render_template("appointment_feedback.html", invalid=False,
+                            appt=appt, outcome=appt.outcome, agency=agency)
 
 
 # ─────────────────────────────────────────────────────
@@ -3204,7 +3691,7 @@ def refund():
 
 @app.route("/pricing")
 def pricing():
-    return render_template("pricing.html")
+    return render_template("pricing.html", show_tier_3=SHOW_TIER_3)
 
 
 @app.route("/analytics/<int:agency_id>")
@@ -3269,6 +3756,7 @@ def update_agency_webhook(agency_id):
 @app.route("/send-followups", methods=["GET", "POST"])
 def send_followups():
     results = process_pending_followups()
+    results["appointment_checkins"] = process_appointment_checkins()
     return jsonify({"status": "ok", "results": results})
 
 
@@ -3389,6 +3877,46 @@ with app.app_context():
     except Exception as e:
         db.session.rollback()
         print(f"✔ listing.bathrooms FLOAT migration skipped (already applied or n/a): {e}")
+
+    # ── FORGOT/RESET PASSWORD MIGRATIONS (self-contained) ──
+    try:
+        from sqlalchemy import text as _text4, inspect as _inspect4
+        _insp4 = _inspect4(db.engine)
+        _agency_cols4 = [c['name'] for c in _insp4.get_columns('agency')]
+        _agent_cols4 = [c['name'] for c in _insp4.get_columns('agent')]
+        for table, cols in (('agency', _agency_cols4), ('agent', _agent_cols4)):
+            if 'reset_token' not in cols:
+                db.session.execute(_text4(f"ALTER TABLE {table} ADD COLUMN reset_token VARCHAR(100);"))
+                db.session.commit()
+                print(f"✅ Migration: {table}.reset_token added")
+            if 'reset_token_expires' not in cols:
+                db.session.execute(_text4(f"ALTER TABLE {table} ADD COLUMN reset_token_expires TIMESTAMP;"))
+                db.session.commit()
+                print(f"✅ Migration: {table}.reset_token_expires added")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ reset-token migration error: {e}")
+
+    # ── POST-APPOINTMENT LOOP MIGRATIONS (self-contained) ──
+    try:
+        from sqlalchemy import text as _text5, inspect as _inspect5
+        _insp5 = _inspect5(db.engine)
+        _appt_cols5 = [c['name'] for c in _insp5.get_columns('appointment')]
+        _appt_new_cols5 = {
+            'outcome': 'VARCHAR(30)',
+            'outcome_source': 'VARCHAR(20)',
+            'outcome_at': 'TIMESTAMP',
+            'checkin_token': 'VARCHAR(100)',
+            'checkin_sent_at': 'TIMESTAMP',
+        }
+        for col_name, col_type in _appt_new_cols5.items():
+            if col_name not in _appt_cols5:
+                db.session.execute(_text5(f"ALTER TABLE appointment ADD COLUMN {col_name} {col_type};"))
+                db.session.commit()
+                print(f"✅ Migration: appointment.{col_name} added")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ post-appointment-loop migration error: {e}")
 
 # -------------------------
 # RUN

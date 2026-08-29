@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Your Viewing - {{ agency.name if agency else 'Luxury Leads AI' }}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .box {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      text-align: center;
+    }
+    h2 { color: #2d3748; font-size: 22px; margin-bottom: 10px; }
+    p.subtitle { color: #718096; font-size: 14px; margin-bottom: 26px; line-height: 1.5; }
+    .choice-btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      margin-bottom: 12px;
+      border-radius: 10px;
+      border: 2px solid #e2e8f0;
+      background: white;
+      color: #2d3748;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .choice-btn:hover { border-color: #667eea; background: #f7fafc; }
+    .choice-btn.primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-color: transparent; }
+    .choice-btn.primary:hover { opacity: 0.9; }
+    .result-icon { font-size: 48px; margin-bottom: 16px; }
+    .result-message { color: #4a5568; font-size: 15px; line-height: 1.6; }
+    .invalid-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+  </style>
+</head>
+<body>
+
+<div class="box">
+  {% if invalid %}
+    <div class="invalid-icon">🔗</div>
+    <h2>This link isn't valid</h2>
+    <p class="subtitle">It may have expired or already been used. If you still have questions about your viewing, please reach out to the agency directly.</p>
+
+  {% elif outcome == 'wants_to_buy' %}
+    <div class="result-icon">🎉</div>
+    <h2>Great news!</h2>
+    <p class="result-message">Thanks for letting us know! {{ agency.name if agency else 'The agency' }} has been notified and someone will reach out to you shortly to help you move forward.</p>
+
+  {% elif outcome == 'wants_other_options' %}
+    <div class="result-icon">🔍</div>
+    <h2>Let's find you something else!</h2>
+    <p class="result-message">No problem at all — chat with {{ agency.assistant_name if agency else 'our assistant' }} below and we'll help you find other properties that match what you're looking for, and get a new viewing booked.</p>
+    {% if agency %}
+    <script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="{{ agency.id }}"></script>
+    {% endif %}
+
+  {% elif outcome == 'not_interested' %}
+    <div class="result-icon">👍</div>
+    <h2>Thanks for letting us know</h2>
+    <p class="result-message">We appreciate you taking the time to respond. If anything changes or you'd like to see other properties in the future, we're always here to help.</p>
+
+  {% else %}
+    <h2>How did your viewing go?</h2>
+    <p class="subtitle">
+      {% if appt %}Let {{ agency.name if agency else 'us' }} know about {{ appt.property_interest or 'the property' }}{% endif %} — just pick the option that fits:
+    </p>
+    <a href="?choice=buy" class="choice-btn primary">✅ I want to move forward with this one</a>
+    <a href="?choice=other" class="choice-btn">🔍 Show me other options</a>
+    <a href="?choice=no" class="choice-btn">🚫 Not interested right now</a>
+  {% endif %}
+</div>
+
+</body>
+</html>

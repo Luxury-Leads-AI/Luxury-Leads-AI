@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Agency Profile - Luxury Leads AI</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 30px 20px;
+    }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+    .back-link {
+      display: inline-block;
+      color: #94a3b8;
+      text-decoration: none;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .back-link:hover { color: #38bdf8; }
+    .box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+    h2 {
+      color: white;
+      font-size: 24px;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      color: #94a3b8;
+      font-size: 14px;
+      margin-bottom: 30px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      margin-top: 18px;
+    }
+    input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #e2e8f0;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #38bdf8; }
+    .helper-text { font-size: 12px; color: #64748b; margin-top: 4px; }
+    button {
+      width: 100%;
+      background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+      color: #0f172a;
+      border: none;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 28px;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #message {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    .msg-success { background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.35); color: #6ee7b7; }
+    .msg-error { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <a href="/admin?agency_id={{ agency.id }}" class="back-link">← Back to Dashboard</a>
+
+  <div class="box">
+    <h2>⚙️ Agency Profile</h2>
+    <p class="subtitle">Update your business details and contact info</p>
+
+    <div id="message"></div>
+
+    <form id="profileForm" onsubmit="saveProfile(event)">
+      <label for="name">Business Name *</label>
+      <input id="name" value="{{ agency.name or '' }}" required>
+
+      <label for="owner_name">Owner Name</label>
+      <input id="owner_name" value="{{ agency.owner_name or '' }}">
+
+      <label for="email">Email Address *</label>
+      <input id="email" type="email" value="{{ agency.email or '' }}" required>
+      <p class="helper-text">Lead notifications and account emails go here</p>
+
+      <label for="whatsapp">WhatsApp Number</label>
+      <input id="whatsapp" value="{{ agency.whatsapp or '' }}" placeholder="+1 555 123 4567">
+
+      <label for="assistant_name">AI Assistant Name</label>
+      <input id="assistant_name" value="{{ agency.assistant_name or '' }}">
+      <p class="helper-text">This name appears in your chat widget on your website</p>
+
+      <label for="max_viewings_per_slot">Max Viewings Per Time Slot</label>
+      <input id="max_viewings_per_slot" type="number" min="1"
+             value="{{ agency.max_viewings_per_slot or 2 }}">
+      <p class="helper-text">How many appointments can be booked in the same slot when no agents are set up yet</p>
+
+      <button type="submit" id="saveBtn">💾 Save Changes</button>
+    </form>
+  </div>
+</div>
+
+<script>
+async function saveProfile(event) {
+  event.preventDefault();
+  const btn = document.getElementById("saveBtn");
+  const msg = document.getElementById("message");
+  btn.disabled = true;
+  btn.textContent = "⏳ Saving...";
+  msg.style.display = "none";
+
+  const data = {
+    name: document.getElementById("name").value.trim(),
+    owner_name: document.getElementById("owner_name").value.trim(),
+    email: document.getElementById("email").value.trim(),
+    whatsapp: document.getElementById("whatsapp").value.trim(),
+    assistant_name: document.getElementById("assistant_name").value.trim(),
+    max_viewings_per_slot: document.getElementById("max_viewings_per_slot").value,
+  };
+
+  try {
+    const res = await fetch("/update-agency-profile/{{ agency.id }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    msg.style.display = "block";
+    if (res.ok) {
+      msg.className = "msg-success";
+      msg.textContent = "✅ " + json.message;
+    } else {
+      msg.className = "msg-error";
+      msg.textContent = "❌ " + (json.error || "Failed to update profile");
+    }
+  } catch (e) {
+    msg.style.display = "block";
+    msg.className = "msg-error";
+    msg.textContent = "❌ Network error - please try again";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "💾 Save Changes";
+  }
+}
+</script>
+
+</body>
+</html>

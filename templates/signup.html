@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Activate AI Assistant - Luxury Leads AI</title>
+  <title>Sign Up - Luxury Leads AI</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -14,12 +14,8 @@
       padding: 20px;
     }
     .box {
-      background: #1c1c1c;
-      padding: 40px;
-      border-radius: 12px;
       width: 100%;
-      max-width: 520px;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+      max-width: 640px;
     }
     h2 {
       margin-top: 0;
@@ -31,281 +27,104 @@
       text-align: center;
       color: #888;
       font-size: 14px;
-      margin-bottom: 25px;
+      margin-bottom: 30px;
     }
-    label {
-      display: block;
-      margin-top: 15px;
-      margin-bottom: 5px;
-      font-size: 14px;
-      color: #aaa;
-    }
-    input, select {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid #333;
-      border-radius: 6px;
-      background: #222;
-      color: white;
-      font-size: 14px;
-      box-sizing: border-box;
-    }
-    input:focus, select:focus {
-      outline: none;
-      border-color: #38bdf8;
-    }
-    button {
-      width: 100%;
-      padding: 14px;
-      margin-top: 25px;
-      border: none;
-      border-radius: 6px;
-      background: #38bdf8;
-      color: white;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-    button:hover {
-      background: #0ea5e9;
-    }
-    button:disabled {
-      background: #333;
-      cursor: not-allowed;
-    }
-    #result {
-      margin-top: 20px;
-      padding: 15px;
-      border-radius: 8px;
-      font-size: 14px;
-      line-height: 1.6;
-      display: none;
-    }
-    .success {
-      background: #065f46;
-      border: 1px solid #10b981;
-      color: #d1fae5;
-    }
-    .error {
-      background: #7f1d1d;
-      border: 1px solid #ef4444;
-      color: #fecaca;
-    }
-    .embed-code {
-      background: #000;
-      padding: 10px;
-      border-radius: 4px;
-      margin-top: 10px;
-      font-family: monospace;
-      font-size: 12px;
-      word-wrap: break-word;
-      color: #22c55e;
-    }
-    .helper-text {
-      font-size: 12px;
-      color: #666;
-      margin-top: 4px;
-    }
-
-    /* ── TIER SELECTOR ── */
-    .tier-grid {
+    .choice-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-top: 8px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
     }
-    .tier-card {
-      background: #222;
+    @media (max-width: 560px) {
+      .choice-grid { grid-template-columns: 1fr; }
+    }
+    .choice-card {
+      display: block;
+      background: #1c1c1c;
       border: 2px solid #333;
-      border-radius: 10px;
-      padding: 14px 10px;
+      border-radius: 12px;
+      padding: 30px 20px;
       text-align: center;
-      cursor: pointer;
+      text-decoration: none;
+      color: white;
       transition: all 0.2s;
-      position: relative;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
     }
-    .tier-card:hover { border-color: #555; }
-    .tier-card.selected {
+    .choice-card:hover {
       border-color: #38bdf8;
-      background: rgba(56,189,248,0.08);
+      transform: translateY(-4px);
     }
-    .tier-card.selected::after {
-      content: "✓";
-      position: absolute;
-      top: 6px;
-      right: 8px;
-      color: #38bdf8;
+    .choice-icon { font-size: 40px; margin-bottom: 12px; }
+    .choice-name { font-size: 20px; font-weight: bold; margin-bottom: 6px; }
+    .choice-price { font-size: 22px; font-weight: bold; color: #38bdf8; margin-bottom: 10px; }
+    .choice-price span { font-size: 12px; color: #888; font-weight: normal; }
+    .choice-desc { font-size: 13px; color: #999; line-height: 1.5; margin-bottom: 16px; }
+    .choice-cta {
+      display: inline-block;
+      background: #38bdf8;
+      color: #111;
       font-weight: bold;
-      font-size: 14px;
+      font-size: 13px;
+      padding: 8px 18px;
+      border-radius: 20px;
     }
-    .tier-name { font-size: 14px; font-weight: bold; color: #fff; margin-bottom: 4px; }
-    .tier-price { font-size: 18px; font-weight: bold; color: #38bdf8; }
-    .tier-price span { font-size: 11px; color: #888; font-weight: normal; }
-    .tier-desc { font-size: 11px; color: #888; margin-top: 6px; line-height: 1.4; }
-    .tier-badge {
+    .choice-badge {
       display: inline-block;
       background: #065f46;
       color: #6ee7b7;
       font-size: 10px;
       padding: 2px 8px;
       border-radius: 10px;
-      margin-top: 6px;
+      margin-bottom: 10px;
     }
-    @media (max-width: 520px) {
-      .tier-grid { grid-template-columns: 1fr; }
+    .contact-note {
+      text-align: center;
+      color: #666;
+      font-size: 13px;
+      margin-top: 24px;
     }
+    .contact-note a { color: #38bdf8; text-decoration: none; }
+    .login-link {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 14px;
+      color: #888;
+    }
+    .login-link a { color: #38bdf8; text-decoration: none; }
   </style>
 </head>
 <body>
 
 <div class="box">
-  <h2>🚀 Activate AI Assistant</h2>
-  <p class="subtitle">Set up your AI-powered lead generation widget</p>
+  <h2>🚀 Activate Your AI Assistant</h2>
+  <p class="subtitle">Choose the plan that fits how you work</p>
 
-  <form id="signupForm" onsubmit="submitForm(event)">
+  <div class="choice-grid">
+    <a href="/signup/solo" class="choice-card">
+      <div class="choice-icon">👤</div>
+      <div class="choice-name">Solo Agent</div>
+      <div class="choice-badge">14-day free trial</div>
+      <div class="choice-price">$197<span>/mo</span></div>
+      <p class="choice-desc">Just you. Full AI assistant, lead capture & appointment booking.</p>
+      <span class="choice-cta">Get Started →</span>
+    </a>
+    <a href="/signup/agency" class="choice-card">
+      <div class="choice-icon">🏢</div>
+      <div class="choice-name">Agency</div>
+      <div class="choice-badge">14-day free trial</div>
+      <div class="choice-price">$497<span>/mo</span></div>
+      <p class="choice-desc">Up to 10 agents. Team dashboards & automatic lead assignment.</p>
+      <span class="choice-cta">Get Started →</span>
+    </a>
+  </div>
 
-    <label>Choose Your Plan *</label>
-    <div class="tier-grid">
-      <div class="tier-card selected" data-tier="solo" onclick="selectTier('solo', this)">
-        <div class="tier-name">👤 Solo Agent</div>
-        <div class="tier-price">$197<span>/mo</span></div>
-        <div class="tier-desc">1 agent<br>Full AI assistant<br>Leads & bookings</div>
-        <div class="tier-badge">14-day free trial</div>
-      </div>
-      <div class="tier-card" data-tier="agency" onclick="selectTier('agency', this)">
-        <div class="tier-name">🏢 Agency</div>
-        <div class="tier-price">$497<span>/mo</span></div>
-        <div class="tier-desc">Up to 10 agents<br>Team dashboards<br>Lead assignment</div>
-        <div class="tier-badge">14-day free trial</div>
-      </div>
-      <div class="tier-card" data-tier="corporation" onclick="selectTier('corporation', this)">
-        <div class="tier-name">🌐 Corporation</div>
-        <div class="tier-price">$997<span>/mo</span></div>
-        <div class="tier-desc">Unlimited branches<br>HQ analytics<br>Multi-location</div>
-        <div class="tier-badge">14-day free trial</div>
-      </div>
-    </div>
+  {% if show_tier_3 %}
+  <p class="contact-note">Running multiple branches or offices? <a href="/signup/agency">Start with Agency</a> and we'll help you upgrade.</p>
+  {% endif %}
 
-    <label>Agency Name *</label>
-    <input id="agency" placeholder="e.g., Elite Properties" required>
-
-    <label>AI Assistant Name *</label>
-    <input id="assistant" placeholder="e.g., Sophia, Alex, Maria" required>
-    <p class="helper-text">This name will appear in customer chats</p>
-
-    <label>Owner Name *</label>
-    <input id="owner" placeholder="Your full name" required>
-
-    <label>Email Address *</label>
-    <input id="email" type="email" placeholder="your@email.com" required>
-    <p class="helper-text">You'll receive lead notifications here</p>
-
-    <label>WhatsApp Number</label>
-    <input id="whatsapp" placeholder="+92 300 1234567">
-
-    <button type="submit" id="submitBtn">🎯 Start Free Trial</button>
-    <p class="helper-text" style="text-align:center; margin-top:10px;">
-      No payment required today. 14 days full access.
-    </p>
-  </form>
-
-  <div id="result"></div>
+  <div class="login-link">
+    Already have an account? <a href="/owner-login">Log in</a>
+  </div>
 </div>
 
-<script>
-let selectedTier = 'solo';
-
-// Pre-select tier from URL, e.g. /signup?tier=agency
-(function () {
-  const urlTier = new URLSearchParams(window.location.search).get('tier');
-  if (['solo', 'agency', 'corporation'].includes(urlTier)) {
-    selectedTier = urlTier;
-    document.addEventListener('DOMContentLoaded', () => {
-      document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
-      const card = document.querySelector(`.tier-card[data-tier="${urlTier}"]`);
-      if (card) card.classList.add('selected');
-    });
-  }
-})();
-
-function selectTier(tier, el) {
-  selectedTier = tier;
-  document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
-  el.classList.add('selected');
-}
-
-async function submitForm(event) {
-  event.preventDefault();
-
-  const submitBtn = document.getElementById("submitBtn");
-  const resultDiv = document.getElementById("result");
-
-  submitBtn.disabled = true;
-  submitBtn.textContent = "⏳ Creating your assistant...";
-
-  const data = {
-    name: document.getElementById("agency").value.trim(),
-    assistant_name: document.getElementById("assistant").value.trim(),
-    owner_name: document.getElementById("owner").value.trim(),
-    email: document.getElementById("email").value.trim(),
-    whatsapp: document.getElementById("whatsapp").value.trim(),
-    tier: selectedTier,
-    subscription_type: selectedTier,
-    prompt: "You are a luxury real estate assistant."
-  };
-
-  try {
-    const res = await fetch("/create-agency", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(data)
-    });
-
-    const json = await res.json();
-
-    if (res.ok) {
-      const tierLabels = { solo: '👤 Solo Agent', agency: '🏢 Agency', corporation: '🌐 Corporation' };
-      resultDiv.className = "success";
-      resultDiv.style.display = "block";
-      resultDiv.innerHTML = `
-        ✅ <strong>Agency Created Successfully!</strong><br><br>
-
-        📦 <strong>Plan:</strong> ${tierLabels[json.tier] || json.tier}<br>
-        🗓️ <strong>Free trial until:</strong> ${json.trial_ends}<br>
-        📝 <strong>Your Agency ID:</strong> ${json.agency_id}<br>
-        🔑 <strong>Your Password:</strong> ${json.temp_password}<br>
-        <span style="font-size:12px; color:#a7f3d0;">Save this now - it won't be shown again. You can change it after logging in.</span><br><br>
-
-        <strong>📋 Embed Code (Copy & Paste on your website):</strong>
-        <div class="embed-code">&lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="${json.agency_id}"&gt;&lt;/script&gt;</div>
-        <br>
-        <strong>🔐 Login to view leads:</strong><br>
-        <a href="/owner-login" style="color: #38bdf8;">Click here to login</a>
-      `;
-
-      document.getElementById("signupForm").reset();
-      selectedTier = 'solo';
-      document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
-      document.querySelector('.tier-card[data-tier="solo"]').classList.add('selected');
-
-    } else {
-      throw new Error(json.error || "Failed to create agency");
-    }
-
-  } catch (error) {
-    resultDiv.className = "error";
-    resultDiv.style.display = "block";
-    resultDiv.innerHTML = `
-      ❌ <strong>Error:</strong> ${error.message}<br>
-      Please try again or contact support.
-    `;
-  } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = "🎯 Start Free Trial";
-  }
-}
-</script>
-
 </body>
-</html>
+</html>

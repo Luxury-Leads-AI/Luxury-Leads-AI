@@ -131,6 +131,50 @@
             padding: 20px;
             color: #64748b;
         }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 18px 20px;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: white;
+        }
+        .stat-sub {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+        .tier-pill {
+            display: inline-block;
+            padding: 2px 9px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .tier-solo { background: rgba(56,189,248,0.15); color: #38bdf8; }
+        .tier-agency { background: rgba(139,92,246,0.15); color: #a78bfa; }
+        .tier-corporation { background: rgba(16,185,129,0.15); color: #34d399; }
+        .sub-trialing { color: #eab308; font-weight: bold; }
+        .sub-active { color: #22c55e; font-weight: bold; }
+        .sub-cancelled { color: #ef4444; font-weight: bold; }
+        .trial-expired { color: #ef4444; font-size: 11px; }
+        .trial-ok { color: #64748b; font-size: 11px; }
     </style>
 </head>
 <body>
@@ -144,6 +188,10 @@
 </div>
 
 <div class="container">
+
+    <div id="statsGrid" class="stats-grid">
+        <div class="loading">⏳ Loading overview...</div>
+    </div>
 
     <div class="section">
         <h3>➕ Create New Agency</h3>
@@ -170,10 +218,13 @@
                 <tr>
                     <th>ID</th>
                     <th>Agency Name</th>
-                    <th>Assistant Name</th>
                     <th>Owner</th>
                     <th>Email</th>
-                    <th>Status</th>
+                    <th>Tier</th>
+                    <th>Subscription</th>
+                    <th>Leads</th>
+                    <th>Appts</th>
+                    <th>Agents</th>
                     <th>Created</th>
                     <th>Actions</th>
                 </tr>
@@ -189,6 +240,51 @@
 </div>
 
 <script>
+async function loadPlatformStats() {
+    const grid = document.getElementById("statsGrid");
+    try {
+        const res = await fetch("/platform-stats");
+        const s = await res.json();
+        if (!res.ok) throw new Error(s.error || "Failed to load");
+
+        const tierLine = Object.entries(s.by_tier)
+            .map(([tier, count]) => `${count} ${tier}`)
+            .join(" · ");
+
+        grid.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-label">Total Agencies</div>
+                <div class="stat-value">${s.total_agencies}</div>
+                <div class="stat-sub">${tierLine}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Trials</div>
+                <div class="stat-value">${s.active_trials}</div>
+                <div class="stat-sub">${s.expired_trials} expired, not converted</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Paying Agencies</div>
+                <div class="stat-value">${s.paying_agencies}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Leads</div>
+                <div class="stat-value">${s.total_leads}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Appointments</div>
+                <div class="stat-value">${s.total_appointments}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Agents</div>
+                <div class="stat-value">${s.total_agents}</div>
+            </div>
+        `;
+    } catch (error) {
+        grid.innerHTML = `<div class="loading">❌ Failed to load overview</div>`;
+        console.error("Error loading platform stats:", error);
+    }
+}
+
 async function loadAgencies() {
     const loading = document.getElementById("loading");
     const table = document.getElementById("agencyTable");
@@ -211,17 +307,34 @@ async function loadAgencies() {
             tbody.innerHTML = "";
             
             data.forEach(a => {
-                const statusClass = a.status === "Active" ? "status-active" : "status-pending";
                 const createdDate = new Date(a.created_at).toLocaleDateString();
-                
+                const tier = a.tier || "solo";
+
+                let subHtml;
+                if (a.subscription_status === "trialing") {
+                    const days = a.trial_days_left;
+                    const trialClass = (days !== null && days <= 0) ? "trial-expired" : "trial-ok";
+                    const trialText = (days !== null)
+                        ? (days <= 0 ? "trial expired" : `${days} day${days === 1 ? "" : "s"} left`)
+                        : "trial";
+                    subHtml = `<span class="sub-trialing">Trialing</span><br><span class="${trialClass}">${trialText}</span>`;
+                } else if (a.subscription_status === "cancelled") {
+                    subHtml = `<span class="sub-cancelled">Cancelled</span>`;
+                } else {
+                    subHtml = `<span class="sub-active">${(a.subscription_status || "active").replace(/^\w/, c => c.toUpperCase())}</span>`;
+                }
+
                 tbody.innerHTML += `
                     <tr>
                         <td><strong>${a.id}</strong></td>
-                        <td>${a.name}</td>
-                        <td>${a.assistant_name || "AI Assistant"}</td>
+                        <td>${a.name}<br><span style="font-size:11px; color:#64748b;">${a.assistant_name || "AI Assistant"}</span></td>
                         <td>${a.owner_name || "—"}</td>
                         <td>${a.email}</td>
-                        <td class="${statusClass}">${a.status}</td>
+                        <td><span class="tier-pill tier-${tier}">${tier}</span></td>
+                        <td>${subHtml}</td>
+                        <td>${a.lead_count}</td>
+                        <td>${a.appointment_count}</td>
+                        <td>${a.agent_count}</td>
                         <td>${createdDate}</td>
                         <td>
                             <button class="btn-delete" onclick="deleteAgency(${a.id})">🗑️ Delete</button>
@@ -320,7 +433,8 @@ async function deleteAgency(id) {
     }
 }
 
-// Load agencies on page load
+// Load agencies and overview stats on page load
+loadPlatformStats();
 loadAgencies();
 </script>
 

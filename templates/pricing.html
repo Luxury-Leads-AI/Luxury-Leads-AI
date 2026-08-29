@@ -183,7 +183,7 @@
                 <li>Email notifications & auto follow-ups</li>
                 <li>Analytics dashboard</li>
             </ul>
-            <a href="/signup?tier=solo" class="cta-button secondary">Start Free Trial</a>
+            <a href="/signup/solo" class="cta-button secondary">Start Free Trial</a>
         </div>
 
         <!-- AGENCY -->
@@ -202,10 +202,11 @@
                 <li>Owner sees all leads & bookings</li>
                 <li>Priority email support</li>
             </ul>
-            <a href="/signup?tier=agency" class="cta-button">Start Free Trial</a>
+            <a href="/signup/agency" class="cta-button">Start Free Trial</a>
         </div>
 
-        <!-- CORPORATION -->
+        <!-- CORPORATION (hidden for now - flip SHOW_TIER_3 on Render to bring back) -->
+        {% if show_tier_3 %}
         <div class="plan">
             <div class="plan-name">🌐 Corporation</div>
             <div class="plan-price">$997<span>/month</span></div>
@@ -220,8 +221,9 @@
                 <li>Dedicated onboarding support</li>
                 <li>Custom integrations (CRM webhooks)</li>
             </ul>
-            <a href="/signup?tier=corporation" class="cta-button secondary">Start Free Trial</a>
+            <a href="/signup/agency" class="cta-button secondary">Start Free Trial (contact us to upgrade to Corporation)</a>
         </div>
+        {% endif %}
 
     </div>
 
@@ -238,4 +240,4 @@
 </div>
 
 </body>
-</html>
+</html>

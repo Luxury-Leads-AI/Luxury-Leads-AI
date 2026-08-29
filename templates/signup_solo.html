@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sign Up - Solo Agent - Luxury Leads AI</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .box {
+      background: #1c1c1c;
+      padding: 40px;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    }
+    .back-link {
+      display: inline-block;
+      color: #666;
+      text-decoration: none;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .back-link:hover { color: #38bdf8; }
+    h2 {
+      margin-top: 0;
+      color: #38bdf8;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    .plan-badge {
+      display: block;
+      text-align: center;
+      margin: 0 auto 25px;
+    }
+    .plan-badge span {
+      display: inline-block;
+      background: rgba(56,189,248,0.1);
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
+      font-size: 13px;
+      font-weight: bold;
+      padding: 6px 16px;
+      border-radius: 20px;
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      margin-bottom: 5px;
+      font-size: 14px;
+      color: #aaa;
+    }
+    input, select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #222;
+      color: white;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #38bdf8;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 25px;
+      border: none;
+      border-radius: 6px;
+      background: #38bdf8;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover { background: #0ea5e9; }
+    button:disabled { background: #333; cursor: not-allowed; }
+    #result {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.6;
+      display: none;
+    }
+    .success { background: #065f46; border: 1px solid #10b981; color: #d1fae5; }
+    .error { background: #7f1d1d; border: 1px solid #ef4444; color: #fecaca; }
+    .embed-code {
+      background: #000;
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 12px;
+      word-wrap: break-word;
+      color: #22c55e;
+    }
+    .helper-text { font-size: 12px; color: #666; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="box">
+  <a href="/signup" class="back-link">← Back to plans</a>
+  <h2>👤 Solo Agent Sign Up</h2>
+  <p class="subtitle">For independent agents flying solo — just you and your AI assistant</p>
+  <p class="plan-badge"><span>$197/mo · 14-day free trial</span></p>
+
+  <form id="signupForm" onsubmit="submitForm(event)">
+
+    <label>Your Business Name *</label>
+    <input id="agency" placeholder="e.g., Sarah Khan Realty" required>
+    <p class="helper-text">How your business will appear in the dashboard</p>
+
+    <label>AI Assistant Name *</label>
+    <input id="assistant" placeholder="e.g., Sophia, Alex, Maria" required>
+    <p class="helper-text">This name will appear in customer chats</p>
+
+    <label>Your Name *</label>
+    <input id="owner" placeholder="Your full name" required>
+
+    <label>Email Address *</label>
+    <input id="email" type="email" placeholder="your@email.com" required>
+    <p class="helper-text">You'll receive lead notifications here</p>
+
+    <label>WhatsApp Number</label>
+    <input id="whatsapp" placeholder="+92 300 1234567">
+
+    <button type="submit" id="submitBtn">🎯 Start Free Trial</button>
+    <p class="helper-text" style="text-align:center; margin-top:10px;">
+      No payment required today. 14 days full access.
+    </p>
+  </form>
+
+  <div id="result"></div>
+</div>
+
+<script>
+const TIER = 'solo';
+
+async function submitForm(event) {
+  event.preventDefault();
+
+  const submitBtn = document.getElementById("submitBtn");
+  const resultDiv = document.getElementById("result");
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "⏳ Creating your assistant...";
+
+  const data = {
+    name: document.getElementById("agency").value.trim(),
+    assistant_name: document.getElementById("assistant").value.trim(),
+    owner_name: document.getElementById("owner").value.trim(),
+    email: document.getElementById("email").value.trim(),
+    whatsapp: document.getElementById("whatsapp").value.trim(),
+    tier: TIER,
+    subscription_type: TIER,
+    prompt: "You are a luxury real estate assistant."
+  };
+
+  try {
+    const res = await fetch("/create-agency", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(data)
+    });
+
+    const json = await res.json();
+
+    if (res.ok) {
+      resultDiv.className = "success";
+      resultDiv.style.display = "block";
+      resultDiv.innerHTML = `
+        ✅ <strong>You're all set!</strong><br><br>
+
+        🗓️ <strong>Free trial until:</strong> ${json.trial_ends}<br>
+        📝 <strong>Your Agency ID:</strong> ${json.agency_id}<br>
+        🔑 <strong>Your Password:</strong> ${json.temp_password}<br>
+        <span style="font-size:12px; color:#a7f3d0;">Save this now - it won't be shown again. You can change it after logging in.</span><br><br>
+
+        <strong>📋 Embed Code (Copy & Paste on your website):</strong>
+        <div class="embed-code">&lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="${json.agency_id}"&gt;&lt;/script&gt;</div>
+        <br>
+        <strong>🔐 Login to view leads:</strong><br>
+        <a href="/owner-login" style="color: #38bdf8;">Click here to login</a>
+      `;
+      document.getElementById("signupForm").reset();
+    } else {
+      throw new Error(json.error || "Failed to create agency");
+    }
+
+  } catch (error) {
+    resultDiv.className = "error";
+    resultDiv.style.display = "block";
+    resultDiv.innerHTML = `
+      ❌ <strong>Error:</strong> ${error.message}<br>
+      Please try again or contact support.
+    `;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "🎯 Start Free Trial";
+  }
+}
+</script>
+
+</body>
+</html>

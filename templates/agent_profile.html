@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>My Profile - Luxury Leads AI</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      min-height: 100vh;
+      padding: 30px 20px;
+    }
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    .back-link {
+      display: inline-block;
+      color: rgba(255,255,255,0.8);
+      text-decoration: none;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .back-link:hover { color: white; }
+    .box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+    h2 {
+      color: white;
+      font-size: 24px;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      color: #94a3b8;
+      font-size: 14px;
+      margin-bottom: 30px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      margin-top: 18px;
+    }
+    input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #e2e8f0;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #8b5cf6; }
+    .helper-text { font-size: 12px; color: #64748b; margin-top: 4px; }
+    button {
+      width: 100%;
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 28px;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #message {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    .msg-success { background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.35); color: #6ee7b7; }
+    .msg-error { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <a href="/agent-dashboard/{{ agent.id }}" class="back-link">← Back to Dashboard</a>
+
+  <div class="box">
+    <h2>⚙️ My Profile</h2>
+    <p class="subtitle">{{ agency.name if agency else '' }}</p>
+
+    <div id="message"></div>
+
+    <form id="profileForm" onsubmit="saveProfile(event)">
+      <label for="name">Your Name *</label>
+      <input id="name" value="{{ agent.name or '' }}" required>
+
+      <label for="email">Email Address *</label>
+      <input id="email" type="email" value="{{ agent.email or '' }}" required>
+      <p class="helper-text">You log in and receive lead notifications at this address</p>
+
+      <button type="submit" id="saveBtn">💾 Save Changes</button>
+    </form>
+  </div>
+</div>
+
+<script>
+async function saveProfile(event) {
+  event.preventDefault();
+  const btn = document.getElementById("saveBtn");
+  const msg = document.getElementById("message");
+  btn.disabled = true;
+  btn.textContent = "⏳ Saving...";
+  msg.style.display = "none";
+
+  const data = {
+    name: document.getElementById("name").value.trim(),
+    email: document.getElementById("email").value.trim(),
+  };
+
+  try {
+    const res = await fetch("/update-agent-profile/{{ agent.id }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    msg.style.display = "block";
+    if (res.ok) {
+      msg.className = "msg-success";
+      msg.textContent = "✅ " + json.message;
+    } else {
+      msg.className = "msg-error";
+      msg.textContent = "❌ " + (json.error || "Failed to update profile");
+    }
+  } catch (e) {
+    msg.style.display = "block";
+    msg.className = "msg-error";
+    msg.textContent = "❌ Network error - please try again";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "💾 Save Changes";
+  }
+}
+</script>
+
+</body>
+</html>

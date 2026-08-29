@@ -432,6 +432,7 @@
     {% endif %}
     <a href="/listings/{{ agency.id }}" class="export-btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 4px 12px rgba(16,185,129,0.3);">🏠 Listings</a>
     <a href="/export/{{ agency.id }}" class="export-btn">📥 Export Excel</a>
+    <a href="/agency-profile/{{ agency.id }}" class="export-btn" style="background: linear-gradient(135deg, #64748b 0%, #475569 100%); box-shadow: 0 4px 12px rgba(100,116,139,0.3);">⚙️ Profile</a>
     {% if leads %}
     <button onclick="clearAllLeads()" class="clear-all-btn">🗑️ Clear All Leads</button>
     {% endif %}
