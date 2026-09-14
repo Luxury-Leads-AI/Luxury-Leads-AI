@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ agent.name }} - Leads &amp; Viewings</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+    .topbar {
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      padding: 18px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .title { font-size: 21px; font-weight: bold; color: white; }
+    .subtitle { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+    .btn-back {
+      text-decoration: none; padding: 8px 16px; border-radius: 8px;
+      font-size: 13px; font-weight: 600; background: rgba(255,255,255,0.2);
+      color: white; border: 1px solid rgba(255,255,255,0.3);
+    }
+    .container { padding: 24px 28px 60px; max-width: 1200px; margin: 0 auto; }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .meta-card {
+      background: #1e293b; border: 1px solid #334155;
+      border-radius: 10px; padding: 15px 17px;
+    }
+    .meta-label {
+      font-size: 11px; color: #94a3b8; text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: 6px;
+    }
+    .meta-value { font-size: 17px; font-weight: 600; color: white; word-break: break-word; }
+    .meta-value.muted { color: #64748b; font-weight: 400; font-size: 14px; }
+
+    .section-title {
+      font-size: 17px; font-weight: 700; color: white;
+      margin: 26px 0 14px; display: flex; align-items: center; gap: 9px;
+    }
+    .count-pill {
+      background: rgba(167,139,250,0.15); color: #a78bfa;
+      border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600;
+    }
+
+    .table-wrap {
+      background: #1e293b; border: 1px solid #334155;
+      border-radius: 12px; overflow-x: auto;
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 560px; }
+    th {
+      text-align: left; padding: 12px 15px; font-size: 11px; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      border-bottom: 1px solid #334155; background: #0f172a; white-space: nowrap;
+    }
+    td {
+      padding: 12px 15px; font-size: 14px; color: #e2e8f0;
+      border-bottom: 1px solid #26334a; vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+
+    .pill {
+      display: inline-block; padding: 3px 10px; border-radius: 12px;
+      font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
+    .st-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .st-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .st-completed { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .st-wants_to_buy { background: rgba(34,197,94,0.2); color: #4ade80; }
+    .st-wants_other_options { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .st-not_interested { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .st-cancelled { background: rgba(239,68,68,0.15); color: #f87171; }
+    .lead-new { background: rgba(56,189,248,0.15); color: #38bdf8; }
+    .lead-contacted { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .lead-meeting { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .lead-closed { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .lead-lost { background: rgba(148,163,184,0.15); color: #94a3b8; }
+
+    .quality { color: #fbbf24; white-space: nowrap; }
+    .empty {
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+      padding: 40px 20px; text-align: center; color: #64748b;
+    }
+
+    @media (max-width: 640px) {
+      .topbar { padding: 14px 16px; }
+      .title { font-size: 18px; }
+      .container { padding: 18px 16px 50px; }
+      .btn-back { padding: 7px 13px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="title">👤 {{ agent.name }}</div>
+    <div class="subtitle">{{ agency.name if agency else '' }} — assigned leads &amp; viewings</div>
+  </div>
+  <a href="/agents/{{ agent.agency_id }}" class="btn-back">← All agents</a>
+</div>
+
+<div class="container">
+
+  <div class="meta-grid">
+    <div class="meta-card">
+      <div class="meta-label">Email</div>
+      <div class="meta-value" style="font-size:14px;">{{ agent.email }}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Coverage area</div>
+      {% if agent.location %}
+      <div class="meta-value" style="font-size:15px;">📍 {{ agent.location }}</div>
+      {% else %}
+      <div class="meta-value muted">Not set — gets leads by rotation only</div>
+      {% endif %}
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Status</div>
+      <div class="meta-value">{{ '● Active' if agent.status == 'active' else '○ Disabled' }}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Assigned leads</div>
+      <div class="meta-value">{{ leads|length }}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Viewings</div>
+      <div class="meta-value">{{ appointments|length }}</div>
+    </div>
+  </div>
+
+  <div class="section-title">📋 Assigned Leads <span class="count-pill">{{ leads|length }}</span></div>
+  {% if leads %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th><th>Contact</th><th>Budget</th>
+          <th>Quality</th><th>Status</th><th>Captured</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lead in leads %}
+        <tr>
+          <td><strong>{{ lead.name or 'Unknown' }}</strong></td>
+          <td style="font-size:13px; color:#94a3b8;">{{ lead.email or '—' }}</td>
+          <td>{{ lead.budget or '—' }}</td>
+          <td class="quality">{{ '⭐' * (lead.intent_score or 1) }}</td>
+          <td><span class="pill lead-{{ lead.lead_status or 'new' }}">{{ (lead.lead_status or 'new')|upper }}</span></td>
+          <td style="font-size:13px; color:#94a3b8;">
+            {{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No leads assigned to {{ agent.name }} yet.</div>
+  {% endif %}
+
+  <div class="section-title">📅 Viewings <span class="count-pill">{{ appointments|length }}</span></div>
+  {% if appointments %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Customer</th><th>Property</th><th>Date</th>
+          <th>Time</th><th>Stage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for appt in appointments %}
+        {% set stage = stage_of(appt) %}
+        <tr>
+          <td><strong>{{ appt.customer_name or 'Unknown' }}</strong><br>
+            <span style="font-size:12px; color:#94a3b8;">{{ appt.customer_email or '' }}</span>
+          </td>
+          <td style="font-size:13px;">{{ appt.property_interest or '—' }}</td>
+          <td style="font-size:13px;">{{ appt.appointment_date or '—' }}</td>
+          <td style="font-size:13px;">{{ appt.appointment_time or '—' }}</td>
+          <td><span class="pill st-{{ stage }}">{{ stage_labels.get(stage, stage) }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No viewings booked with {{ agent.name }} yet.</div>
+  {% endif %}
+
+</div>
+
+</body>
+</html>

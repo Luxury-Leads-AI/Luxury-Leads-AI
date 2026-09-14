@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Appointments - {{ agency.name }}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -96,6 +97,42 @@
       grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
       gap: 20px;
     }
+
+    /* Per-agent grouping - the owner reads a workload per person instead
+       of one undifferentiated pile of every booking in the agency. */
+    .agent-group { margin-bottom: 34px; }
+    .agent-group-header {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; flex-wrap: wrap;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 10px; margin-bottom: 16px;
+    }
+    .agent-group-name {
+      font-size: 16px; font-weight: 700; color: white;
+      display: flex; align-items: center; gap: 9px;
+    }
+    .agent-group-count {
+      background: rgba(245,158,11,0.15); color: #f59e0b;
+      border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600;
+    }
+    .agent-group-link {
+      font-size: 12.5px; color: #94a3b8; text-decoration: none;
+      border: 1px solid #334155; border-radius: 6px; padding: 5px 11px;
+    }
+    .agent-group-link:hover { color: white; border-color: #64748b; }
+
+    .stage-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .stage-label { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+    .stage-select {
+      flex: 1; min-width: 150px;
+      background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+      color: #e2e8f0; font-size: 12.5px; padding: 7px 9px;
+      outline: none; cursor: pointer;
+    }
+    .stage-select:focus { border-color: #f59e0b; }
 
     .appt-card {
       background: #1e293b;
@@ -369,11 +406,24 @@
              border-radius: 6px; color: #e2e8f0; font-size: 14px; width: 260px; outline: none;">
   </div>
 
-  <!-- APPOINTMENTS GRID -->
+  <!-- APPOINTMENTS, GROUPED BY AGENT -->
+  {% for group in grouped %}
+  <div class="agent-group">
+    <div class="agent-group-header">
+      <div class="agent-group-name">
+        {% if group.agent %}👤 {{ group.agent.name }}{% else %}📥 Unassigned{% endif %}
+        <span class="agent-group-count">{{ group.appointments|length }}</span>
+      </div>
+      {% if group.agent %}
+      <a href="/agent-detail/{{ group.agent.id }}" class="agent-group-link">View this agent →</a>
+      {% endif %}
+    </div>
+
   <div class="appointments-grid" id="appts-grid">
 
-    {% if appointments %}
-      {% for appt in appointments %}
+    {% if group.appointments %}
+      {% for appt in group.appointments %}
+      {% set stage = stage_of(appt) %}
       <div class="appt-card status-{{ appt.status }}"
            id="appt-{{ appt.id }}"
            data-status="{{ appt.status }}"
@@ -386,10 +436,7 @@
             <div class="appt-created">Booked {{ appt.created_at.strftime('%b %d, %Y') if appt.created_at else '—' }}</div>
           </div>
           <span class="status-badge badge-{{ appt.status }}">
-            {% if appt.status == 'pending' %}⏳ Pending
-            {% elif appt.status == 'confirmed' %}✅ Confirmed
-            {% elif appt.status == 'completed' %}🏁 Completed
-            {% else %}❌ Cancelled{% endif %}
+            {{ stage_labels.get(stage, stage) }}
           </span>
         </div>
 
@@ -437,50 +484,34 @@
           {% endif %}
         </div>
 
-        <!-- Post-appointment outcome -->
-        <div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-          <span style="font-size:12px; color:#94a3b8;">📋 Outcome:</span>
-          <select onchange="setApptOutcome({{ appt.id }}, this.value)"
-            style="background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:12px; padding:5px 8px; outline:none;">
-            <option value="" {{ 'selected' if not appt.outcome }}>No response yet</option>
-            <option value="wants_to_buy" {{ 'selected' if appt.outcome == 'wants_to_buy' }}>✅ Wants to buy</option>
-            <option value="wants_other_options" {{ 'selected' if appt.outcome == 'wants_other_options' }}>🔍 Wants other options</option>
-            <option value="not_interested" {{ 'selected' if appt.outcome == 'not_interested' }}>🚫 Not interested</option>
+        <!-- ONE status control: scheduling and result in a single list -->
+        <div class="stage-row">
+          <span class="stage-label">📋 Status</span>
+          <select class="stage-select" onchange="updateApptStatus({{ appt.id }}, this.value)">
+            {% for value, label in stage_labels.items() %}
+            <option value="{{ value }}" {{ 'selected' if stage == value }}>{{ label }}</option>
+            {% endfor %}
           </select>
         </div>
 
         <!-- Actions -->
         <div class="appt-actions">
-          {% if appt.status == 'pending' %}
-          <button class="btn-action btn-confirm" onclick="updateApptStatus({{ appt.id }}, 'confirmed')">
-            ✅ Confirm
+          <button class="btn-action btn-complete" onclick="openFollowup({{ appt.id }}, '{{ (appt.customer_name or '')|e }}')">
+            📅 Book another viewing
           </button>
-          <button class="btn-action btn-cancel" onclick="updateApptStatus({{ appt.id }}, 'cancelled')">
-            ❌ Cancel
-          </button>
-          {% elif appt.status == 'confirmed' %}
-          <button class="btn-action btn-complete" onclick="updateApptStatus({{ appt.id }}, 'completed')">
-            🏁 Complete
-          </button>
-          <button class="btn-action btn-cancel" onclick="updateApptStatus({{ appt.id }}, 'cancelled')">
-            ❌ Cancel
-          </button>
-          {% elif appt.status == 'completed' %}
-          <button class="btn-action btn-confirm" style="flex:0;" onclick="updateApptStatus({{ appt.id }}, 'confirmed')">
-            ↩ Revert
-          </button>
-          {% elif appt.status == 'cancelled' %}
-          <button class="btn-action btn-confirm" onclick="updateApptStatus({{ appt.id }}, 'pending')">
-            ↩ Restore
-          </button>
-          {% endif %}
           <button class="btn-action btn-delete-appt" style="flex:0; padding: 7px 10px;"
                   onclick="deleteAppt({{ appt.id }})">🗑️</button>
         </div>
 
       </div>
       {% endfor %}
-    {% else %}
+    {% endif %}
+  </div>
+  </div>
+  {% endfor %}
+
+  <div class="appointments-grid">
+    {% if not appointments %}
       <div class="empty-state">
         <div class="empty-icon">📅</div>
         <div class="empty-title">No Appointments Yet</div>
@@ -491,6 +522,43 @@
       </div>
     {% endif %}
 
+  </div>
+</div>
+
+<!-- BOOK ANOTHER VIEWING MODAL -->
+<div class="modal-overlay" id="followup-overlay" onclick="closeFollowupOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">📅 Book Another Viewing</div>
+      <button class="modal-close" onclick="closeFollowup()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:#94a3b8; font-size:13px; margin-bottom:16px;">
+        Booking a follow-up viewing for <strong id="followup-customer" style="color:#e2e8f0;"></strong>.
+        They stay with the same agent where possible, and the earlier viewing is marked
+        &ldquo;wants other options&rdquo;.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input type="date" id="followup-date" class="form-input">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Time</label>
+        <select id="followup-time" class="form-input">
+          <option>10:00 AM</option>
+          <option>12:00 PM</option>
+          <option>2:00 PM</option>
+          <option>4:00 PM</option>
+          <option>6:00 PM</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Property</label>
+        <input type="text" id="followup-property" class="form-input"
+               placeholder="Which property are they seeing this time?">
+      </div>
+      <button class="btn-submit" onclick="submitFollowup()">📅 Book Viewing</button>
+    </div>
   </div>
 </div>
 
@@ -558,47 +626,74 @@
 
   // ── STATUS UPDATE ──────────────────────────────
 
-  async function updateApptStatus(apptId, newStatus) {
+  // One control for both scheduling and result - the same endpoint takes
+  // 'confirmed' and 'wants_to_buy' alike and keeps the two columns in sync.
+  async function updateApptStatus(apptId, newStage) {
     try {
       const res = await fetch(`/update-appointment-status/${apptId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ stage: newStage })
       });
       const d = await res.json();
       if (d.success) {
         location.reload();
       } else {
-        alert('❌ Failed to update status');
-      }
-    } catch(e) {
-      alert('❌ Network error');
-    }
-  }
-
-  // ── POST-APPOINTMENT OUTCOME ────────────────────
-
-  async function setApptOutcome(apptId, outcome) {
-    if (!outcome) {
-      // "No response yet" can't be selected back to once an outcome is
-      // recorded - just resync the dropdown to the real, saved value.
-      location.reload();
-      return;
-    }
-    try {
-      const res = await fetch(`/set-appointment-outcome/${apptId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outcome: outcome })
-      });
-      const d = await res.json();
-      if (!d.success) {
-        alert('❌ ' + (d.error || 'Failed to update outcome'));
+        alert('❌ ' + (d.error || 'Failed to update status'));
         location.reload();
       }
     } catch(e) {
       alert('❌ Network error');
       location.reload();
+    }
+  }
+
+  // ── BOOK ANOTHER VIEWING ────────────────────────
+
+  let followupApptId = null;
+
+  function openFollowup(apptId, customerName) {
+    followupApptId = apptId;
+    document.getElementById('followup-customer').textContent = customerName || 'this customer';
+    document.getElementById('followup-date').value = '';
+    document.getElementById('followup-time').value = '10:00 AM';
+    document.getElementById('followup-property').value = '';
+    document.getElementById('followup-overlay').classList.add('open');
+  }
+
+  function closeFollowup() {
+    document.getElementById('followup-overlay').classList.remove('open');
+    followupApptId = null;
+  }
+
+  function closeFollowupOnOverlay(e) {
+    if (e.target === document.getElementById('followup-overlay')) closeFollowup();
+  }
+
+  async function submitFollowup() {
+    const dateIso = document.getElementById('followup-date').value;
+    const time = document.getElementById('followup-time').value;
+    const property = document.getElementById('followup-property').value.trim();
+    if (!dateIso) { alert('⚠️ Pick a date for the new viewing.'); return; }
+    try {
+      const res = await fetch(`/book-followup-viewing/${followupApptId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointment_date_iso: dateIso,
+          appointment_time: time,
+          property_interest: property
+        })
+      });
+      const d = await res.json();
+      if (d.success) {
+        alert('✅ ' + d.message);
+        location.reload();
+      } else {
+        alert('❌ ' + (d.error || 'Could not book the follow-up viewing'));
+      }
+    } catch(e) {
+      alert('❌ Network error');
     }
   }
 
@@ -774,4 +869,4 @@
   }
 </script>
 </body>
-</html>
+</html>

@@ -97,8 +97,28 @@ def has_dashboard_access(agency):
     """Billing-state gate. Pre-Paddle: everyone passes."""
     return (agency.subscription_status or 'active') in ('active', 'trialing', 'past_due')
 
-def assign_next_agent(agency):
-    """Round-robin: returns the active agent with the fewest leads.
+def agent_covers_location(agent, target_location):
+    """True if this agent's stated coverage area overlaps the property's
+    location. Both sides are free text ("Miami, Orlando" vs "Miami, FL"),
+    so each is split into parts and compared on whole words - "Miami"
+    matches "Miami Beach, FL", "Orlando" does not match "Miami, FL".
+    An agent with no location set covers nothing in particular, so they
+    simply never win the location round (they stay eligible for the
+    round-robin fallback)."""
+    if not agent or not agent.location or not target_location:
+        return False
+    target = target_location.lower()
+    for part in re.split(r'[,/;|]', agent.location.lower()):
+        part = part.strip()
+        if len(part) >= 3 and re.search(r'\b' + re.escape(part) + r'\b', target):
+            return True
+    return False
+
+
+def assign_next_agent(agency, target_location=None):
+    """Pick the agent for a new lead. Agents covering the property's area
+    come first (least-busy among them); everyone else is the fallback, so
+    a lead is never dropped just because nobody covers that city.
     Returns None for solo tier or when no active agents exist."""
     if (agency.tier or 'solo') == 'solo':
         return None
@@ -107,8 +127,11 @@ def assign_next_agent(agency):
         return None
     counts = {a.id: Lead.query.filter_by(agency_id=agency.id, agent_id=a.id).count()
               for a in agents}
-    best = min(agents, key=lambda a: (counts[a.id], a.id))
-    print(f"👥 Round-robin: lead → agent {best.name} (ID {best.id}, {counts[best.id]} leads)")
+    local = [a for a in agents if agent_covers_location(a, target_location)]
+    pool = local or agents
+    best = min(pool, key=lambda a: (counts[a.id], a.id))
+    why = f"covers '{target_location}'" if local else "round-robin"
+    print(f"👥 Lead → agent {best.name} (ID {best.id}, {counts[best.id]} leads, {why})")
     return best
 
 # ─────────────────────────────────────────────────────
@@ -476,10 +499,13 @@ def agent_busy_at(agent_id, date_iso, time_label):
     ).count() > 0
 
 
-def pick_agent_for_slot(agency, date_iso, time_label, preferred_agent_id=None):
+def pick_agent_for_slot(agency, date_iso, time_label, preferred_agent_id=None,
+                         target_location=None):
     """Choose the agent for a new booking:
     1. The customer's own agent (preferred) if free at that slot
-    2. Otherwise the least-busy active agent who is free
+    2. The least-busy free agent who covers the property's area
+    3. Otherwise the least-busy free agent, so a viewing is never lost
+       merely because no one is based in that city
     Returns None for solo tier or when nobody is free."""
     if (agency.tier or 'solo') == 'solo':
         return None
@@ -496,7 +522,12 @@ def pick_agent_for_slot(agency, date_iso, time_label, preferred_agent_id=None):
     counts = {a.id: Appointment.query.filter(
         Appointment.agent_id == a.id,
         Appointment.status != 'cancelled').count() for a in free}
-    return min(free, key=lambda a: (counts[a.id], a.id))
+    local = [a for a in free if agent_covers_location(a, target_location)]
+    pool = local or free
+    chosen = min(pool, key=lambda a: (counts[a.id], a.id))
+    if local:
+        print(f"📍 Viewing → agent {chosen.name} (covers '{target_location}')")
+    return chosen
 
 def get_availability_context(agency_id, max_per_slot, booked_slots=None):
     """
@@ -1308,6 +1339,56 @@ def process_pending_followups():
 
 APPOINTMENT_OUTCOMES = ('wants_to_buy', 'wants_other_options', 'not_interested')
 
+# One list, one dropdown, everywhere. Scheduling states and post-viewing
+# results used to be two separate controls (status + outcome) that a user
+# had to keep in sync by hand; they are now a single ordered stage. The two
+# database columns survive underneath because the customer feedback page and
+# the check-in cron both key off `outcome`.
+APPOINTMENT_STAGES = (
+    'pending', 'confirmed', 'completed',
+    'wants_to_buy', 'wants_other_options', 'not_interested',
+    'cancelled',
+)
+
+APPOINTMENT_STAGE_LABELS = {
+    'pending': '⏳ Pending',
+    'confirmed': '✅ Confirmed',
+    'completed': '🏁 Viewing done',
+    'wants_to_buy': '🎉 Wants to buy',
+    'wants_other_options': '🔍 Wants other options',
+    'not_interested': '🚫 Not interested',
+    'cancelled': '❌ Cancelled',
+}
+
+
+def appointment_stage(appt):
+    """The single value the UI shows. An outcome always implies the viewing
+    happened, so it outranks the scheduling status."""
+    if appt.status == 'cancelled':
+        return 'cancelled'
+    if appt.outcome in APPOINTMENT_OUTCOMES:
+        return appt.outcome
+    return appt.status or 'pending'
+
+
+def apply_appointment_stage(appt, stage, source):
+    """Write one chosen stage back to both underlying columns so every
+    screen agrees. Returns False for an unknown stage."""
+    if stage not in APPOINTMENT_STAGES:
+        return False
+    if stage in APPOINTMENT_OUTCOMES:
+        # Recording a result also marks the viewing as having happened.
+        appt.status = 'completed'
+        return apply_appointment_outcome(appt, stage, source)
+    appt.status = stage
+    if stage in ('pending', 'confirmed'):
+        # Rescheduling clears a result that no longer applies.
+        appt.outcome = None
+        appt.outcome_source = None
+        appt.outcome_at = None
+    db.session.commit()
+    return True
+
 
 def _appointment_datetime(appt):
     """Best-effort combine of appointment_date_iso + appointment_time (e.g.
@@ -2049,6 +2130,10 @@ class Agent(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reset_token = db.Column(db.String(100), nullable=True)
     reset_token_expires = db.Column(db.DateTime, nullable=True)
+    # The area(s) this agent covers, e.g. "Miami" or "Miami, Orlando".
+    # Leads and viewings are matched against it before falling back to
+    # round-robin, so a local agent gets the local property.
+    location = db.Column(db.String(200), nullable=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -2519,8 +2604,21 @@ def appointments(agency_id):
     ).order_by(Appointment.created_at.desc()).all()
     agents = Agent.query.filter_by(agency_id=agency_id).order_by(Agent.name.asc()).all()
     agent_names = {a.id: a.name for a in agents}
+    # Grouped by agent so the owner reads a per-person workload instead of
+    # one undifferentiated pile. Unassigned bookings get their own group at
+    # the end rather than being hidden.
+    grouped = []
+    for a in agents:
+        mine = [ap for ap in appts if ap.agent_id == a.id]
+        if mine:
+            grouped.append({"agent": a, "appointments": mine})
+    unassigned = [ap for ap in appts if not ap.agent_id]
+    if unassigned:
+        grouped.append({"agent": None, "appointments": unassigned})
     return render_template("appointments.html", agency=agency, appointments=appts,
-                           agents=agents, agent_names=agent_names)
+                           agents=agents, agent_names=agent_names, grouped=grouped,
+                           stage_of=appointment_stage,
+                           stage_labels=APPOINTMENT_STAGE_LABELS)
 
 @app.route("/reassign-appointment/<int:appt_id>", methods=["POST"])
 def reassign_appointment(appt_id):
@@ -2612,7 +2710,15 @@ def book_appointment():
                     return jsonify({"error": f"{agent.name} already has a booking at that time. Pick another agent or slot."}), 409
                 agent_id = agent.id
             else:
-                chosen = pick_agent_for_slot(agency, date_iso, time_label)
+                wanted = (data.get("property_interest") or "").strip()
+                property_location = None
+                if wanted:
+                    listing_row = Listing.query.filter_by(
+                        agency_id=int(agency_id), title=wanted).first()
+                    if listing_row:
+                        property_location = listing_row.location
+                chosen = pick_agent_for_slot(
+                    agency, date_iso, time_label, None, property_location)
                 agent_id = chosen.id if chosen else None
 
         appt = Appointment(
@@ -2651,12 +2757,13 @@ def update_appointment_status(appt_id):
         if not _owner_owns_agency(appt.agency_id):
             return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
-        new_status = data.get("status", "pending")
-        if new_status not in ['pending', 'confirmed', 'cancelled', 'completed']:
+        # Accepts the unified stage list now - scheduling states AND
+        # post-viewing results come through this one endpoint.
+        new_status = data.get("stage") or data.get("status") or "pending"
+        if not apply_appointment_stage(appt, new_status, "owner"):
             return jsonify({"error": "Invalid status"}), 400
-        appt.status = new_status
-        db.session.commit()
-        return jsonify({"success": True, "status": new_status})
+        return jsonify({"success": True, "status": new_status,
+                        "stage": appointment_stage(appt)})
     except Exception as e:
         return jsonify({"error": "Failed to update"}), 500
 
@@ -2703,9 +2810,34 @@ def agents_page(agency_id):
         return redirect(f"/admin?agency_id={agency_id}")
     agents = Agent.query.filter_by(agency_id=agency_id).order_by(Agent.created_at.asc()).all()
     lead_counts = {a.id: Lead.query.filter_by(agency_id=agency_id, agent_id=a.id).count() for a in agents}
+    appt_counts = {a.id: Appointment.query.filter(
+        Appointment.agency_id == agency_id,
+        Appointment.agent_id == a.id,
+        Appointment.status != 'cancelled').count() for a in agents}
     limits = get_tier_limits(agency)
     return render_template("agents.html", agency=agency, agents=agents,
-                           lead_counts=lead_counts, limits=limits)
+                           lead_counts=lead_counts, appt_counts=appt_counts,
+                           limits=limits)
+
+
+@app.route("/agent-detail/<int:agent_id>")
+def agent_detail(agent_id):
+    """Everything assigned to one agent, for the owner: their leads and
+    their viewings in one place. Clicking an agent used to show nothing."""
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return redirect("/owner-login?error=Agent+not+found")
+    if not _owner_owns_agency(agent.agency_id):
+        return redirect("/owner-login?error=Please+login+first")
+    agency = db.session.get(Agency, agent.agency_id)
+    leads = Lead.query.filter_by(agency_id=agent.agency_id, agent_id=agent_id)\
+        .order_by(Lead.intent_score.desc(), Lead.created_at.desc()).all()
+    appts = Appointment.query.filter_by(agency_id=agent.agency_id, agent_id=agent_id)\
+        .order_by(Appointment.created_at.desc()).all()
+    return render_template("agent_detail.html", agency=agency, agent=agent,
+                           leads=leads, appointments=appts,
+                           stage_of=appointment_stage,
+                           stage_labels=APPOINTMENT_STAGE_LABELS)
 
 
 @app.route("/add-agent/<int:agency_id>", methods=["POST"])
@@ -2730,7 +2862,8 @@ def add_agent(agency_id):
             return jsonify({"error": "Name and email required"}), 400
         if Agent.query.filter_by(agency_id=agency_id, email=email).first():
             return jsonify({"error": "An agent with this email already exists"}), 400
-        agent = Agent(agency_id=agency_id, name=name, email=email, status='active')
+        agent = Agent(agency_id=agency_id, name=name, email=email, status='active',
+                       location=(data.get("location") or "").strip() or None)
         agent.set_password(password)
         db.session.add(agent)
         db.session.commit()
@@ -2846,7 +2979,10 @@ def agent_dashboard(agent_id):
                            leads=my_leads, appointments=my_appts,
                            agent_names=agent_names, related_by_lead=related_by_lead,
                            leads_notes=leads_notes, appt_lead_owner=appt_lead_owner,
-                           appt_owner_lead_notes=appt_owner_lead_notes)
+                           appt_owner_lead_notes=appt_owner_lead_notes,
+                           stage_of=appointment_stage,
+                           stage_labels=APPOINTMENT_STAGE_LABELS,
+                           time_slots=TIME_SLOTS)
 
 
 @app.route("/change-agent-password/<int:agent_id>", methods=["POST"])
@@ -3053,9 +3189,20 @@ def update_agent_profile(agent_id):
     if not (is_self or is_owner or is_super_admin):
         return jsonify({"error": "Unauthorized"}), 401
 
+    # Agents manage their own PASSWORD only (see /change-agent-password).
+    # Their name, login email and coverage area belong to the agency owner -
+    # an agent quietly changing the email their leads are routed to is not
+    # something the owner should find out about afterwards.
+    if is_self and not (is_owner or is_super_admin):
+        return jsonify({
+            "error": "Your name, email and location are managed by your agency owner. "
+                     "You can change your own password from your dashboard."
+        }), 403
+
     data = request.get_json(force=True, silent=True) or {}
     name = (data.get("name") or "").strip()
     email = (data.get("email") or "").strip().lower()
+    location = (data.get("location") or "").strip()
     if not name:
         return jsonify({"error": "Name is required"}), 400
     if not email or not _EMAIL_RE.match(email):
@@ -3075,6 +3222,7 @@ def update_agent_profile(agent_id):
 
     agent.name = name
     agent.email = email
+    agent.location = location or None
     db.session.commit()
     return jsonify({"success": True, "message": "Profile updated"})
 
@@ -3146,14 +3294,15 @@ def agent_update_appointment_status(appt_id):
         appt = db.session.get(Appointment, appt_id)
         if not appt or appt.agent_id != int(agent_id):
             return jsonify({"error": "Not authorized for this appointment"}), 403
-        new_status = data.get("status", "pending")
-        if new_status not in ['pending', 'confirmed', 'cancelled', 'completed']:
+        new_status = data.get("stage") or data.get("status") or "pending"
+        if not apply_appointment_stage(appt, new_status, "agent"):
             return jsonify({"error": "Invalid status"}), 400
-        appt.status = new_status
-        db.session.commit()
         acting_agent = db.session.get(Agent, int(agent_id))
-        notify_other_agents_of_update(appt, acting_agent, f"changed an appointment status to '{new_status}'")
-        return jsonify({"success": True, "status": new_status})
+        notify_other_agents_of_update(
+            appt, acting_agent,
+            f"set an appointment to '{APPOINTMENT_STAGE_LABELS.get(new_status, new_status)}'")
+        return jsonify({"success": True, "status": new_status,
+                        "stage": appointment_stage(appt)})
     except Exception:
         return jsonify({"error": "Failed to update"}), 500
 
@@ -3220,6 +3369,90 @@ def agent_set_appointment_outcome(appt_id):
         return jsonify({"success": True, "outcome": outcome})
     except Exception:
         return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/book-followup-viewing/<int:appt_id>", methods=["POST"])
+def book_followup_viewing(appt_id):
+    """'Customer wasn't sold on that one but wants to see another' - books
+    the next viewing for the same customer straight from the appointment
+    card, keeping them with the same agent, and marks the original as
+    'wants other options' so the loop stays honest about what happened."""
+    appt = db.session.get(Appointment, appt_id)
+    if not appt:
+        return jsonify({"error": "Appointment not found"}), 404
+    is_owner = _owner_owns_agency(appt.agency_id)
+    is_assigned_agent = appt.agent_id and session.get('agent_id') == appt.agent_id
+    if not (is_owner or is_assigned_agent):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    agency = db.session.get(Agency, appt.agency_id)
+    if not agency:
+        return jsonify({"error": "Agency not found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    date_iso = (data.get("appointment_date_iso") or "").strip()
+    time_label = (data.get("appointment_time") or "").strip()
+    property_interest = (data.get("property_interest") or "").strip()
+    if not date_iso or not time_label:
+        return jsonify({"error": "Pick a date and a time for the new viewing"}), 400
+    if time_label not in TIME_SLOTS:
+        return jsonify({"error": "That time slot isn't offered"}), 400
+    try:
+        d = datetime.strptime(date_iso, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({"error": "Invalid date"}), 400
+    if d.weekday() == 6:
+        return jsonify({"error": "Sundays are closed - please pick another day"}), 400
+    if not is_slot_within_booking_window(d, datetime.now(PK_TZ).date()):
+        return jsonify({"error": "That date is outside the booking window"}), 400
+
+    max_slot = get_slot_capacity(agency)
+    if slot_booked_count(appt.agency_id, date_iso, time_label) >= max_slot:
+        return jsonify({"error": "That slot is already full - pick another time"}), 409
+
+    # Keep the customer with the agent who already knows them, as long as
+    # they're free; otherwise fall back to the normal location-aware pick.
+    property_location = None
+    if property_interest:
+        listing_row = Listing.query.filter_by(
+            agency_id=appt.agency_id, title=property_interest).first()
+        if listing_row:
+            property_location = listing_row.location
+    chosen = pick_agent_for_slot(agency, date_iso, time_label,
+                                  appt.agent_id, property_location)
+
+    new_appt = Appointment(
+        agency_id=appt.agency_id,
+        lead_id=appt.lead_id,
+        agent_id=chosen.id if chosen else None,
+        customer_name=appt.customer_name,
+        customer_email=appt.customer_email,
+        appointment_date=d.strftime('%A, %B %d, %Y'),
+        appointment_date_iso=date_iso,
+        appointment_time=time_label,
+        property_interest=property_interest or 'Follow-up viewing',
+        status='pending',
+        notes=f"Follow-up viewing after {appt.property_interest or 'an earlier viewing'}."
+    )
+    db.session.add(new_appt)
+    db.session.commit()
+
+    # The original viewing is now definitively 'they wanted something else'.
+    if appt.outcome not in APPOINTMENT_OUTCOMES:
+        apply_appointment_stage(appt, 'wants_other_options',
+                                 'agent' if is_assigned_agent else 'owner')
+
+    send_appointment_confirmation(agency, new_appt)
+    if chosen:
+        notify_agent(chosen,
+                     f"📅 Follow-up Viewing Booked - {new_appt.customer_name}",
+                     f"Hi {chosen.name},\n\nA follow-up viewing was booked:\n\n"
+                     f"Customer: {new_appt.customer_name}\nEmail: {new_appt.customer_email}\n"
+                     f"Property: {new_appt.property_interest}\n"
+                     f"Date: {new_appt.appointment_date}\nTime: {new_appt.appointment_time}\n\n"
+                     f"Login: https://luxury-leads-ai.onrender.com/agent-login")
+    return jsonify({"success": True, "appointment_id": new_appt.id,
+                     "message": f"Follow-up viewing booked for {new_appt.appointment_date} at {time_label}"})
 
 
 @app.route("/appointment-feedback/<token>")
@@ -3666,7 +3899,17 @@ Respond naturally in plain text only:"""
                         lead_row = db.session.get(Lead, existing_lead_id)
                         if lead_row:
                             preferred_id = lead_row.agent_id
-                    chosen_agent = pick_agent_for_slot(agency, slot['iso'], slot['time'], preferred_id)
+                    # Where the property actually is, so a local agent is
+                    # preferred for the viewing.
+                    slot_property = slot.get('property')
+                    property_location = None
+                    if slot_property:
+                        listing_row = Listing.query.filter_by(
+                            agency_id=agency_id, title=slot_property).first()
+                        if listing_row:
+                            property_location = listing_row.location
+                    chosen_agent = pick_agent_for_slot(
+                        agency, slot['iso'], slot['time'], preferred_id, property_location)
                     if chosen_agent:
                         print(f"👥 Appointment → agent {chosen_agent.name} (ID {chosen_agent.id})")
                     new_appt = Appointment(
@@ -3717,7 +3960,11 @@ Respond naturally in plain text only:"""
                 else:
                     ai_summary = generate_lead_summary(history, agency.name)
                     quality_score = analyze_lead_quality(lead_data, history)
-                    assigned = assign_next_agent(agency)
+                    # Route to an agent who covers the area this customer
+                    # actually asked about, before falling back to round-robin.
+                    wanted_cities = detect_location(agency_id, history)
+                    assigned = assign_next_agent(
+                        agency, ", ".join(wanted_cities) if wanted_cities else None)
                     lead = Lead(
                         agency_id=agency_id,
                         agent_id=assigned.id if assigned else None,
@@ -4070,6 +4317,19 @@ with app.app_context():
     except Exception as e:
         db.session.rollback()
         print(f"⚠️ post-appointment-loop migration error: {e}")
+
+    # ── AGENT LOCATION MIGRATION (self-contained) ──
+    try:
+        from sqlalchemy import text as _text6, inspect as _inspect6
+        _insp6 = _inspect6(db.engine)
+        _agent_cols6 = [c['name'] for c in _insp6.get_columns('agent')]
+        if 'location' not in _agent_cols6:
+            db.session.execute(_text6("ALTER TABLE agent ADD COLUMN location VARCHAR(200);"))
+            db.session.commit()
+            print("✅ Migration: agent.location added")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ agent-location migration error: {e}")
 
 # -------------------------
 # RUN

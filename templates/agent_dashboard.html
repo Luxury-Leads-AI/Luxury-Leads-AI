@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Dashboard - {{ agent.name }}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -409,6 +410,32 @@
 </div>
 
 <!-- CHANGE PASSWORD MODAL -->
+<div id="followup-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:#1e293b; padding:26px; border-radius:12px; width:100%; max-width:420px; border:1px solid #334155;">
+    <h3 style="color:white; font-size:17px; margin-bottom:6px;">📅 Book Another Viewing</h3>
+    <p style="color:#94a3b8; font-size:13px; margin-bottom:16px;">
+      For <strong id="followup-customer" style="color:#e2e8f0;"></strong>. The earlier viewing is
+      marked &ldquo;wants other options&rdquo; automatically.
+    </p>
+    <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:5px;">Date</label>
+    <input type="date" id="followup-date"
+           style="width:100%; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; padding:10px; margin-bottom:13px; font-size:14px;">
+    <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:5px;">Time</label>
+    <select id="followup-time"
+            style="width:100%; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; padding:10px; margin-bottom:13px; font-size:14px;">
+      <option>10:00 AM</option><option>12:00 PM</option><option>2:00 PM</option>
+      <option>4:00 PM</option><option>6:00 PM</option>
+    </select>
+    <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:5px;">Property</label>
+    <input type="text" id="followup-property" placeholder="Which property this time?"
+           style="width:100%; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; padding:10px; margin-bottom:18px; font-size:14px;">
+    <div style="display:flex; gap:10px;">
+      <button onclick="submitFollowup()" style="flex:1; background:#8b5cf6; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Book Viewing</button>
+      <button onclick="closeFollowup()" style="flex:1; background:#334155; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="changePasswordModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
   <div style="background:#1e293b; padding:30px; border-radius:12px; width:100%; max-width:380px; border:1px solid #334155;">
     <h3 style="color:#8b5cf6; margin-bottom:16px;">🔑 Change Password</h3>
@@ -565,24 +592,20 @@ async function submitChangePassword() {
       {% if appt.customer_email %}<div class="appt-detail">📧 {{ appt.customer_email }}</div>{% endif %}
       {% if appt.property_interest %}<div class="appt-detail">🏠 {{ appt.property_interest }}</div>{% endif %}
 
+      {% set stage = stage_of(appt) %}
       <div class="appt-controls">
         <select class="status-select" onchange="updateApptStatus({{ appt.id }}, this.value, this)">
-          <option value="pending" {{ 'selected' if appt.status == 'pending' }}>⏳ Pending</option>
-          <option value="confirmed" {{ 'selected' if appt.status == 'confirmed' }}>✅ Confirmed</option>
-          <option value="completed" {{ 'selected' if appt.status == 'completed' }}>🏁 Completed</option>
-          <option value="cancelled" {{ 'selected' if appt.status == 'cancelled' }}>❌ Cancelled</option>
+          {% for value, label in stage_labels.items() %}
+          <option value="{{ value }}" {{ 'selected' if stage == value }}>{{ label }}</option>
+          {% endfor %}
         </select>
         <button class="note-btn" onclick="addApptNote({{ appt.id }})">📝 Add Note</button>
       </div>
 
       <div class="appt-controls">
-        <span style="font-size:11px; color:#94a3b8;">📋 Outcome:</span>
-        <select class="status-select" onchange="setApptOutcome({{ appt.id }}, this.value)">
-          <option value="" {{ 'selected' if not appt.outcome }}>No response yet</option>
-          <option value="wants_to_buy" {{ 'selected' if appt.outcome == 'wants_to_buy' }}>✅ Wants to buy</option>
-          <option value="wants_other_options" {{ 'selected' if appt.outcome == 'wants_other_options' }}>🔍 Wants other options</option>
-          <option value="not_interested" {{ 'selected' if appt.outcome == 'not_interested' }}>🚫 Not interested</option>
-        </select>
+        <button class="note-btn" onclick="openFollowup({{ appt.id }}, '{{ (appt.customer_name or '')|e }}')">
+          📅 Book another viewing
+        </button>
       </div>
 
       {% if appt.notes %}
@@ -823,47 +846,65 @@ async function submitChangePassword() {
     }
   }
 
-  async function updateApptStatus(apptId, status, selectEl) {
-    const card = document.getElementById(`appt-card-${apptId}`);
-    card.className = 'appt-card status-' + status;
+  // One control now carries both the scheduling state and the result.
+  async function updateApptStatus(apptId, stage, selectEl) {
     try {
       const res = await fetch(`/agent-update-appointment-status/${apptId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId, status: status })
+        body: JSON.stringify({ stage: stage })
       });
       const d = await res.json();
-      if (!d.success) {
-        alert('❌ ' + (d.error || 'Failed to update'));
-        location.reload();
-      }
+      if (!d.success) alert('❌ ' + (d.error || 'Failed to update'));
+      location.reload();
     } catch (e) {
       alert('❌ Network error');
       location.reload();
     }
   }
 
-  async function setApptOutcome(apptId, outcome) {
-    if (!outcome) {
-      // "No response yet" can't be selected back to once an outcome is
-      // recorded - just resync the dropdown to the real, saved value.
-      location.reload();
-      return;
-    }
+  // ── BOOK ANOTHER VIEWING ────────────────────────
+
+  let followupApptId = null;
+
+  function openFollowup(apptId, customerName) {
+    followupApptId = apptId;
+    document.getElementById('followup-customer').textContent = customerName || 'this customer';
+    document.getElementById('followup-date').value = '';
+    document.getElementById('followup-time').value = '10:00 AM';
+    document.getElementById('followup-property').value = '';
+    document.getElementById('followup-modal').style.display = 'flex';
+  }
+
+  function closeFollowup() {
+    document.getElementById('followup-modal').style.display = 'none';
+    followupApptId = null;
+  }
+
+  async function submitFollowup() {
+    const dateIso = document.getElementById('followup-date').value;
+    const time = document.getElementById('followup-time').value;
+    const property = document.getElementById('followup-property').value.trim();
+    if (!dateIso) { alert('⚠️ Pick a date for the new viewing.'); return; }
     try {
-      const res = await fetch(`/agent-set-appointment-outcome/${apptId}`, {
+      const res = await fetch(`/book-followup-viewing/${followupApptId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outcome: outcome })
+        body: JSON.stringify({
+          appointment_date_iso: dateIso,
+          appointment_time: time,
+          property_interest: property
+        })
       });
       const d = await res.json();
-      if (!d.success) {
-        alert('❌ ' + (d.error || 'Failed to update outcome'));
+      if (d.success) {
+        alert('✅ ' + d.message);
         location.reload();
+      } else {
+        alert('❌ ' + (d.error || 'Could not book the follow-up viewing'));
       }
     } catch (e) {
       alert('❌ Network error');
-      location.reload();
     }
   }
 
@@ -888,4 +929,4 @@ async function submitChangePassword() {
   }
 </script>
 </body>
-</html>
+</html>

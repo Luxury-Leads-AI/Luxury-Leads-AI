@@ -219,18 +219,40 @@ def test_agent_profile_page_blocks_a_different_agent(client):
 
 # ── Agent profile: update ────────────────────────────────────────────
 
-def test_update_agent_profile_saves_changes_for_self(client):
+def test_agent_cannot_change_their_own_name_or_email(client):
+    """Policy change (Moaz, Sept 2026): an agent manages their PASSWORD and
+    nothing else. An agent quietly repointing the email their leads are
+    routed to isn't something an owner should discover after the fact."""
     agency = make_agency()
     agent = make_agent(agency.id)
+    original_email = agent.email
     try:
         login_as_agent(client, agent.id)
         res = client.post(f"/update-agent-profile/{agent.id}", json={
             "name": "Updated Agent Name", "email": "updatedagent@example.test",
         })
+        assert res.status_code == 403
+        assert "agency owner" in res.get_json()["error"]
+        app_module.db.session.refresh(agent)
+        assert agent.email == original_email
+        assert agent.name != "Updated Agent Name"
+    finally:
+        app_module.db.session.delete(agent)
+        app_module.db.session.delete(agency)
+        app_module.db.session.commit()
+
+
+def test_agent_can_still_change_their_own_password(client):
+    """The one thing they DO control must keep working."""
+    agency = make_agency()
+    agent = make_agent(agency.id)
+    try:
+        login_as_agent(client, agent.id)
+        res = client.post(f"/change-agent-password/{agent.id}",
+                          json={"new_password": "brandnewpw1"})
         assert res.status_code == 200
         app_module.db.session.refresh(agent)
-        assert agent.name == "Updated Agent Name"
-        assert agent.email == "updatedagent@example.test"
+        assert agent.check_password("brandnewpw1")
     finally:
         app_module.db.session.delete(agent)
         app_module.db.session.delete(agency)
@@ -243,11 +265,12 @@ def test_update_agent_profile_owner_can_update_their_agent(client):
     try:
         login_as_owner(client, agency.id)
         res = client.post(f"/update-agent-profile/{agent.id}", json={
-            "name": "Owner Edited", "email": agent.email,
+            "name": "Owner Edited", "email": agent.email, "location": "Miami, Orlando",
         })
         assert res.status_code == 200
         app_module.db.session.refresh(agent)
         assert agent.name == "Owner Edited"
+        assert agent.location == "Miami, Orlando"
     finally:
         app_module.db.session.delete(agent)
         app_module.db.session.delete(agency)
@@ -278,7 +301,7 @@ def test_update_agent_profile_rejects_duplicate_email_within_agency(client):
     agent = make_agent(agency.id)
     other_agent = make_agent(agency.id)
     try:
-        login_as_agent(client, agent.id)
+        login_as_owner(client, agency.id)
         res = client.post(f"/update-agent-profile/{agent.id}", json={
             "name": agent.name, "email": other_agent.email,
         })
@@ -295,7 +318,7 @@ def test_update_agent_profile_rejects_invalid_email(client):
     agency = make_agency()
     agent = make_agent(agency.id)
     try:
-        login_as_agent(client, agent.id)
+        login_as_owner(client, agency.id)
         res = client.post(f"/update-agent-profile/{agent.id}", json={
             "name": agent.name, "email": "nope",
         })

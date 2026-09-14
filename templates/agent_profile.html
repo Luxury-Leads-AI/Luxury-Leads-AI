@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Profile - Luxury Leads AI</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -86,6 +87,29 @@
     }
     .msg-success { background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.35); color: #6ee7b7; }
     .msg-error { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5; }
+    .readonly-note {
+      background: rgba(139,92,246,0.1);
+      border: 1px solid rgba(139,92,246,0.3);
+      color: #c4b5fd;
+      border-radius: 8px;
+      padding: 13px 15px;
+      font-size: 13px;
+      line-height: 1.55;
+      margin-bottom: 22px;
+    }
+    .readonly-field {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #e2e8f0;
+      font-size: 14px;
+      word-break: break-word;
+    }
+    @media (max-width: 640px) {
+      body { padding: 18px 14px; }
+      .box { padding: 26px 20px; }
+    }
   </style>
 </head>
 <body>
@@ -97,60 +121,26 @@
     <h2>⚙️ My Profile</h2>
     <p class="subtitle">{{ agency.name if agency else '' }}</p>
 
-    <div id="message"></div>
+    <div class="readonly-note">
+      Your name, email and coverage area are set by your agency owner — ask them if any
+      of these need changing. Your password is yours: use <strong>🔑 Change Password</strong>
+      on your dashboard any time.
+    </div>
 
-    <form id="profileForm" onsubmit="saveProfile(event)">
-      <label for="name">Your Name *</label>
-      <input id="name" value="{{ agent.name or '' }}" required>
+    <label>Your Name</label>
+    <div class="readonly-field">{{ agent.name or '—' }}</div>
 
-      <label for="email">Email Address *</label>
-      <input id="email" type="email" value="{{ agent.email or '' }}" required>
-      <p class="helper-text">You log in and receive lead notifications at this address</p>
+    <label>Email Address</label>
+    <div class="readonly-field">{{ agent.email or '—' }}</div>
+    <p class="helper-text">You log in and receive lead notifications at this address</p>
 
-      <button type="submit" id="saveBtn">💾 Save Changes</button>
-    </form>
+    <label>Coverage Area</label>
+    <div class="readonly-field">
+      {% if agent.location %}📍 {{ agent.location }}{% else %}Not set{% endif %}
+    </div>
+    <p class="helper-text">Leads and viewings in your area come to you first</p>
   </div>
 </div>
-
-<script>
-async function saveProfile(event) {
-  event.preventDefault();
-  const btn = document.getElementById("saveBtn");
-  const msg = document.getElementById("message");
-  btn.disabled = true;
-  btn.textContent = "⏳ Saving...";
-  msg.style.display = "none";
-
-  const data = {
-    name: document.getElementById("name").value.trim(),
-    email: document.getElementById("email").value.trim(),
-  };
-
-  try {
-    const res = await fetch("/update-agent-profile/{{ agent.id }}", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    msg.style.display = "block";
-    if (res.ok) {
-      msg.className = "msg-success";
-      msg.textContent = "✅ " + json.message;
-    } else {
-      msg.className = "msg-error";
-      msg.textContent = "❌ " + (json.error || "Failed to update profile");
-    }
-  } catch (e) {
-    msg.style.display = "block";
-    msg.className = "msg-error";
-    msg.textContent = "❌ Network error - please try again";
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "💾 Save Changes";
-  }
-}
-</script>
 
 </body>
 </html>

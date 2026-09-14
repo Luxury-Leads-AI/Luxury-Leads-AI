@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agents - {{ agency.name }}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -77,13 +78,28 @@
     }
     .pill-active { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
     .pill-disabled { background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
+    .agent-location {
+      font-size: 12px; color: #94a3b8; background: rgba(167,139,250,0.08);
+      border: 1px solid rgba(167,139,250,0.2); border-radius: 6px;
+      padding: 7px 10px; margin-bottom: 12px;
+    }
     .agent-stats {
       background: #0f172a; border-radius: 8px; padding: 12px;
-      margin-bottom: 14px; text-align: center;
+      margin-bottom: 12px; text-align: center;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
     }
     .stat-num { font-size: 24px; font-weight: bold; color: #a78bfa; }
     .stat-lbl { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+    .btn-view-agent {
+      display: block; text-align: center; text-decoration: none;
+      background: rgba(167,139,250,0.12); color: #a78bfa;
+      border: 1px solid rgba(167,139,250,0.3); border-radius: 6px;
+      padding: 9px; font-size: 13px; font-weight: 600; margin-bottom: 10px;
+    }
+    .btn-view-agent:hover { background: rgba(167,139,250,0.25); }
     .agent-actions { display: flex; gap: 8px; }
+    .btn-edit { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); }
+    .btn-edit:hover { background: rgba(56,189,248,0.3); }
     .btn-sm {
       flex: 1; padding: 8px 12px; border-radius: 6px; font-size: 12px;
       font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; text-align: center;
@@ -178,11 +194,22 @@
             {{ '● Active' if agent.status == 'active' else '○ Disabled' }}
           </span>
         </div>
-        <div class="agent-stats">
-          <div class="stat-num">{{ lead_counts.get(agent.id, 0) }}</div>
-          <div class="stat-lbl">Assigned Leads</div>
+        <div class="agent-location">
+          📍 {{ agent.location if agent.location else 'No area set — not preferred for local leads' }}
         </div>
+        <div class="agent-stats">
+          <div>
+            <div class="stat-num">{{ lead_counts.get(agent.id, 0) }}</div>
+            <div class="stat-lbl">Assigned Leads</div>
+          </div>
+          <div>
+            <div class="stat-num">{{ appt_counts.get(agent.id, 0) }}</div>
+            <div class="stat-lbl">Viewings</div>
+          </div>
+        </div>
+        <a href="/agent-detail/{{ agent.id }}" class="btn-view-agent">View leads &amp; viewings →</a>
         <div class="agent-actions">
+          <button class="btn-sm btn-edit" onclick="openEditAgent({{ agent.id }}, '{{ agent.name|e }}', '{{ agent.email|e }}', '{{ (agent.location or '')|e }}')">✏️ Edit</button>
           {% if agent.status == 'active' %}
           <button class="btn-sm btn-toggle" onclick="toggleAgent({{ agent.id }})">⏸ Disable</button>
           {% else %}
@@ -206,7 +233,7 @@
 <div class="modal-overlay" id="modal-overlay" onclick="closeOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">👥 Add New Agent</div>
+      <div class="modal-title" id="modal-title">👥 Add New Agent</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
@@ -217,14 +244,19 @@
       <div class="form-group">
         <label class="form-label">Agent Email *</label>
         <input type="email" id="agent-email" class="form-input" placeholder="sarah@agency.com">
-        <div class="helper">Used for agent login</div>
+        <div class="helper">Used for agent login. Only you can change this — agents cannot.</div>
       </div>
       <div class="form-group">
+        <label class="form-label">Coverage Area</label>
+        <input type="text" id="agent-location" class="form-input" placeholder="e.g. Miami, Orlando">
+        <div class="helper">Leads and viewings for these areas are offered to this agent first</div>
+      </div>
+      <div class="form-group" id="password-group">
         <label class="form-label">Password</label>
         <input type="text" id="agent-password" class="form-input" placeholder="Leave empty to auto-generate a password">
         <div class="helper">Agent logs in at /agent-login with email + this password</div>
       </div>
-      <button class="btn-submit" onclick="submitAgent()">👥 Add Agent</button>
+      <button class="btn-submit" id="modal-submit" onclick="submitAgent()">👥 Add Agent</button>
     </div>
   </div>
 </div>
@@ -232,10 +264,33 @@
 <script>
   const agencyId = {{ agency.id }};
 
-  function openAddModal() { document.getElementById('modal-overlay').classList.add('open'); }
+  let editingAgentId = null;
+
+  function openAddModal() {
+    editingAgentId = null;
+    document.getElementById('modal-title').textContent = '👥 Add New Agent';
+    document.getElementById('modal-submit').textContent = '👥 Add Agent';
+    document.getElementById('password-group').style.display = '';
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function openEditAgent(id, name, email, location) {
+    editingAgentId = id;
+    document.getElementById('modal-title').textContent = '✏️ Edit Agent';
+    document.getElementById('modal-submit').textContent = '💾 Save Changes';
+    document.getElementById('agent-name').value = name;
+    document.getElementById('agent-email').value = email;
+    document.getElementById('agent-location').value = location;
+    // Password is the agent's own to change - never reset it from here.
+    document.getElementById('password-group').style.display = 'none';
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
   function closeModal() {
     document.getElementById('modal-overlay').classList.remove('open');
-    ['agent-name', 'agent-email', 'agent-password'].forEach(id => document.getElementById(id).value = '');
+    editingAgentId = null;
+    ['agent-name', 'agent-email', 'agent-location', 'agent-password']
+      .forEach(id => document.getElementById(id).value = '');
   }
   function closeOnOverlay(e) {
     if (e.target === document.getElementById('modal-overlay')) closeModal();
@@ -244,18 +299,34 @@
   async function submitAgent() {
     const name = document.getElementById('agent-name').value.trim();
     const email = document.getElementById('agent-email').value.trim();
+    const area = document.getElementById('agent-location').value.trim();
     const password = document.getElementById('agent-password').value.trim();
     if (!name || !email) { alert('⚠️ Name and email are required.'); return; }
+
+    if (editingAgentId) {
+      try {
+        const res = await fetch(`/update-agent-profile/${editingAgentId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, location: area })
+        });
+        const d = await res.json();
+        if (d.success) window.location.reload();
+        else alert('❌ ' + (d.error || 'Failed to save changes'));
+      } catch (e) { alert('❌ Network error'); }
+      return;
+    }
+
     try {
       const res = await fetch(`/add-agent/${agencyId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
+        body: JSON.stringify({ name, email, password, location: area })
       });
       const d = await res.json();
       if (d.success) {
         alert(`✅ Agent added!\n\nLogin: /agent-login\nEmail: ${email}\nPassword: ${d.default_password}`);
-        location.reload();
+        window.location.reload();
       } else {
         alert('❌ ' + (d.error || 'Failed to add agent'));
       }
@@ -282,4 +353,4 @@
   }
 </script>
 </body>
-</html>
+</html>
