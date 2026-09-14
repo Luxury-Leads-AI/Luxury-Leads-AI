@@ -265,6 +265,7 @@ async function loadPlatformStats() {
             <div class="stat-card">
                 <div class="stat-label">Paying Agencies</div>
                 <div class="stat-value">${s.paying_agencies}</div>
+                <div class="stat-sub">with an active subscription</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Total Leads</div>
@@ -277,6 +278,7 @@ async function loadPlatformStats() {
             <div class="stat-card">
                 <div class="stat-label">Total Agents</div>
                 <div class="stat-value">${s.total_agents}</div>
+                <div class="stat-sub">${s.active_agents} active, ${s.total_agents - s.active_agents} disabled</div>
             </div>
         `;
     } catch (error) {

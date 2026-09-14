@@ -498,22 +498,35 @@ def pick_agent_for_slot(agency, date_iso, time_label, preferred_agent_id=None):
         Appointment.status != 'cancelled').count() for a in free}
     return min(free, key=lambda a: (counts[a.id], a.id))
 
-def get_availability_context(agency_id, max_per_slot):
+def get_availability_context(agency_id, max_per_slot, booked_slots=None):
     """
     Build next-7-days real availability for the AI.
     Excludes Sundays and slots that are already full.
+
+    `booked_slots` is what THIS customer has already booked in THIS
+    conversation ("YYYY-MM-DD|10:00 AM"). Those exact times are removed from
+    the offer, but the rest of that day stays open - a customer viewing one
+    property at 6 PM can absolutely view another at 10 AM the same day, and
+    the AI used to refuse that on its own.
     """
     try:
+        taken = set(booked_slots or [])
         today = datetime.now(PK_TZ).date()
         lines = ["\nVIEWING AVAILABILITY - ONLY offer these exact dates and open time slots:"]
         any_open = False
+        mine_by_day = {}
         for i in range(1, 8):
             d = today + timedelta(days=i)
             if d.weekday() == 6:
                 continue
             iso = d.strftime('%Y-%m-%d')
-            open_slots = [s for s in TIME_SLOTS
-                          if slot_booked_count(agency_id, iso, s) < max_per_slot]
+            open_slots = []
+            for s in TIME_SLOTS:
+                if f"{iso}|{s}" in taken:
+                    mine_by_day.setdefault(d.strftime('%A, %B %d'), []).append(s)
+                    continue
+                if slot_booked_count(agency_id, iso, s) < max_per_slot:
+                    open_slots.append(s)
             if open_slots:
                 any_open = True
                 lines.append(f"- {d.strftime('%A, %B %d')}: {', '.join(open_slots)}")
@@ -523,6 +536,18 @@ def get_availability_context(agency_id, max_per_slot):
         lines.append("When the customer wants a viewing, offer ALL of the above days (each with its date), not just one or two.")
         lines.append("Always say the full date when offering or confirming, e.g. 'Monday, July 13' - never just 'Monday'.")
         lines.append("If a customer asks for a day or time NOT listed above, say that slot is unavailable and offer the open options.")
+        if mine_by_day:
+            already = "; ".join(f"{day} at {', '.join(times)}" for day, times in mine_by_day.items())
+            lines.append(
+                f"This customer has ALREADY booked: {already}. Those exact times are taken, but the SAME DAY is "
+                "still available at its other listed times."
+            )
+        lines.append(
+            "A customer may book several viewings on the SAME DAY at different times - that is normal and allowed. "
+            "Never tell them a whole day is unavailable just because they already booked another property that day; "
+            "only a specific TIME that is taken or full is unavailable. If they pick a day they already have a "
+            "booking on, simply offer that day's remaining times."
+        )
         return "\n".join(lines)
     except Exception as e:
         print(f"⚠️ Availability context error: {e}")
@@ -835,6 +860,25 @@ def get_listings_context(agency_id, conversation_history=None):
                     score += 3
                 elif any(re.search(r'\b' + re.escape(t) + r'\b', title_field) for t in expanded_types):
                     score += 2
+            # Bed/bath proximity. This is what was missing: once the exact
+            # requirement couldn't be met and bed/bath got relaxed, EVERY
+            # listing scored the same here, so the cheapest-first tiebreak
+            # below handed the AI the 8 smallest/cheapest homes - a customer
+            # asking for 7 bedrooms was shown 2-bed starters while the 6-bed
+            # estates never reached the model at all. Closeness to the asked
+            # size now outranks price.
+            if min_beds is not None:
+                if l.bedrooms is None:
+                    score -= 1
+                elif l.bedrooms >= min_beds:
+                    score += 4
+                else:
+                    score += max(0, 4 - (min_beds - l.bedrooms))
+            if min_baths is not None and l.bathrooms is not None:
+                if l.bathrooms >= min_baths:
+                    score += 2
+                else:
+                    score += max(0, 2 - int(min_baths - l.bathrooms))
             if budget_val and l.price_numeric:
                 lo, hi = budget_val * 0.7, budget_val * 1.3
                 if lo <= l.price_numeric <= hi:
@@ -852,7 +896,14 @@ def get_listings_context(agency_id, conversation_history=None):
         if not scored and (purpose or prop_type or budget_val or location_val):
             scored = [(0, l) for l in purpose_ok]
 
-        scored.sort(key=lambda x: (-x[0], x[1].price_numeric or 0))
+        # Tiebreak depends on what the customer actually asked for. If they
+        # named a size, bigger-is-closer wins (they asked for 7 beds - show
+        # the 6-beds, not the 2-beds). With no size stated, cheapest-first is
+        # the friendlier default for an open browse.
+        if min_beds is not None or min_baths is not None:
+            scored.sort(key=lambda x: (-x[0], -(x[1].bedrooms or 0), x[1].price_numeric or 0))
+        else:
+            scored.sort(key=lambda x: (-x[0], x[1].price_numeric or 0))
         top = [l for s, l in scored[:8]]
 
         if not top:
@@ -902,6 +953,30 @@ def get_listings_context(agency_id, conversation_history=None):
             "If a listing is NOT tagged as matching location or bed/bath even though the customer specified one, "
             "be upfront about that mismatch before describing it - never present a different city or a smaller "
             "unit as if it were exactly what they asked for. Create mild urgency naturally."
+        )
+
+        # Truthful whole-inventory facts. The shortlist above is capped, so
+        # without this the AI answers "what's the biggest you have?" from the
+        # 8 rows it can see and confidently denies stock the agency really
+        # holds. These numbers describe EVERY available listing.
+        bed_values = [l.bedrooms for l in listings if l.bedrooms]
+        price_values = [l.price_numeric for l in listings if l.price_numeric]
+        city_values = sorted({(l.location or '').split(',')[0].strip()
+                              for l in listings if l.location})
+        facts = [f"{len(listings)} properties available in total"]
+        if bed_values:
+            facts.append(f"bedroom counts range {min(bed_values)} to {max(bed_values)}")
+        if price_values:
+            facts.append(f"prices range ${min(price_values):,.0f} to ${max(price_values):,.0f}")
+        if city_values:
+            facts.append(f"cities covered: {', '.join(city_values[:12])}")
+        lines.append(
+            "\nWHOLE-INVENTORY FACTS (true across the entire agency, not just the shortlist above): "
+            + "; ".join(facts) + ". "
+            "The shortlist above is only the closest matches, so NEVER use it to claim the agency has nothing "
+            "in a size, price or city that these facts show it does have. If the customer asks about something "
+            "outside the shortlist that these facts cover, tell them yes, those exist, and ask a question that "
+            "narrows it down (budget or area) so the right ones can be pulled up for them."
         )
         return "\n".join(lines)
     except Exception as e:
@@ -1162,7 +1237,26 @@ Login to view: https://luxury-leads-ai.onrender.com/owner-login
     else:
         return False
 
-    return send_email_brevo(agency.email, subject, body)
+    sent = send_email_brevo(agency.email, subject, body)
+
+    # The assigned agent is the person who actually has to make this call -
+    # sending the reminder only to the owner meant it never reached them.
+    # The owner still gets their copy above for oversight.
+    if lead.agent_id:
+        agent = db.session.get(Agent, lead.agent_id)
+        if agent and agent.email and agent.email.strip().lower() != (agency.email or '').strip().lower():
+            agent_body = body.replace(
+                f"Hi {agency.owner_name or agency.name},",
+                f"Hi {agent.name},", 1
+            ).replace(
+                "https://luxury-leads-ai.onrender.com/owner-login",
+                "https://luxury-leads-ai.onrender.com/agent-login"
+            )
+            agent_body = agent_body.replace(
+                "your qualified lead", "your assigned lead", 1)
+            sent = send_email_brevo(agent.email, subject, agent_body) or sent
+
+    return sent
 
 
 def process_pending_followups():
@@ -2180,18 +2274,44 @@ def platform_stats():
         Agency.trial_ends_at.isnot(None),
         Agency.trial_ends_at < now,
     ).count()
+    # Only count rows that still belong to a live agency. Agencies deleted
+    # before the cascade cleanup existed left orphaned agents/leads/
+    # appointments behind, and counting those made the panel report more
+    # agents than actually exist anywhere in the product.
+    live_ids = [a.id for a in Agency.query.with_entities(Agency.id).all()]
+
+    def live_count(model):
+        if not live_ids:
+            return 0
+        return model.query.filter(model.agency_id.in_(live_ids)).count()
+
+    # "Paying" means a real subscription exists - not merely the model's
+    # default status string. Agencies created before the 'trialing' default
+    # landed still carry subscription_status='active' and were being counted
+    # as paying customers when nobody has paid yet.
+    paying = Agency.query.filter(
+        Agency.subscription_status == 'active',
+        Agency.paddle_subscription_id.isnot(None),
+        Agency.paddle_subscription_id != '',
+    ).count()
+
+    active_agents = (Agent.query.filter(Agent.agency_id.in_(live_ids),
+                                        Agent.status == 'active').count()
+                     if live_ids else 0)
+
     return jsonify({
         "total_agencies": Agency.query.count(),
         "active_trials": active_trials,
         "expired_trials": expired_trials,
-        "paying_agencies": Agency.query.filter_by(subscription_status='active').count(),
+        "paying_agencies": paying,
         "by_tier": {
             tier: Agency.query.filter_by(tier=tier).count()
             for tier in ('solo', 'agency', 'corporation')
         },
-        "total_leads": Lead.query.count(),
-        "total_appointments": Appointment.query.count(),
-        "total_agents": Agent.query.count(),
+        "total_leads": live_count(Lead),
+        "total_appointments": live_count(Appointment),
+        "total_agents": live_count(Agent),
+        "active_agents": active_agents,
     })
 
 @app.route("/delete-agency/<int:agency_id>", methods=["DELETE"])
@@ -3369,10 +3489,41 @@ def chat():
 
         max_slot = get_slot_capacity(agency)
         listings_context = get_listings_context(agency_id, history)
-        availability_context = get_availability_context(agency_id, max_slot)
+        availability_context = get_availability_context(agency_id, max_slot, booked_slots)
+
+        # What we already know, stated plainly for the model. Relying on it to
+        # re-read 20 messages and notice it already has an email is how
+        # customers ended up being asked for the same email and the same
+        # contact preference twice in one conversation.
+        known = extract_lead_data(agency_id, history)
+        known_bits = []
+        if known.get('name'):
+            known_bits.append(f"Name: {known['name']}")
+        if known.get('email'):
+            known_bits.append(f"Email: {known['email']}")
+        if known.get('whatsapp_number'):
+            known_bits.append(f"WhatsApp: {known['whatsapp_number']}")
+        if known.get('phone'):
+            known_bits.append(f"Phone: {known['phone']}")
+        if known.get('budget'):
+            known_bits.append(f"Budget: {known['budget']}")
+        if contact_step_completed(history):
+            known_bits.append(
+                f"Contact preference: {(known.get('contact_preference') or 'email').replace('_', ' ')} (ALREADY ANSWERED)")
+        already_known_context = ""
+        if known_bits:
+            already_known_context = (
+                "\n\nALREADY CAPTURED FROM THIS CUSTOMER - treat every item here as done:\n- "
+                + "\n- ".join(known_bits)
+                + "\nNever ask for any of the above again, not even to confirm it, and not in a recap. "
+                "If you need to reference one, state it back as a fact ('I'll email you at "
+                + (known.get('email') or 'the address you gave') + "'). "
+                "Move straight to the next item that is genuinely missing."
+            )
 
         system_prompt = f"""You are {agency.assistant_name}, a real estate consultant at {agency.name}.
 {listings_context}
+{already_known_context}
 
 GOLDEN RULE - ONE QUESTION PER MESSAGE:
 - Never ask two questions in one response. Ever.
@@ -3430,6 +3581,8 @@ WRONG: "Could you share the location and your budget?"
 RIGHT: "Any particular area in mind?" → wait → "And what's your budget?"
 
 If customer volunteers multiple details in one message (e.g. "Miami, 10K per month"), accept ALL of it gracefully - acknowledge and move to the NEXT missing item. Never re-ask something they already told you.
+
+Skip any numbered item above that appears in ALREADY CAPTURED - that list is authoritative. If the customer has to tell you something twice, you have failed. This applies to the closing recap too: recap the bookings, do not re-collect the email or the contact preference.
 
 FORMATTING RULES:
 - Never use markdown: no **, no *, no _, no #, no bullets, no numbered lists
