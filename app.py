@@ -617,7 +617,63 @@ def detect_purpose(conversation_history):
     return None
 
 
-GENERIC_PROPERTY_TYPES = ['villa', 'condo', 'condominium', 'apartment', 'house', 'home', 'townhouse',
+# ─────────────────────────────────────────────────────
+# SELLER SIDE - the other half of a real agency's day. Someone arriving
+# to LIST a property needs a completely different set of questions from
+# someone arriving to buy one. Until now the AI treated every visitor as
+# a buyer: it asked a seller for their "budget" and promised to send them
+# listings.
+# ─────────────────────────────────────────────────────
+
+# Checked before the buy/rent words, and deliberately tighter: "I want to
+# rent out my flat" contains "rent" and would otherwise read as a renter
+# looking for a place.
+SELL_PATTERNS = [
+    r'\b(?:want|wish|would like|looking|trying|need|like)\s+to\s+sell\b',
+    r'\bsell(?:ing)?\s+(?:my|our|a|the|this)\b',
+    r'\bput\s+(?:my|our|the)\s+[\w\s]{0,20}?on\s+the\s+market\b',
+    r'\blist\s+(?:my|our)\s+(?:property|house|home|villa|apartment|condo|flat)\b',
+    r'\bfor\s+sale\s+by\s+owner\b',
+    r'\bvender\s+mi\b', r'\bverkaufen\b', r'\bvendre\s+m',
+    r'\bvendere\s+la\s+mia\b', r'\bsprzeda',
+]
+
+RENT_OUT_PATTERNS = [
+    r'\brent(?:ing)?\s+out\b',
+    r'\blease\s+out\b',
+    r'\blet\s+out\b',
+    r'\brent\s+(?:my|our)\s+(?:property|house|home|villa|apartment|condo|flat)\b',
+    r'\bi\s+am\s+(?:a\s+)?landlord\b',
+    r'\balquilar\s+mi\b', r'\bvermieten\b',
+]
+
+
+def detect_chat_intent(conversation_history):
+    """Which side of the transaction is this visitor on?
+    Returns 'sell', 'rent_out', 'buy', 'rent', or None if not yet stated."""
+    if not conversation_history:
+        return None
+    user_text = " ".join(m['content'] for m in conversation_history
+                         if m['role'] == 'user').lower()
+    for pattern in SELL_PATTERNS:
+        if re.search(pattern, user_text):
+            return 'sell'
+    for pattern in RENT_OUT_PATTERNS:
+        if re.search(pattern, user_text):
+            return 'rent_out'
+    purpose = detect_purpose(conversation_history)
+    if purpose == 'rent':
+        return 'rent'
+    if purpose == 'sale':
+        return 'buy'
+    return None
+
+
+def is_seller_intent(intent):
+    return intent in ('sell', 'rent_out')
+
+
+GENERIC_PROPERTY_TYPES =['villa', 'condo', 'condominium', 'apartment', 'house', 'home', 'townhouse',
                            'town house', 'single family', 'mansion', 'estate', 'loft', 'penthouse',
                            'duplex', 'bungalow', 'cottage']
 
@@ -1587,6 +1643,140 @@ Write summary:"""
         return "Customer engaged in property conversation."
 
 
+def extract_seller_property(conversation_history, intent):
+    """Pull the property a seller described into structured fields.
+
+    Regex can't do this honestly: a seller's city may be somewhere the
+    agency has no listings yet (so the existing DB-driven location matcher
+    finds nothing), and free-text amenities ("12KW solar, private gym,
+    cinema in the basement") have no pattern to match. One cheap model
+    call per QUALIFIED seller lead - not per message - is far more
+    reliable than guessing, and it returns null rather than inventing
+    anything it wasn't told."""
+    try:
+        conversation_text = "\n".join(
+            f"{'Owner' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+            for m in conversation_history
+        )
+        prompt = f"""Extract the property this owner wants to {'sell' if intent == 'sell' else 'rent out'}.
+
+Return ONLY valid JSON, no prose, with exactly these keys:
+{{"title": str, "location": str, "property_type": str, "bedrooms": int|null,
+  "bathrooms": float|null, "features": str, "price_raw": str, "description": str}}
+
+Rules:
+- Use null (not a guess) for anything the owner did not state.
+- "title": a short listing title you compose from the facts, e.g. "Miami Beach Luxury Villa".
+- "location": exactly the area the owner named, e.g. "Miami Beach, FL".
+- "property_type": one of villa, house, condo, apartment, townhouse, penthouse, estate, land, other.
+- "features": comma-separated amenities the owner mentioned, verbatim in meaning.
+- "price_raw": the asking {'price' if intent == 'sell' else 'rent'} exactly as stated, e.g. "5M $" or "3500/month".
+- "description": one factual sentence from what the owner said. Never invent selling points.
+- Write all values in ENGLISH even if the conversation was in another language.
+
+Conversation:
+{conversation_text}
+
+JSON:"""
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1, max_tokens=400,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(response.choices[0].message.content)
+        print(f"🏷️ Seller property extracted: {data.get('title')} | {data.get('location')}")
+        return data
+    except Exception as e:
+        print(f"⚠️ Seller property extraction error: {e}")
+        return {}
+
+
+def is_seller_lead_qualified(lead_data, conversation_history, intent):
+    """A seller lead is worth creating once we can actually contact them
+    AND know what they're offering. Deliberately stricter than the buyer
+    rule about the property: a listing with no location or no price is not
+    something an agent can act on."""
+    if not is_seller_intent(intent):
+        return False
+    if not (lead_data.get('email') and lead_data.get('name')):
+        return False
+    user_msgs = [m for m in conversation_history if m['role'] == 'user']
+    if len(user_msgs) < 4:
+        return False
+    # 'budget' is where the asking price lands for a seller - the same
+    # money regex catches "5M $" whichever side of the deal they're on.
+    return bool(lead_data.get('budget'))
+
+
+def create_listing_from_seller(agency, lead, conversation_history, intent):
+    """Turn a qualified seller conversation into a real (but unpublished)
+    listing. It lands as 'pending' so it is invisible to buyers until the
+    agency approves it - get_listings_context only ever reads 'available',
+    so an unverified price or a duplicate submission can't reach a real
+    customer on its own."""
+    details = extract_seller_property(conversation_history, intent)
+    if not details:
+        return None
+
+    price_raw = details.get('price_raw') or lead.budget or ''
+    listing = Listing(
+        agency_id=agency.id,
+        title=(details.get('title') or f"{lead.name}'s property")[:200],
+        location=(details.get('location') or '')[:200] or None,
+        price_raw=str(price_raw)[:100] or None,
+        price=parse_price(price_raw),
+        price_numeric=parse_price(price_raw),
+        bedrooms=details.get('bedrooms'),
+        bathrooms=details.get('bathrooms'),
+        property_type=(details.get('property_type') or '')[:50] or None,
+        listing_purpose='rent' if intent == 'rent_out' else 'sale',
+        features=(details.get('features') or '')[:500] or None,
+        description=details.get('description'),
+        status='pending',
+        source='seller_chat',
+        seller_lead_id=lead.id,
+    )
+    db.session.add(listing)
+    db.session.commit()
+    print(f"🏠 Pending listing #{listing.id} created from seller lead {lead.id}")
+    return listing
+
+
+def notify_owner_of_seller_lead(agency, lead, listing, intent):
+    action = "sell" if intent == 'sell' else "rent out"
+    lines = [
+        f"Hi {agency.owner_name or agency.name},",
+        "",
+        f"A property owner just contacted you wanting to {action} their property.",
+        "",
+        f"👤 Name:    {lead.name or '—'}",
+        f"📧 Email:   {lead.email or '—'}",
+        f"📱 Contact: {lead.whatsapp_number or lead.phone or 'Not provided'}",
+        "",
+    ]
+    if listing:
+        lines += [
+            "🏠 Property they described:",
+            f"   {listing.title}",
+            f"   Location: {listing.location or '—'}",
+            f"   Type: {listing.property_type or '—'}",
+            f"   Beds/baths: {listing.bedrooms or '—'} / {format_num(listing.bathrooms) if listing.bathrooms else '—'}",
+            f"   Asking: {listing.price_raw or '—'}",
+            f"   Features: {listing.features or '—'}",
+            "",
+            "It's saved as a PENDING listing - review and approve it before",
+            "it becomes visible to buyers:",
+            f"https://luxury-leads-ai.onrender.com/listings/{agency.id}",
+        ]
+    else:
+        lines.append("Log in to review the conversation: https://luxury-leads-ai.onrender.com/owner-login")
+    return send_email_brevo(
+        agency.email,
+        f"🏠 New Seller Lead: {lead.name or 'Property owner'} | {agency.name}",
+        "\n".join(lines))
+
+
 def extract_name_from_context(conversation_history):
     not_a_name = {
         'yes', 'no', 'ok', 'okay', 'sure', 'fine', 'good', 'great',
@@ -2070,6 +2260,10 @@ class Lead(db.Model):
     follow_up_1_sent = db.Column(db.Integer, default=0)
     follow_up_7_sent = db.Column(db.Integer, default=0)
     agent_id = db.Column(db.Integer, nullable=True)   # assigned agent (Tier 2/3)
+    # 'buyer' (someone looking for a property) or 'seller' (an owner
+    # listing one). Two completely different jobs for an agent, so the
+    # dashboard keeps them visibly apart.
+    lead_type = db.Column(db.String(20), default='buyer')
 
 class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -2108,8 +2302,15 @@ class Listing(db.Model):
     listing_purpose = db.Column(db.String(10), default='sale')  # 'sale' or 'rent'
     features = db.Column(db.String(500))
     description = db.Column(db.Text)
+    # 'available' (live, offered to buyers), 'pending' (submitted by a
+    # seller, awaiting the agency's approval), 'rejected', or 'sold'.
+    # Only 'available' is ever shown to a customer.
     status = db.Column(db.String(20), default='available')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
+    # Where this listing came from: 'agency' (uploaded/added by staff) or
+    # 'seller_chat' (a property owner described it to the AI).
+    source = db.Column(db.String(20), default='agency')
+    seller_lead_id = db.Column(db.Integer, nullable=True)
 
 
 class ConversationSession(db.Model):
@@ -2204,7 +2405,13 @@ def admin():
         agency = db.session.get(Agency, int(agency_id))
         if not agency:
             return redirect("/owner-login?error=Agency+not+found")
-        return render_template("admin.html", leads=leads, agency=agency, now=datetime.utcnow())
+        seller_count = sum(1 for l in leads if l.lead_type == 'seller')
+        pending_listings = Listing.query.filter_by(
+            agency_id=int(agency_id), status='pending').count()
+        return render_template("admin.html", leads=leads, agency=agency,
+                               now=datetime.utcnow(), seller_count=seller_count,
+                               buyer_count=len(leads) - seller_count,
+                               pending_listings=pending_listings)
     except Exception as e:
         print(f"❌ ADMIN ERROR: {e}")
         return redirect("/owner-login?error=Something+went+wrong")
@@ -3516,7 +3723,19 @@ def listings(agency_id):
     all_listings = Listing.query.filter_by(
         agency_id=agency_id
     ).order_by(Listing.status.asc(), Listing.price_numeric.asc()).all()
-    return render_template("listings.html", agency=agency, listings=all_listings)
+    # Properties submitted by owners through the chat wait here for a
+    # decision - they are not shown to buyers until approved, so they get
+    # their own section at the top rather than being lost in the list.
+    pending = [l for l in all_listings if l.status == 'pending']
+    live = [l for l in all_listings if l.status != 'pending']
+    seller_names = {}
+    for l in pending:
+        if l.seller_lead_id:
+            seller = db.session.get(Lead, l.seller_lead_id)
+            if seller:
+                seller_names[l.id] = f"{seller.name or 'Owner'} · {seller.email or ''}".strip(" ·")
+    return render_template("listings.html", agency=agency, listings=live,
+                           pending_listings=pending, seller_names=seller_names)
 
 
 @app.route("/add-listing/<int:agency_id>", methods=["POST"])
@@ -3635,13 +3854,52 @@ def toggle_listing_status(listing_id):
             return jsonify({"error": "Unauthorized"}), 401
         data = request.get_json(force=True)
         new_status = data.get("status", "available")
-        if new_status not in ['available', 'sold', 'pending']:
+        if new_status not in ['available', 'sold', 'pending', 'rejected']:
             return jsonify({"error": "Invalid status"}), 400
         listing.status = new_status
         db.session.commit()
         return jsonify({"success": True, "status": new_status})
     except Exception as e:
         return jsonify({"error": "Failed to update"}), 500
+
+
+@app.route("/review-seller-listing/<int:listing_id>", methods=["POST"])
+def review_seller_listing(listing_id):
+    """Approve or reject a property an owner submitted through the chat.
+    Nothing a seller types reaches a real buyer until this runs - approving
+    is what flips it from 'pending' to 'available', which is the only
+    status the AI ever reads from."""
+    listing = db.session.get(Listing, listing_id)
+    if not listing:
+        return jsonify({"error": "Listing not found"}), 404
+    if not _owner_owns_agency(listing.agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    decision = (data.get("decision") or "").strip().lower()
+    if decision not in ('approve', 'reject'):
+        return jsonify({"error": "Decision must be approve or reject"}), 400
+
+    listing.status = 'available' if decision == 'approve' else 'rejected'
+    db.session.commit()
+    print(f"🏠 Listing #{listing.id} {decision}d by owner")
+
+    # Tell the owner who submitted it that it's now live.
+    if decision == 'approve' and listing.seller_lead_id:
+        seller = db.session.get(Lead, listing.seller_lead_id)
+        agency = db.session.get(Agency, listing.agency_id)
+        if seller and seller.email and agency:
+            send_email_brevo(
+                seller.email,
+                f"Your property is now listed with {agency.name}",
+                f"Hi {seller.name or 'there'},\n\n"
+                f"Good news - your property \"{listing.title}\" is now live with "
+                f"{agency.name}, and we'll start matching it to buyers straight away.\n\n"
+                f"Location: {listing.location or '—'}\n"
+                f"Asking: {listing.price_raw or '—'}\n\n"
+                f"If anything above needs correcting, just reply to this email.\n\n"
+                f"{agency.name}")
+    return jsonify({"success": True, "status": listing.status})
 
 
 @app.route("/delete-listing/<int:listing_id>", methods=["DELETE"])
@@ -3721,8 +3979,52 @@ def chat():
         history.append({"role": "user", "content": user_message})
 
         max_slot = get_slot_capacity(agency)
-        listings_context = get_listings_context(agency_id, history)
-        availability_context = get_availability_context(agency_id, max_slot, booked_slots)
+        chat_intent = detect_chat_intent(history)
+        seller_mode = is_seller_intent(chat_intent)
+
+        # A seller is not shopping. Showing them the buyer inventory (and
+        # the viewing calendar) is how the AI ended up asking an owner for
+        # their "budget" and offering to find them properties.
+        listings_context = "" if seller_mode else get_listings_context(agency_id, history)
+        availability_context = ("" if seller_mode
+                                else get_availability_context(agency_id, max_slot, booked_slots))
+
+        seller_context = ""
+        if seller_mode:
+            what = "sell" if chat_intent == 'sell' else "rent out"
+            money = "asking price" if chat_intent == 'sell' else "monthly rent they want"
+            seller_context = f"""
+
+⚠️ THIS VISITOR IS A PROPERTY OWNER WHO WANTS TO {what.upper()} THEIR PROPERTY.
+They are NOT shopping. Ignore the buyer sequence above entirely - every rule in it about
+budgets, recommending listings, and booking viewings is wrong for this conversation.
+
+NEVER do any of these with an owner:
+- Ask what their "budget" is. They are receiving money, not spending it.
+- Ask if they want to buy or rent something else.
+- Offer them properties from our listings, or offer to find them options.
+- Offer a viewing, a date, or a time slot.
+- Promise to "find them a buyer soon" with a timeline you cannot keep.
+
+INFORMATION TO COLLECT FROM THIS OWNER (strictly one at a time, in this order,
+skipping anything already in ALREADY CAPTURED):
+1. Where the property is located ("Whereabouts is the property?")
+2. What type of property it is ("What kind of property is it - villa, house, apartment?")
+3. How many bedrooms ("How many bedrooms does it have?")
+4. How many bathrooms
+5. Standout features and amenities ("Anything that makes it stand out - pool, garden, solar, parking?")
+6. The {money} ("What {'price are you hoping for' if chat_intent == 'sell' else 'monthly rent are you asking'}?")
+7. Email address
+8. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
+
+If they volunteer several of these at once, accept all of it and move to the next MISSING one.
+Acknowledge what they describe warmly and specifically ("A pool and a home cinema - that will
+appeal to the right buyer") without valuing the property or promising a price.
+
+ONCE YOU HAVE ALL OF THE ABOVE, close the conversation like this and then STOP asking questions:
+tell them their property details have been passed to the {agency.name} team, that an agent will
+review and get in touch about next steps, and thank them. Do not invent timelines, valuations,
+commission rates, or contract terms - an agent handles all of that."""
 
         # What we already know, stated plainly for the model. Relying on it to
         # re-read 20 messages and notice it already has an email is how
@@ -3770,7 +4072,8 @@ CONVERSATION START - GET NAME FIRST, ALWAYS, NO EXCEPTIONS:
 - Do NOT answer small talk or reciprocate a question in the first message. Skip straight to asking their name.
 - Example: Client says "Hi" → You say "Hello! May I know who I'm speaking with?"
 - Example: Client says "Hi, how are you?" → You STILL say "Hello! May I know who I'm speaking with?" - do not answer "how are you" first.
-- Client gives name → "Nice to meet you, [Name]! What's on your mind today?"
+- Client gives name → welcome them by name, say who you are and that you help with BUYING, SELLING and RENTING, then ask which one they're here for. Example: "Nice to meet you, [Name]! Welcome to {agency.name}. I'm {agency.assistant_name} and I can help you buy, sell or rent a property - which brings you in today?"
+- That one question is mandatory: never assume someone is a buyer. An owner who wants to LIST a property needs completely different questions from someone looking for one.
 - Use their name naturally throughout the conversation.
 - NEVER ask for the name again once given.
 
@@ -3799,7 +4102,7 @@ VIEWING FLOW - ONE PROPERTY AT A TIME, ONE STEP AT A TIME:
 - After the LAST property's time is confirmed, ask for email if you don't have it yet. Then a short recap of all bookings together, each naming its property.
 - If client wants to view a property NOT in the listings: say "Unfortunately we don't currently have a property matching your requirements. I'll find suitable options and get back to you to plan a viewing." Do NOT offer any dates or time slots in this case. Just collect their email and contact preference so the agency can follow up.
 
-INFORMATION TO COLLECT (strictly one at a time, in this order):
+INFORMATION TO COLLECT FROM A BUYER OR RENTER (strictly one at a time, in this order):
 1. Name (at the very start)
 2. Property type ("What kind of property are you looking for?")
 3. Buying or renting? ("Are you looking to buy or rent?")
@@ -3808,6 +4111,7 @@ INFORMATION TO COLLECT (strictly one at a time, in this order):
 6. Email (after they're satisfied or a viewing is planned)
 7. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
 8. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
+{seller_context}
 
 NEVER combine location and budget in one question.
 WRONG: "Could you share the location and your budget?"
@@ -3937,7 +4241,79 @@ Respond naturally in plain text only:"""
                     print(f"⚠️ Auto-appointment error: {appt_err}")
                     db.session.rollback()
 
-        if is_lead_qualified(lead_data, history, has_booking=bool(booked_slots)):
+        # ─── Seller lead: a property owner, not a shopper ───
+        if seller_mode and is_seller_lead_qualified(lead_data, history, chat_intent):
+            try:
+                canonical_name, existing_lead_id = resolve_lead_identity(
+                    agency_id, lead_data['email'], lead_data.get('name'))
+                existing_seller = db.session.get(Lead, existing_lead_id) if existing_lead_id else None
+                if existing_seller:
+                    print(f"⚠️ Seller lead already recorded: {lead_data['email']}")
+                else:
+                    ai_summary = generate_lead_summary(history, agency.name)
+                    # Sellers are routed by where their PROPERTY is.
+                    seller_property = extract_seller_property(history, chat_intent)
+                    assigned = assign_next_agent(agency, seller_property.get('location'))
+                    seller_lead = Lead(
+                        agency_id=agency_id,
+                        agent_id=assigned.id if assigned else None,
+                        name=canonical_name,
+                        email=lead_data['email'],
+                        phone=lead_data.get('phone'),
+                        whatsapp_number=lead_data.get('whatsapp_number'),
+                        contact_preference=lead_data.get('contact_preference', 'email'),
+                        budget=lead_data['budget'],          # their asking price
+                        message=ai_summary,
+                        intent_score=analyze_lead_quality(lead_data, history),
+                        lead_status='new',
+                        lead_type='seller',
+                        notes='[]',
+                    )
+                    db.session.add(seller_lead)
+                    db.session.commit()
+
+                    listing = None
+                    if seller_property:
+                        price_raw = seller_property.get('price_raw') or seller_lead.budget or ''
+                        listing = Listing(
+                            agency_id=agency_id,
+                            title=(seller_property.get('title') or f"{canonical_name}'s property")[:200],
+                            location=(seller_property.get('location') or '')[:200] or None,
+                            price_raw=str(price_raw)[:100] or None,
+                            price=parse_price(price_raw),
+                            price_numeric=parse_price(price_raw),
+                            bedrooms=seller_property.get('bedrooms'),
+                            bathrooms=seller_property.get('bathrooms'),
+                            property_type=(seller_property.get('property_type') or '')[:50] or None,
+                            listing_purpose='rent' if chat_intent == 'rent_out' else 'sale',
+                            features=(seller_property.get('features') or '')[:500] or None,
+                            description=seller_property.get('description'),
+                            status='pending',        # invisible to buyers until approved
+                            source='seller_chat',
+                            seller_lead_id=seller_lead.id,
+                        )
+                        db.session.add(listing)
+                        db.session.commit()
+                        print(f"🏠 Pending listing #{listing.id} from seller lead {seller_lead.id}")
+
+                    notify_owner_of_seller_lead(agency, seller_lead, listing, chat_intent)
+                    if assigned:
+                        notify_agent(assigned,
+                                     f"🏠 New Seller Lead Assigned - {seller_lead.name}",
+                                     f"Hi {assigned.name},\n\nA property owner wants to "
+                                     f"{'sell' if chat_intent == 'sell' else 'rent out'} their property "
+                                     f"and has been assigned to you:\n\n"
+                                     f"Name: {seller_lead.name}\nEmail: {seller_lead.email}\n"
+                                     f"Property: {listing.title if listing else '—'}\n"
+                                     f"Location: {listing.location if listing else '—'}\n"
+                                     f"Asking: {listing.price_raw if listing else seller_lead.budget or '—'}\n\n"
+                                     f"Login: https://luxury-leads-ai.onrender.com/agent-login")
+                    print(f"✅ SELLER LEAD #{seller_lead.id} captured: {seller_lead.name}")
+            except Exception as seller_err:
+                print(f"⚠️ Seller lead error: {seller_err}")
+                db.session.rollback()
+
+        elif is_lead_qualified(lead_data, history, has_booking=bool(booked_slots)):
             try:
                 canonical_name, existing_lead_id = resolve_lead_identity(
                     agency_id, lead_data['email'], lead_data.get('name'))
@@ -4330,6 +4706,31 @@ with app.app_context():
     except Exception as e:
         db.session.rollback()
         print(f"⚠️ agent-location migration error: {e}")
+
+    # ── SELLER-SIDE MIGRATIONS (self-contained) ──
+    try:
+        from sqlalchemy import text as _text7, inspect as _inspect7
+        _insp7 = _inspect7(db.engine)
+        _lead_cols7 = [c['name'] for c in _insp7.get_columns('lead')]
+        _listing_cols7 = [c['name'] for c in _insp7.get_columns('listing')]
+        if 'lead_type' not in _lead_cols7:
+            db.session.execute(_text7(
+                "ALTER TABLE lead ADD COLUMN lead_type VARCHAR(20) DEFAULT 'buyer';"))
+            db.session.commit()
+            print("✅ Migration: lead.lead_type added")
+        if 'source' not in _listing_cols7:
+            db.session.execute(_text7(
+                "ALTER TABLE listing ADD COLUMN source VARCHAR(20) DEFAULT 'agency';"))
+            db.session.commit()
+            print("✅ Migration: listing.source added")
+        if 'seller_lead_id' not in _listing_cols7:
+            db.session.execute(_text7(
+                "ALTER TABLE listing ADD COLUMN seller_lead_id INTEGER;"))
+            db.session.commit()
+            print("✅ Migration: listing.seller_lead_id added")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ seller-side migration error: {e}")
 
 # -------------------------
 # RUN

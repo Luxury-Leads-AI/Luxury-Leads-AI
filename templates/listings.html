@@ -121,6 +121,57 @@
       border-color: transparent;
     }
 
+    /* Seller submissions waiting on the owner's decision */
+    .review-section {
+      background: rgba(251,191,36,0.06);
+      border: 1px solid rgba(251,191,36,0.3);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+    .review-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 14px; flex-wrap: wrap; margin-bottom: 18px;
+    }
+    .review-title { font-size: 17px; font-weight: 700; color: #fbbf24; }
+    .review-sub { font-size: 13px; color: #94a3b8; margin-top: 5px; max-width: 620px; line-height: 1.5; }
+    .review-count {
+      background: rgba(251,191,36,0.18); color: #fbbf24;
+      border-radius: 20px; padding: 5px 13px; font-size: 12px;
+      font-weight: 700; white-space: nowrap;
+    }
+    .review-card { border-color: rgba(251,191,36,0.4) !important; }
+    .review-pill {
+      background: rgba(251,191,36,0.18); color: #fbbf24;
+      border-radius: 12px; padding: 3px 10px; font-size: 11px;
+      font-weight: 700; white-space: nowrap;
+    }
+    .review-seller {
+      font-size: 12px; color: #94a3b8; margin-bottom: 12px;
+      padding-bottom: 10px; border-bottom: 1px solid #334155;
+    }
+    .review-facts { display: grid; gap: 8px; margin-bottom: 12px; }
+    .review-facts > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+    .review-facts span { color: #94a3b8; }
+    .review-facts strong { color: #e2e8f0; text-align: right; }
+    .review-features {
+      font-size: 12px; color: #cbd5e1; background: #0f172a;
+      border-radius: 6px; padding: 9px 11px; margin-bottom: 10px; line-height: 1.5;
+    }
+    .review-desc { font-size: 12.5px; color: #94a3b8; margin-bottom: 14px; line-height: 1.5; }
+    .review-actions { display: flex; gap: 9px; }
+    .btn-approve, .btn-reject {
+      padding: 10px; border-radius: 7px; font-size: 13px;
+      font-weight: 700; cursor: pointer; border: none;
+    }
+    .btn-approve { flex: 1; background: #22c55e; color: #0f172a; }
+    .btn-approve:hover { background: #16a34a; }
+    .btn-reject {
+      flex: 0 0 100px; background: transparent; color: #f87171;
+      border: 1px solid rgba(239,68,68,0.4);
+    }
+    .btn-reject:hover { background: rgba(239,68,68,0.15); }
+
     /* Listings Grid */
     .listings-grid {
       display: grid;
@@ -453,6 +504,56 @@
              border-radius: 6px; color: #e2e8f0; font-size: 14px; width: 240px; outline: none;">
   </div>
 
+  <!-- OWNER-SUBMITTED PROPERTIES AWAITING APPROVAL -->
+  {% if pending_listings %}
+  <div class="review-section">
+    <div class="review-header">
+      <div>
+        <div class="review-title">🏠 Submitted by property owners</div>
+        <div class="review-sub">
+          Described to your AI assistant in chat. Buyers cannot see these until you approve them —
+          check the details are right first.
+        </div>
+      </div>
+      <span class="review-count">{{ pending_listings|length }} waiting</span>
+    </div>
+
+    <div class="listings-grid">
+      {% for listing in pending_listings %}
+      <div class="listing-card review-card" id="pending-{{ listing.id }}">
+        <div class="listing-header">
+          <div class="listing-title">{{ listing.title }}</div>
+          <span class="review-pill">Needs review</span>
+        </div>
+
+        {% if seller_names.get(listing.id) %}
+        <div class="review-seller">Submitted by {{ seller_names.get(listing.id) }}</div>
+        {% endif %}
+
+        <div class="review-facts">
+          <div><span>Location</span><strong>{{ listing.location or '— not given —' }}</strong></div>
+          <div><span>Type</span><strong>{{ listing.property_type or '—' }}</strong></div>
+          <div><span>Beds / baths</span><strong>{{ listing.bedrooms or '—' }} / {{ listing.bathrooms or '—' }}</strong></div>
+          <div><span>{{ 'Rent' if listing.listing_purpose == 'rent' else 'Asking' }}</span><strong>{{ listing.price_raw or '— not given —' }}</strong></div>
+        </div>
+
+        {% if listing.features %}
+        <div class="review-features">✨ {{ listing.features }}</div>
+        {% endif %}
+        {% if listing.description %}
+        <div class="review-desc">{{ listing.description }}</div>
+        {% endif %}
+
+        <div class="review-actions">
+          <button class="btn-approve" onclick="reviewListing({{ listing.id }}, 'approve')">✅ Approve &amp; publish</button>
+          <button class="btn-reject" onclick="reviewListing({{ listing.id }}, 'reject')">✕ Reject</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <!-- LISTINGS GRID -->
   <div class="listings-grid" id="listings-grid">
     {% if listings %}
@@ -649,6 +750,28 @@
   }
 
   // ── STATUS UPDATE ────────────────────────────────
+
+  // Approve or reject a property an owner submitted through the chat.
+  // Nothing they typed reaches a buyer until 'approve' runs here.
+  async function reviewListing(listingId, decision) {
+    if (decision === 'reject' &&
+        !confirm('Reject this property? It stays on file but is never shown to buyers.')) return;
+    try {
+      const res = await fetch(`/review-seller-listing/${listingId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision: decision })
+      });
+      const d = await res.json();
+      if (d.success) {
+        location.reload();
+      } else {
+        alert('❌ ' + (d.error || 'Could not update this listing'));
+      }
+    } catch (e) {
+      alert('❌ Network error');
+    }
+  }
 
   async function updateStatus(listingId, newStatus) {
     try {
