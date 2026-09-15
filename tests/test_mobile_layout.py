@@ -125,6 +125,70 @@ def test_dashboard_topbars_wrap_instead_of_overflowing():
         assert 'flex-wrap: wrap' in rule.group(1), f"{name}: topbar cannot wrap"
 
 
+# ── Stat cards are the same compact size on all three dashboards ─────
+
+def _rule(style, selector):
+    m = re.search(r'\.' + selector + r'\s*\{([^}]*)\}', style)
+    return " ".join(m.group(1).split()) if m else None
+
+
+# every page that shows stat cards
+STAT_PAGES = ('owner.html', 'admin.html', 'agent_dashboard.html',
+              'listings.html', 'analytics.html', 'appointments.html')
+
+
+def test_every_page_with_stat_cards_uses_the_same_compact_sizing():
+    """The super admin dashboard's sizing is the reference. The others ran
+    from 180px-200px columns with 20-24px padding and 32-36px numbers,
+    which filled most of a phone screen before any content appeared."""
+    expected = {
+        'stats-grid': ('minmax(160px, 1fr)', 'gap: 16px'),
+        'stat-card': ('padding: 18px 20px',),
+        'stat-label': ('font-size: 12px',),
+        'stat-value': ('font-size: 28px',),
+    }
+    for name in STAT_PAGES:
+        style = _style_of(_read(name))
+        for selector, needles in expected.items():
+            body = _rule(style, selector)
+            assert body, f"{name}: no .{selector} rule"
+            for needle in needles:
+                assert needle in body, \
+                    f"{name} .{selector} should contain '{needle}', got: {body}"
+
+
+def test_stat_cards_step_down_again_on_a_phone():
+    for name in STAT_PAGES:
+        style = _style_of(_read(name))
+        mobile = "\n".join(re.findall(r'@media[^{]*\{(.*?)\n\s{0,8}\}\s*\n', style, re.S))
+        assert 'minmax(140px' in mobile, f"{name}: stat grid does not narrow on mobile"
+        assert 'font-size: 24px' in mobile, f"{name}: stat value does not shrink on mobile"
+
+
+def test_topbar_buttons_are_compact_everywhere():
+    """Every page's nav buttons should be the same small size, so moving
+    between pages doesn't jump between chunky and compact controls."""
+    for name in ('admin.html', 'agent_dashboard.html', 'listings.html',
+                 'analytics.html', 'agents.html', 'appointments.html'):
+        style = _style_of(_read(name))
+        # whichever selector this page uses for its nav controls
+        for selector in (r'\.actions a, \.actions button',
+                         r'\.topbar-actions a, \.topbar-actions button',
+                         r'\.btn-back',
+                         r'\.btn-logout, \.btn-changepw'):
+            m = re.search(selector + r'\s*\{([^}]*)\}', style)
+            if not m:
+                continue
+            body = " ".join(m.group(1).split())
+            size = re.search(r'font-size:\s*([\d.]+)px', body)
+            if size:
+                assert float(size.group(1)) <= 13, \
+                    f"{name}: nav buttons still {size.group(1)}px ({selector})"
+            break
+        else:
+            raise AssertionError(f"{name}: no recognised nav-button rule found")
+
+
 # ── Viewport (kept from the Sept 14 fix) ─────────────────────────────
 
 def test_every_template_still_declares_a_mobile_viewport():

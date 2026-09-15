@@ -28,12 +28,12 @@
       gap: 8px;
       justify-content: flex-end;
     }
-    .title { font-size: 24px; font-weight: bold; color: white; }
-    .subtitle { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+    .title { font-size: 21px; font-weight: bold; color: white; }
+    .subtitle { font-size: 12px; opacity: 0.9; margin-top: 3px; }
     .btn-logout, .btn-changepw {
       text-decoration: none;
-      padding: 7px 14px;
-      border-radius: 7px;
+      padding: 6px 12px;
+      border-radius: 6px;
       font-size: 12.5px;
       font-weight: 600;
       background: rgba(255,255,255,0.2);
@@ -49,21 +49,24 @@
 
     .container { padding: 30px 40px; max-width: 1300px; margin: 0 auto; }
 
+    /* Compact stat cards, matching the super admin dashboard. The old
+       200px/20px/32px sizing ate most of a phone screen before a single
+       lead came into view. */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
       margin-bottom: 30px;
     }
     .stat-card {
       background: #1e293b;
-      padding: 20px;
+      padding: 18px 20px;
       border-radius: 12px;
       border: 1px solid #334155;
     }
-    .stat-icon { font-size: 24px; margin-bottom: 10px; }
-    .stat-label { font-size: 13px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 32px; font-weight: bold; color: white; }
+    .stat-icon { font-size: 20px; margin-bottom: 8px; }
+    .stat-label { font-size: 12px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 28px; font-weight: bold; color: white; }
 
     .section-title {
       font-size: 20px;
@@ -400,6 +403,8 @@
       th, td { padding: 9px 11px; }
       .modal-overlay { padding: 20px 12px; }
       .appts-grid { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+      .stat-value { font-size: 24px; }
     }
   </style>
 </head>

@@ -64,22 +64,25 @@
       .container { padding: 20px 16px; }
     }
 
+    /* Compact stat cards, matching the super admin dashboard. The old
+       200px/20px/32px sizing ate most of a phone screen before a single
+       lead came into view. */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
       margin-bottom: 30px;
     }
 
     .stat-card {
       background: #1e293b;
-      padding: 20px;
+      padding: 18px 20px;
       border-radius: 12px;
       border: 1px solid #334155;
     }
-    .stat-label { font-size: 13px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 32px; font-weight: bold; color: white; }
-    .stat-icon { font-size: 24px; margin-bottom: 10px; }
+    .stat-label { font-size: 12px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 28px; font-weight: bold; color: white; }
+    .stat-icon { font-size: 20px; margin-bottom: 8px; }
 
     .filter-section {
       background: #1e293b;
@@ -472,6 +475,8 @@
       .info-grid { grid-template-columns: 1fr; }
       .modal-overlay { padding: 20px 12px; }
       .filter-section { padding: 14px; }
+      .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+      .stat-value { font-size: 24px; }
     }
   </style>
 </head>

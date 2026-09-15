@@ -12,25 +12,36 @@
     }
     .topbar {
       background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-      padding: 20px 40px;
+      padding: 16px 28px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
       box-shadow: 0 4px 20px rgba(139,92,246,0.3);
     }
-    .title { font-size: 24px; font-weight: bold; color: white; }
-    .subtitle { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+    .title { font-size: 21px; font-weight: bold; color: white; }
+    .subtitle { font-size: 12px; opacity: 0.9; margin-top: 3px; }
+    /* Same compact wrapping nav as every other page. */
+    .topbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      justify-content: flex-end;
+    }
     .topbar-actions a, .topbar-actions button {
       text-decoration: none;
-      padding: 10px 20px;
-      border-radius: 8px;
-      margin-left: 12px;
-      font-size: 14px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      margin-left: 0;
+      font-size: 12.5px;
       font-weight: 600;
       display: inline-block;
       border: none;
       cursor: pointer;
       transition: transform 0.2s;
+      white-space: nowrap;
+      line-height: 1.4;
     }
     .topbar-actions a:hover, .topbar-actions button:hover { transform: translateY(-2px); }
     .btn-back { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3) !important; }
@@ -156,7 +167,8 @@
 
     @media (max-width: 768px) {
       .container { padding: 16px; }
-      .topbar { flex-direction: column; gap: 15px; text-align: center; padding: 16px; }
+      .topbar { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px; }
+      .topbar-actions { justify-content: center; }
       .agents-grid { grid-template-columns: 1fr; }
     }
   </style>

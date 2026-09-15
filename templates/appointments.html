@@ -14,24 +14,35 @@
 
     .topbar {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 20px 40px;
+      padding: 16px 28px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
       box-shadow: 0 4px 20px rgba(102,126,234,0.3);
     }
 
-    .title { font-size: 24px; font-weight: bold; color: white; }
-    .subtitle { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+    .title { font-size: 21px; font-weight: bold; color: white; }
+    .subtitle { font-size: 12px; opacity: 0.9; margin-top: 3px; }
 
+    /* Same compact wrapping nav as every other page. */
+    .topbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      justify-content: flex-end;
+    }
     .topbar-actions a, .topbar-actions button {
       text-decoration: none;
-      padding: 10px 20px;
-      border-radius: 8px;
-      margin-left: 12px;
-      font-size: 14px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      margin-left: 0;
+      font-size: 12.5px;
       font-weight: 600;
       transition: transform 0.2s;
+      white-space: nowrap;
+      line-height: 1.4;
       display: inline-block;
       border: none;
       cursor: pointer;
@@ -43,22 +54,23 @@
 
     .container { padding: 30px 40px; max-width: 1400px; margin: 0 auto; }
 
+    /* Compact stat cards, matching the super admin dashboard. */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
       margin-bottom: 30px;
     }
 
     .stat-card {
       background: #1e293b;
-      padding: 20px;
+      padding: 18px 20px;
       border-radius: 12px;
       border: 1px solid #334155;
     }
-    .stat-icon { font-size: 24px; margin-bottom: 10px; }
-    .stat-label { font-size: 13px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 32px; font-weight: bold; color: white; }
+    .stat-icon { font-size: 20px; margin-bottom: 8px; }
+    .stat-label { font-size: 12px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 28px; font-weight: bold; color: white; }
 
     .filter-section {
       background: #1e293b;
@@ -329,7 +341,10 @@
 
     @media (max-width: 768px) {
       .container { padding: 16px; }
-      .topbar { flex-direction: column; gap: 15px; text-align: center; padding: 16px; }
+      .topbar { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px; }
+      .topbar-actions { justify-content: center; }
+      .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+      .stat-value { font-size: 24px; }
       .appointments-grid { grid-template-columns: 1fr; }
       .form-row { grid-template-columns: 1fr; }
     }
