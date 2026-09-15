@@ -142,13 +142,22 @@
       cursor: pointer;
     }
 
+    /* Same pattern as the agent dashboard: the wide leads table scrolls
+       INSIDE this box. It used to drag the entire page sideways on a
+       phone, which made every other control hard to reach. */
+    .table-wrap {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
     table {
       width: 100%;
+      min-width: 1100px;
       border-collapse: collapse;
       background: #1e293b;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     }
     th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid #334155; }
     th {
@@ -259,15 +268,21 @@
     /* Checkbox */
     .lead-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: #667eea; }
 
-    /* ── MODAL ── */
+    /* ── MODAL ──
+       Matches the agent dashboard exactly: the OVERLAY scrolls and the
+       panel starts at the top. The old version put max-height:90vh and
+       the scrollbar on the panel itself and centred it, which clipped
+       the lead details on a phone and fought the page scroll. */
     .modal-overlay {
       display: none;
-      position: fixed; inset: 0;
+      position: fixed;
+      inset: 0;
       background: rgba(0,0,0,0.7);
       z-index: 1000;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
-      padding: 20px;
+      padding: 40px 20px;
+      overflow-y: auto;
     }
     .modal-overlay.open { display: flex; }
 
@@ -275,9 +290,7 @@
       background: #1e293b;
       border-radius: 16px;
       width: 100%;
-      max-width: 680px;
-      max-height: 90vh;
-      overflow-y: auto;
+      max-width: 640px;
       border: 1px solid #334155;
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
@@ -288,10 +301,6 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      position: sticky;
-      top: 0;
-      background: #1e293b;
-      z-index: 10;
     }
     .modal-title { font-size: 18px; font-weight: 700; color: white; }
     .modal-close {
@@ -456,10 +465,13 @@
 
     @media (max-width: 768px) {
       .container { padding: 16px; }
-      .topbar { flex-direction: column; gap: 15px; text-align: center; padding: 16px; }
-      table { font-size: 12px; }
+      .topbar { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px; }
+      .actions { justify-content: center; }
+      table { font-size: 12px; min-width: 880px; }
       th, td { padding: 8px 10px; }
       .info-grid { grid-template-columns: 1fr; }
+      .modal-overlay { padding: 20px 12px; }
+      .filter-section { padding: 14px; }
     }
   </style>
 </head>
@@ -623,6 +635,7 @@ async function submitChangePassword() {
   </div>
 
   <!-- LEADS TABLE -->
+  <div class="table-wrap">
   <table id="leadsTable">
     <thead>
       <tr>
@@ -728,6 +741,7 @@ async function submitChangePassword() {
 {% endif %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <!-- ── LEAD DETAIL MODAL ── -->

@@ -96,12 +96,21 @@
         .btn-delete:hover {
             background: #dc2626;
         }
-        table { 
-            width: 100%;
-            border-collapse: collapse;
+        /* The agency table has 11 columns, so on a phone it has to scroll
+           INSIDE its own box - it used to drag the whole page sideways. */
+        .table-wrap {
+            border: 1px solid #334155;
+            border-radius: 12px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
             margin-top: 20px;
         }
-        th, td { 
+        table {
+            width: 100%;
+            min-width: 900px;
+            border-collapse: collapse;
+        }
+        th, td {
             border: 1px solid #334155;
             padding: 14px;
             text-align: left;
@@ -176,6 +185,18 @@
         .sub-cancelled { color: #ef4444; font-weight: bold; }
         .trial-expired { color: #ef4444; font-size: 11px; }
         .trial-ok { color: #64748b; font-size: 11px; }
+
+        @media (max-width: 768px) {
+            .header { padding: 16px; flex-wrap: wrap; gap: 12px; }
+            .header h2 { font-size: 20px; }
+            .container { padding: 18px 16px 50px; }
+            .section { padding: 20px 16px; }
+            .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+            .stat-value { font-size: 24px; }
+            input { min-width: 100%; }
+            .form-row { gap: 10px; }
+            .btn-create { width: 100%; }
+        }
     </style>
 </head>
 <body>
@@ -214,25 +235,27 @@
     <div class="section">
         <h3>📋 All Agencies</h3>
         <div id="loading" class="loading">⏳ Loading agencies...</div>
-        <table id="agencyTable" style="display: none;">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Agency Name</th>
-                    <th>Owner</th>
-                    <th>Email</th>
-                    <th>Tier</th>
-                    <th>Subscription</th>
-                    <th>Leads</th>
-                    <th>Appts</th>
-                    <th>Agents</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="agencyBody">
-            </tbody>
-        </table>
+        <div class="table-wrap" id="agencyTableWrap" style="display: none;">
+            <table id="agencyTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Agency Name</th>
+                        <th>Owner</th>
+                        <th>Email</th>
+                        <th>Tier</th>
+                        <th>Subscription</th>
+                        <th>Leads</th>
+                        <th>Appts</th>
+                        <th>Agents</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="agencyBody">
+                </tbody>
+            </table>
+        </div>
         <div id="emptyState" class="empty-state" style="display: none;">
             📭 No agencies created yet. Create your first one above!
         </div>
@@ -290,22 +313,24 @@ async function loadPlatformStats() {
 
 async function loadAgencies() {
     const loading = document.getElementById("loading");
-    const table = document.getElementById("agencyTable");
+    // Show/hide the scroll BOX, not the table - the table itself must
+    // stay display:table so it can overflow inside the box.
+    const table = document.getElementById("agencyTableWrap");
     const emptyState = document.getElementById("emptyState");
     const tbody = document.getElementById("agencyBody");
-    
+
     try {
         const res = await fetch("/agencies");
         const data = await res.json();
-        
+
         loading.style.display = "none";
-        
+
         if (data.length === 0) {
             emptyState.style.display = "block";
             table.style.display = "none";
         } else {
             emptyState.style.display = "none";
-            table.style.display = "table";
+            table.style.display = "block";
             
             tbody.innerHTML = "";
             
