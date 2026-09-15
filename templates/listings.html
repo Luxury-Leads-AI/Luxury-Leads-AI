@@ -510,13 +510,13 @@
 
   <!-- FILTER -->
   <div class="filter-section">
-    <div class="filter-tabs">
-      <div class="filter-tab active" onclick="filterListings('all', this)">🏠 All</div>
-      <div class="filter-tab" onclick="filterListings('available', this)">✅ Available</div>
-      <div class="filter-tab" onclick="filterListings('pending', this)">⏳ Pending</div>
-      <div class="filter-tab" onclick="filterListings('sold', this)">🏷️ Sold</div>
+    <div class="filter-tabs" id="listing-tabs">
+      <div class="filter-tab active" data-filter="all" onclick="filterListings('all', this)">🏠 All</div>
+      <div class="filter-tab" data-filter="available" onclick="filterListings('available', this)">✅ Available</div>
+      <div class="filter-tab" data-filter="pending" onclick="filterListings('pending', this)">⏳ Pending</div>
+      <div class="filter-tab" data-filter="sold" onclick="filterListings('sold', this)">🏷️ Sold</div>
     </div>
-    <input type="text" placeholder="🔍 Search listings..."
+    <input type="text" id="listing-search" placeholder="🔍 Search listings..."
       oninput="searchListings(this.value)"
       style="padding: 8px 14px; background: #0f172a; border: 1px solid #334155;
              border-radius: 6px; color: #e2e8f0; font-size: 14px; width: 240px; outline: none;">
@@ -744,25 +744,39 @@
 
   // ── FILTER ──────────────────────────────────────
 
+  function currentListingFilters() {
+    const tab = document.querySelector('#listing-tabs .filter-tab.active');
+    const box = document.getElementById('listing-search');
+    return {
+      status: tab ? (tab.dataset.filter || 'all') : 'all',
+      search: box ? box.value.toLowerCase().trim() : '',
+    };
+  }
+
   function filterListings(status, el) {
-    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#listing-tabs .filter-tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
-    const search = document.querySelector('input[oninput]').value.toLowerCase().trim();
-    applyFilters(status, search);
+    const f = currentListingFilters();
+    applyFilters(f.status, f.search);
   }
 
   function searchListings(query) {
-    const activeTab = document.querySelector('.filter-tab.active');
-    const status = activeTab ? activeTab.getAttribute('onclick').match(/'([^']+)'/)?.[1] : 'all';
-    applyFilters(status, query.toLowerCase().trim());
+    const f = currentListingFilters();
+    applyFilters(f.status, f.search);
   }
 
+  // Scoped to the live grid on purpose: owner-submitted properties waiting
+  // for approval sit in their own review section above and must not be
+  // filtered away. Those cards also carry no data-search, and calling
+  // .toLowerCase() on that null threw - which aborted the loop and
+  // silently broke filtering AND search for the whole page as soon as one
+  // seller submission was pending.
   function applyFilters(status, search) {
-    document.querySelectorAll('.listing-card').forEach(card => {
-      const cardStatus = card.getAttribute('data-status');
-      const cardSearch = card.getAttribute('data-search').toLowerCase();
+    document.querySelectorAll('#listings-grid .listing-card').forEach(card => {
+      const cardStatus = card.dataset.status || '';
+      const haystack = ((card.dataset.search || '') + ' ' + card.textContent).toLowerCase();
       const statusMatch = status === 'all' || cardStatus === status;
-      const searchMatch = !search || cardSearch.includes(search) || card.innerText.toLowerCase().includes(search);
+      const searchMatch = !search || haystack.includes(search);
       card.style.display = (statusMatch && searchMatch) ? '' : 'none';
     });
   }

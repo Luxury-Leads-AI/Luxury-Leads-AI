@@ -408,15 +408,18 @@
 
   <!-- FILTER -->
   <div class="filter-section">
-    <div class="filter-tabs">
-      <div class="filter-tab active" onclick="filterAppts('all', this)">📋 All</div>
-      <div class="filter-tab" onclick="filterAppts('pending', this)">⏳ Pending</div>
-      <div class="filter-tab" onclick="filterAppts('confirmed', this)">✅ Confirmed</div>
-      <div class="filter-tab" onclick="filterAppts('completed', this)">🏁 Completed</div>
-      <div class="filter-tab" onclick="filterAppts('cancelled', this)">❌ Cancelled</div>
+    <div class="filter-tabs" id="appt-tabs">
+      <div class="filter-tab active" data-filter="all" onclick="filterAppts('all', this)">📋 All</div>
+      <div class="filter-tab" data-filter="pending" onclick="filterAppts('pending', this)">⏳ Pending</div>
+      <div class="filter-tab" data-filter="confirmed" onclick="filterAppts('confirmed', this)">✅ Confirmed</div>
+      <div class="filter-tab" data-filter="completed" onclick="filterAppts('completed', this)">🏁 Viewing done</div>
+      <div class="filter-tab" data-filter="wants_to_buy" onclick="filterAppts('wants_to_buy', this)">🎉 Wants to buy</div>
+      <div class="filter-tab" data-filter="wants_other_options" onclick="filterAppts('wants_other_options', this)">🔍 Other options</div>
+      <div class="filter-tab" data-filter="not_interested" onclick="filterAppts('not_interested', this)">🚫 Not interested</div>
+      <div class="filter-tab" data-filter="cancelled" onclick="filterAppts('cancelled', this)">❌ Cancelled</div>
     </div>
     <input type="text" placeholder="🔍 Search by name or email..."
-      oninput="searchAppts(this.value)"
+      id="appt-search" oninput="searchAppts(this.value)"
       style="padding: 8px 14px; background: #0f172a; border: 1px solid #334155;
              border-radius: 6px; color: #e2e8f0; font-size: 14px; width: 260px; outline: none;">
   </div>
@@ -442,6 +445,7 @@
       <div class="appt-card status-{{ appt.status }}"
            id="appt-{{ appt.id }}"
            data-status="{{ appt.status }}"
+           data-stage="{{ stage }}"
            data-name="{{ (appt.customer_name or '').lower() }}"
            data-email="{{ (appt.customer_email or '').lower() }}">
 
@@ -767,28 +771,46 @@
 
   // ── FILTER ─────────────────────────────────────
 
+  function currentApptFilters() {
+    const tab = document.querySelector('#appt-tabs .filter-tab.active');
+    const box = document.getElementById('appt-search');
+    return {
+      stage: tab ? (tab.dataset.filter || 'all') : 'all',
+      search: box ? box.value.toLowerCase().trim() : '',
+    };
+  }
+
   function filterAppts(status, el) {
-    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#appt-tabs .filter-tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
-    const search = document.querySelector('input[oninput]').value.toLowerCase().trim();
-    applyApptFilters(status, search);
+    const f = currentApptFilters();
+    applyApptFilters(f.stage, f.search);
   }
 
   function searchAppts(query) {
-    const activeTab = document.querySelector('.filter-tab.active');
-    const statusMatch = activeTab ? activeTab.getAttribute('onclick').match(/'([^']+)'/)?.[1] : 'all';
-    applyApptFilters(statusMatch, query.toLowerCase().trim());
+    const f = currentApptFilters();
+    applyApptFilters(f.stage, f.search);
   }
 
-  function applyApptFilters(status, search) {
-    const cards = document.querySelectorAll('.appt-card');
-    cards.forEach(card => {
-      const cardStatus = card.getAttribute('data-status');
-      const cardName = card.getAttribute('data-name') || '';
-      const cardEmail = card.getAttribute('data-email') || '';
-      const statusMatch = status === 'all' || cardStatus === status;
-      const searchMatch = !search || cardName.includes(search) || cardEmail.includes(search);
-      card.style.display = (statusMatch && searchMatch) ? '' : 'none';
+  // Matches on the UNIFIED stage the card actually displays, so filtering
+  // agrees with what the owner is looking at. Bookings are grouped per
+  // agent now, so a group whose every card is filtered out has to be
+  // hidden too - otherwise you're left with a lonely agent heading and a
+  // count above empty space.
+  function applyApptFilters(stage, search) {
+    document.querySelectorAll('.appt-card').forEach(card => {
+      const cardStage = card.dataset.stage || card.dataset.status || '';
+      const haystack = ((card.dataset.name || '') + ' ' + (card.dataset.email || '')
+                        + ' ' + card.textContent).toLowerCase();
+      const stageMatch = stage === 'all' || cardStage === stage;
+      const searchMatch = !search || haystack.includes(search);
+      card.style.display = (stageMatch && searchMatch) ? '' : 'none';
+    });
+
+    document.querySelectorAll('.agent-group').forEach(group => {
+      const visible = Array.from(group.querySelectorAll('.appt-card'))
+        .some(c => c.style.display !== 'none');
+      group.style.display = visible ? '' : 'none';
     });
   }
 

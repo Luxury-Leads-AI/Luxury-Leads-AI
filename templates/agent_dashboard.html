@@ -68,6 +68,55 @@
     .stat-label { font-size: 12px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
     .stat-value { font-size: 28px; font-weight: bold; color: white; }
 
+    .filter-section {
+      background: #1e293b;
+      padding: 16px 18px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      margin-bottom: 16px;
+    }
+    .filter-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-tab {
+      padding: 6px 13px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 12.5px;
+      border: 1px solid #334155;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .filter-tab:hover { background: #334155; color: white; }
+    .filter-tab.active {
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      color: white;
+      border-color: transparent;
+    }
+    .filter-search {
+      padding: 7px 13px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 13px;
+      width: 260px;
+      max-width: 100%;
+      outline: none;
+    }
+    .filter-search:focus { border-color: #8b5cf6; }
+    .no-match {
+      text-align: center; padding: 30px 20px; color: #64748b; font-size: 14px;
+    }
+
     .section-title {
       font-size: 20px;
       font-weight: 700;
@@ -534,6 +583,31 @@ async function submitChangePassword() {
   <!-- MY LEADS -->
   <div class="section-title">🎯 My Assigned Leads</div>
   {% if leads %}
+  <!-- Same filters the agency dashboard has - an agent working a full
+       pipeline needs to find their hot leads too. -->
+  <div class="filter-section">
+    <div class="filter-row">
+      <div class="filter-tabs" id="quality-tabs">
+        <div class="filter-tab active" data-filter="all" onclick="filterLeads('quality-tabs', this)">🌟 All</div>
+        <div class="filter-tab" data-filter="5" onclick="filterLeads('quality-tabs', this)">🔥 Hot (5⭐)</div>
+        <div class="filter-tab" data-filter="4" onclick="filterLeads('quality-tabs', this)">💎 High (4⭐)</div>
+        <div class="filter-tab" data-filter="3" onclick="filterLeads('quality-tabs', this)">⚡ Medium (3⭐)</div>
+        <div class="filter-tab" data-filter="2" onclick="filterLeads('quality-tabs', this)">💡 Low (2⭐)</div>
+        <div class="filter-tab" data-filter="1" onclick="filterLeads('quality-tabs', this)">🧊 Cold (1⭐)</div>
+      </div>
+      <input id="lead-search" type="text" class="filter-search"
+             placeholder="🔍 Search name, email, budget..."
+             oninput="applyLeadFilters()">
+    </div>
+    <div class="filter-tabs" id="status-tabs">
+      <div class="filter-tab active" data-filter="all" onclick="filterLeads('status-tabs', this)">📋 All Status</div>
+      <div class="filter-tab" data-filter="new" onclick="filterLeads('status-tabs', this)">🆕 New</div>
+      <div class="filter-tab" data-filter="contacted" onclick="filterLeads('status-tabs', this)">📞 Contacted</div>
+      <div class="filter-tab" data-filter="meeting" onclick="filterLeads('status-tabs', this)">🤝 Meeting</div>
+      <div class="filter-tab" data-filter="closed" onclick="filterLeads('status-tabs', this)">✅ Closed</div>
+      <div class="filter-tab" data-filter="lost" onclick="filterLeads('status-tabs', this)">❌ Lost</div>
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
       <thead>
@@ -550,7 +624,11 @@ async function submitChangePassword() {
       </thead>
       <tbody>
         {% for lead in leads %}
-        <tr class="lead-row" id="lead-row-{{ lead.id }}" onclick="handleRowClick(event, {{ lead.id }})">
+        <tr class="lead-row" id="lead-row-{{ lead.id }}"
+            data-quality="{{ lead.intent_score or 1 }}"
+            data-status="{{ lead.lead_status or 'new' }}"
+            data-search="{{ ((lead.name or '') ~ ' ' ~ (lead.email or '') ~ ' ' ~ (lead.budget or '') ~ ' ' ~ (lead.phone or '') ~ ' ' ~ (lead.whatsapp_number or ''))|lower }}"
+            onclick="handleRowClick(event, {{ lead.id }})">
           <td class="quality">{{ '⭐' * (lead.intent_score or 1) }}</td>
           <td>
             <span class="status-pill sp-{{ lead.lead_status or 'new' }}" id="pill-{{ lead.id }}">
@@ -705,6 +783,55 @@ async function submitChangePassword() {
   const agentId = {{ agent.id }};
   let currentLeadId = null;
   let currentStatus = 'new';
+
+  // ── LEAD FILTERS ────────────────────────────────
+  // Same behaviour as the agency dashboard: each tab carries its value in
+  // data-filter, so nothing depends on the label text or the onclick string.
+  function activeFilter(groupId) {
+    const tab = document.querySelector('#' + groupId + ' .filter-tab.active');
+    return tab ? (tab.dataset.filter || 'all') : 'all';
+  }
+
+  function filterLeads(groupId, el) {
+    document.querySelectorAll('#' + groupId + ' .filter-tab')
+      .forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    applyLeadFilters();
+  }
+
+  function applyLeadFilters() {
+    const quality = activeFilter('quality-tabs');
+    const status = activeFilter('status-tabs');
+    const box = document.getElementById('lead-search');
+    const search = box ? box.value.toLowerCase().trim() : '';
+
+    let visible = 0;
+    document.querySelectorAll('.lead-row').forEach(row => {
+      const rowQuality = row.dataset.quality || '1';
+      const rowStatus = row.dataset.status || 'new';
+      const haystack = (row.dataset.search || '') + ' ' + row.textContent.toLowerCase();
+
+      const show = (quality === 'all' || rowQuality === quality)
+                && (status === 'all' || rowStatus === status)
+                && (!search || haystack.includes(search));
+      row.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+
+    const existing = document.getElementById('lead-no-match');
+    if (existing) existing.remove();
+    if (!visible) {
+      const tbody = document.querySelector('.table-wrap tbody');
+      if (tbody) {
+        const tr = document.createElement('tr');
+        tr.id = 'lead-no-match';
+        const colCount = document.querySelectorAll('.table-wrap thead th').length || 8;
+        tr.innerHTML = '<td colspan="' + colCount + '" class="no-match">'
+                     + 'No leads match these filters</td>';
+        tbody.appendChild(tr);
+      }
+    }
+  }
 
   function togglePanel(panelId) {
     const panel = document.getElementById(panelId);

@@ -591,12 +591,17 @@ async function submitChangePassword() {
   <!-- FILTER & SEARCH -->
   <div class="filter-section">
     <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+      <!-- Each tab carries its own value in data-filter. The filter code
+           used to read the tab's TEXT and parseInt() it, which is NaN for
+           every label here because they all start with an emoji - so
+           clicking any quality tab hid every lead. -->
       <div class="filter-tabs" id="quality-tabs">
-        <div class="filter-tab active" onclick="filterByQuality('all', this)">🌟 All</div>
-        <div class="filter-tab" onclick="filterByQuality(5, this)">🔥 Hot (5⭐)</div>
-        <div class="filter-tab" onclick="filterByQuality(4, this)">💎 High (4⭐)</div>
-        <div class="filter-tab" onclick="filterByQuality(3, this)">⚡ Medium (3⭐)</div>
-        <div class="filter-tab" onclick="filterByQuality(2, this)">💡 Low (2⭐)</div>
+        <div class="filter-tab active" data-filter="all" onclick="filterByQuality('all', this)">🌟 All</div>
+        <div class="filter-tab" data-filter="5" onclick="filterByQuality(5, this)">🔥 Hot (5⭐)</div>
+        <div class="filter-tab" data-filter="4" onclick="filterByQuality(4, this)">💎 High (4⭐)</div>
+        <div class="filter-tab" data-filter="3" onclick="filterByQuality(3, this)">⚡ Medium (3⭐)</div>
+        <div class="filter-tab" data-filter="2" onclick="filterByQuality(2, this)">💡 Low (2⭐)</div>
+        <div class="filter-tab" data-filter="1" onclick="filterByQuality(1, this)">🧊 Cold (1⭐)</div>
       </div>
       <input id="search-input" type="text" placeholder="🔍 Search name, email, budget..."
         oninput="searchLeads(this.value)"
@@ -605,18 +610,18 @@ async function submitChangePassword() {
     </div>
     <!-- Pipeline status filter -->
     <div class="filter-tabs" id="status-tabs">
-      <div class="filter-tab active" onclick="filterByStatus('all', this)">📋 All Status</div>
-      <div class="filter-tab" onclick="filterByStatus('new', this)">🆕 New</div>
-      <div class="filter-tab" onclick="filterByStatus('contacted', this)">📞 Contacted</div>
-      <div class="filter-tab" onclick="filterByStatus('meeting', this)">🤝 Meeting</div>
-      <div class="filter-tab" onclick="filterByStatus('closed', this)">✅ Closed</div>
-      <div class="filter-tab" onclick="filterByStatus('lost', this)">❌ Lost</div>
+      <div class="filter-tab active" data-filter="all" onclick="filterByStatus('all', this)">📋 All Status</div>
+      <div class="filter-tab" data-filter="new" onclick="filterByStatus('new', this)">🆕 New</div>
+      <div class="filter-tab" data-filter="contacted" onclick="filterByStatus('contacted', this)">📞 Contacted</div>
+      <div class="filter-tab" data-filter="meeting" onclick="filterByStatus('meeting', this)">🤝 Meeting</div>
+      <div class="filter-tab" data-filter="closed" onclick="filterByStatus('closed', this)">✅ Closed</div>
+      <div class="filter-tab" data-filter="lost" onclick="filterByStatus('lost', this)">❌ Lost</div>
     </div>
     <!-- Buyers vs sellers: two different jobs for an agent -->
     <div class="filter-tabs" id="type-tabs" style="margin-top:12px;">
-      <div class="filter-tab active" onclick="filterByType('all', this)">👥 Everyone</div>
-      <div class="filter-tab" onclick="filterByType('buyer', this)">🔍 Buyers ({{ buyer_count }})</div>
-      <div class="filter-tab" onclick="filterByType('seller', this)">🏠 Sellers ({{ seller_count }})</div>
+      <div class="filter-tab active" data-filter="all" onclick="filterByType('all', this)">👥 Everyone</div>
+      <div class="filter-tab" data-filter="buyer" onclick="filterByType('buyer', this)">🔍 Buyers ({{ buyer_count }})</div>
+      <div class="filter-tab" data-filter="seller" onclick="filterByType('seller', this)">🏠 Sellers ({{ seller_count }})</div>
     </div>
   </div>
 
@@ -664,6 +669,7 @@ async function submitChangePassword() {
       data-quality="{{ lead.intent_score or 1 }}"
       data-status="{{ lead.lead_status or 'new' }}"
       data-type="{{ lead.lead_type or 'buyer' }}"
+      data-search="{{ ((lead.name or '') ~ ' ' ~ (lead.email or '') ~ ' ' ~ (lead.budget or '') ~ ' ' ~ (lead.phone or '') ~ ' ' ~ (lead.whatsapp_number or ''))|lower }}"
       id="lead-{{ lead.id }}"
       onclick="handleRowClick(event, {{ lead.id }})">
     <td onclick="event.stopPropagation()">
@@ -1142,26 +1148,34 @@ async function submitChangePassword() {
     applyFilters();
   }
 
+  // Reads each group's chosen value from the active tab's data-filter
+  // attribute. The previous version derived the quality from the tab's
+  // visible TEXT and parseInt()'d it - every label starts with an emoji,
+  // so that was always NaN and any quality tab hid all leads. Status and
+  // type were scraped out of the onclick string, which breaks the moment
+  // anyone edits the markup.
+  function activeFilter(groupId) {
+    const tab = document.querySelector('#' + groupId + ' .filter-tab.active');
+    return tab ? (tab.dataset.filter || 'all') : 'all';
+  }
+
   function applyFilters() {
-    const qualityTab = document.querySelector('#quality-tabs .filter-tab.active');
-    const statusTab = document.querySelector('#status-tabs .filter-tab.active');
-    const typeTab = document.querySelector('#type-tabs .filter-tab.active');
-    const quality = qualityTab ? qualityTab.textContent : 'all';
-    const status = statusTab ? statusTab.getAttribute('onclick').match(/'([^']+)'/)?.[1] : 'all';
-    const type = typeTab ? typeTab.getAttribute('onclick').match(/'([^']+)'/)?.[1] : 'all';
-    const search = document.getElementById('search-input').value.toLowerCase().trim();
-    const rows = document.querySelectorAll('.lead-row');
+    const quality = activeFilter('quality-tabs');
+    const status = activeFilter('status-tabs');
+    const type = activeFilter('type-tabs');
+    const searchBox = document.getElementById('search-input');
+    const search = searchBox ? searchBox.value.toLowerCase().trim() : '';
 
-    rows.forEach(row => {
-      const rowQuality = parseInt(row.getAttribute('data-quality'));
-      const rowStatus = row.getAttribute('data-status') || 'new';
-      const rowType = row.getAttribute('data-type') || 'buyer';
-      const text = row.innerText.toLowerCase();
+    document.querySelectorAll('.lead-row').forEach(row => {
+      const rowQuality = row.dataset.quality || '1';
+      const rowStatus = row.dataset.status || 'new';
+      const rowType = row.dataset.type || 'buyer';
+      const haystack = (row.dataset.search || '') + ' ' + row.textContent.toLowerCase();
 
-      const qualityMatch = (quality === '🌟 All' || quality.includes('All')) || rowQuality === parseInt(quality);
+      const qualityMatch = quality === 'all' || rowQuality === quality;
       const statusMatch = status === 'all' || rowStatus === status;
       const typeMatch = type === 'all' || rowType === type;
-      const searchMatch = !search || text.includes(search);
+      const searchMatch = !search || haystack.includes(search);
 
       row.style.display = (qualityMatch && statusMatch && typeMatch && searchMatch) ? '' : 'none';
     });
