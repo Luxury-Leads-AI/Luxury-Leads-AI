@@ -3,15 +3,16 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Dashboard - {{ agent.name }}</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      background: #0f172a;
-      color: #e5e7eb;
+      background: var(--bg-elev);
+      color: var(--text);
     }
     .topbar {
-      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
       padding: 16px 28px;
       display: flex;
       justify-content: space-between;
@@ -59,20 +60,20 @@
       margin-bottom: 30px;
     }
     .stat-card {
-      background: #1e293b;
+      background: var(--surface);
       padding: 18px 20px;
       border-radius: 12px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
     }
     .stat-icon { font-size: 20px; margin-bottom: 8px; }
-    .stat-label { font-size: 12px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-label { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
     .stat-value { font-size: 28px; font-weight: bold; color: white; }
 
     .filter-section {
-      background: #1e293b;
+      background: var(--surface);
       padding: 16px 18px;
       border-radius: 12px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       margin-bottom: 16px;
     }
     .filter-row {
@@ -87,34 +88,34 @@
     .filter-tab {
       padding: 6px 13px;
       border-radius: 6px;
-      background: #0f172a;
-      color: #94a3b8;
+      background: var(--bg-elev);
+      color: var(--text-dim);
       cursor: pointer;
       font-size: 12.5px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       transition: all 0.2s;
       white-space: nowrap;
     }
-    .filter-tab:hover { background: #334155; color: white; }
+    .filter-tab:hover { background: var(--border); color: white; }
     .filter-tab.active {
-      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
       color: white;
       border-color: transparent;
     }
     .filter-search {
       padding: 7px 13px;
-      background: #0f172a;
-      border: 1px solid #334155;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
       border-radius: 6px;
-      color: #e2e8f0;
+      color: var(--text);
       font-size: 13px;
       width: 260px;
       max-width: 100%;
       outline: none;
     }
-    .filter-search:focus { border-color: #8b5cf6; }
+    .filter-search:focus { border-color: var(--brand); }
     .no-match {
-      text-align: center; padding: 30px 20px; color: #64748b; font-size: 14px;
+      text-align: center; padding: 30px 20px; color: var(--text-faint); font-size: 14px;
     }
 
     .section-title {
@@ -129,8 +130,8 @@
 
     /* Leads table - COMPACT, mirrors owner dashboard */
     .table-wrap {
-      background: #1e293b;
-      border: 1px solid #334155;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
       overflow-x: auto;
     }
@@ -139,18 +140,18 @@
       text-align: left;
       padding: 14px 16px;
       font-size: 11px;
-      color: #94a3b8;
+      color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      border-bottom: 1px solid #334155;
-      background: #0f172a;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elev);
       white-space: nowrap;
     }
     td {
       padding: 14px 16px;
       font-size: 14px;
-      color: #e2e8f0;
-      border-bottom: 1px solid #26334a;
+      color: var(--text);
+      border-bottom: 1px solid var(--border-soft);
       vertical-align: middle;
     }
     tr:last-child td { border-bottom: none; }
@@ -171,13 +172,13 @@
     }
     .sp-new { background: rgba(56,189,248,0.15); color: #38bdf8; }
     .sp-contacted { background: rgba(245,158,11,0.15); color: #f59e0b; }
-    .sp-meeting { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .sp-meeting { background: rgba(167,139,250,0.15); color: var(--brand-2); }
     .sp-closed { background: rgba(34,197,94,0.15); color: #22c55e; }
-    .sp-lost { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .sp-lost { background: rgba(148,163,184,0.15); color: var(--text-dim); }
 
     .btn-view {
       background: rgba(139,92,246,0.12);
-      color: #a78bfa;
+      color: var(--brand-2);
       border: 1px solid rgba(139,92,246,0.3);
       border-radius: 6px;
       font-size: 12px;
@@ -191,9 +192,9 @@
     .empty-state {
       text-align: center;
       padding: 50px 20px;
-      color: #64748b;
-      background: #1e293b;
-      border: 1px solid #334155;
+      color: var(--text-faint);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
     }
     .empty-icon { font-size: 50px; margin-bottom: 14px; opacity: 0.4; }
@@ -205,8 +206,8 @@
       gap: 16px;
     }
     .appt-card {
-      background: #1e293b;
-      border: 1px solid #334155;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
       padding: 18px;
     }
@@ -215,11 +216,11 @@
     .appt-card.status-completed { border-left: 4px solid #38bdf8; }
     .appt-card.status-cancelled { border-left: 4px solid #ef4444; opacity: 0.75; }
     .appt-name { font-size: 16px; font-weight: 700; color: white; margin-bottom: 8px; }
-    .appt-detail { font-size: 13px; color: #cbd5e1; margin-bottom: 5px; }
+    .appt-detail { font-size: 13px; color: var(--text-dim); margin-bottom: 5px; }
     .appt-notes {
       font-size: 12px;
-      color: #94a3b8;
-      background: #0f172a;
+      color: var(--text-dim);
+      background: var(--bg-elev);
       border-radius: 6px;
       padding: 8px 10px;
       margin-top: 10px;
@@ -233,10 +234,10 @@
       flex-wrap: wrap;
     }
     .status-select {
-      background: #0f172a;
-      border: 1px solid #334155;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
       border-radius: 6px;
-      color: #e2e8f0;
+      color: var(--text);
       font-size: 12px;
       padding: 7px 9px;
       outline: none;
@@ -246,7 +247,7 @@
     .note-btn {
       flex: 1;
       background: rgba(139,92,246,0.12);
-      color: #a78bfa;
+      color: var(--brand-2);
       border: 1px solid rgba(139,92,246,0.3);
       border-radius: 6px;
       font-size: 11.5px;
@@ -283,18 +284,18 @@
     .owner-notes-panel {
       display: none;
       margin-top: 10px;
-      background: #0f172a;
-      border: 1px solid #334155;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 10px 12px;
     }
     .owner-notes-panel.open { display: block; }
-    .owner-note-item { padding: 6px 0; border-bottom: 1px solid #1e293b; font-size: 12px; }
+    .owner-note-item { padding: 6px 0; border-bottom: 1px solid var(--surface); font-size: 12px; }
     .owner-note-item:last-child { border-bottom: none; }
     .owner-note-author { font-weight: 700; color: #f59e0b; }
-    .owner-note-meta { color: #64748b; margin-top: 2px; font-size: 11px; }
-    .owner-note-text { color: #cbd5e1; margin-top: 3px; }
-    .no-owner-notes { color: #64748b; font-style: italic; font-size: 12px; }
+    .owner-note-meta { color: var(--text-faint); margin-top: 2px; font-size: 11px; }
+    .owner-note-text { color: var(--text-dim); margin-top: 3px; }
+    .no-owner-notes { color: var(--text-faint); font-style: italic; font-size: 12px; }
 
     /* Lead Detail Modal (mirrors owner dashboard) */
     .modal-overlay {
@@ -310,26 +311,26 @@
     }
     .modal-overlay.open { display: flex; }
     .modal {
-      background: #1e293b;
+      background: var(--surface);
       border-radius: 16px;
       width: 100%;
       max-width: 640px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
     .modal-header {
       padding: 20px 24px;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
     .modal-title { font-size: 18px; font-weight: 700; color: white; }
     .modal-close {
-      background: transparent; border: none; color: #94a3b8;
+      background: transparent; border: none; color: var(--text-dim);
       font-size: 22px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
     }
-    .modal-close:hover { background: #334155; color: white; }
+    .modal-close:hover { background: var(--border); color: white; }
     .modal-body { padding: 24px; }
 
     .info-grid {
@@ -341,13 +342,83 @@
     .info-item label {
       display: block;
       font-size: 11px;
-      color: #94a3b8;
+      color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 4px;
       font-weight: 600;
     }
-    .info-item .info-value { font-size: 14px; color: #e2e8f0; }
+    .info-item .info-value { font-size: 14px; color: var(--text); }
+    .type-badge {
+      display: inline-block; padding: 3px 9px; border-radius: 12px;
+      font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
+    .type-buyer { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); }
+    .type-seller { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .timeline-cell { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
+    .timeline-cell.none { color: var(--text-faint); }
+    .score-breakdown { display: grid; gap: 6px; margin-top: 4px; }
+    .score-line {
+      display: flex; align-items: flex-start; gap: 10px;
+      font-size: 13px; color: var(--text-dim); line-height: 1.45;
+    }
+    .score-pts {
+      flex: 0 0 auto; min-width: 26px; text-align: center;
+      border-radius: 6px; padding: 1px 6px; font-size: 11.5px; font-weight: 700;
+    }
+    .score-pts.earned { background: rgba(34,197,94,0.16); color: #4ade80; }
+    .score-pts.zero { background: rgba(148,163,184,0.12); color: var(--text-faint); }
+    .score-empty { font-size: 13px; color: var(--text-faint); }
+    /* ── LATEST UPDATES FEED ──
+       Every status change, note and outcome lands here as well as in an
+       inbox, so neither side has to rely on email having been read. */
+    .feed-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; margin-bottom: 22px; overflow: hidden;
+    }
+    .feed-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px; cursor: pointer; user-select: none;
+      background: rgba(139,92,246,0.07);
+      border-bottom: 1px solid transparent;
+    }
+    .feed-panel.open .feed-head { border-bottom-color: var(--border); }
+    .feed-head:hover { background: rgba(139,92,246,0.13); }
+    .feed-title { font-size: 15px; font-weight: 700; color: var(--text); }
+    .feed-badge {
+      /* #dc2626, not #ef4444: white on the lighter red measures 3.8:1 */
+      background: #dc2626; color: white; border-radius: 20px;
+      padding: 1px 9px; font-size: 11.5px; font-weight: 700; line-height: 1.6;
+    }
+    .feed-chevron { margin-left: auto; color: var(--text-dim); font-size: 13px; transition: transform .18s; }
+    .feed-panel.open .feed-chevron { transform: rotate(180deg); }
+    .feed-list { display: none; max-height: 340px; overflow-y: auto; }
+    .feed-panel.open .feed-list { display: block; }
+    .feed-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px 18px; border-bottom: 1px solid var(--border-soft);
+    }
+    .feed-item:last-child { border-bottom: none; }
+    .feed-item.unread { background: rgba(139,92,246,0.08); }
+    .feed-item.unread .feed-text { font-weight: 600; }
+    .feed-icon { font-size: 16px; line-height: 1.4; flex: 0 0 auto; }
+    .feed-body { flex: 1 1 auto; min-width: 0; }
+    .feed-text { font-size: 13.5px; color: var(--text); line-height: 1.5; word-break: break-word; }
+    .feed-meta { font-size: 11.5px; color: var(--text-faint); margin-top: 3px; }
+    .feed-action {
+      flex: 0 0 auto; background: rgba(139,92,246,0.18); color: var(--brand-3);
+      border: 1px solid rgba(139,92,246,0.35); border-radius: 6px;
+      padding: 4px 10px; font-size: 11.5px; font-weight: 600;
+      cursor: pointer; text-decoration: none; white-space: nowrap;
+    }
+    .feed-action:hover { background: rgba(139,92,246,0.3); color: #fff; }
+    .feed-empty { padding: 20px 18px; font-size: 13px; color: var(--text-faint); }
+    @media (max-width: 640px) {
+      .feed-head { padding: 12px 14px; }
+      .feed-item { padding: 11px 14px; gap: 9px; }
+      .feed-text { font-size: 13px; }
+    }
+
 
     .status-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
     .status-btn {
@@ -356,39 +427,39 @@
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
-      border: 1px solid #334155;
-      background: #0f172a;
-      color: #94a3b8;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text-dim);
       transition: all 0.2s;
     }
-    .status-btn:hover { border-color: #8b5cf6; }
+    .status-btn:hover { border-color: var(--brand); }
     .status-btn.active-status { border-color: transparent; color: white; }
     .status-btn-new.active-status { background: #38bdf8; }
     .status-btn-contacted.active-status { background: #f59e0b; }
-    .status-btn-meeting.active-status { background: #a78bfa; }
+    .status-btn-meeting.active-status { background: var(--brand-2); }
     .status-btn-closed.active-status { background: #22c55e; }
-    .status-btn-lost.active-status { background: #94a3b8; }
+    .status-btn-lost.active-status { background: var(--text-dim); }
 
     .insights-box {
-      background: #0f172a;
+      background: var(--bg-elev);
       border-radius: 8px;
       padding: 14px;
       font-size: 13px;
-      color: #cbd5e1;
+      color: var(--text-dim);
       line-height: 1.6;
       margin-bottom: 20px;
     }
 
     .related-item {
-      background: #0f172a;
-      border: 1px solid #334155;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 12px;
       margin-bottom: 8px;
       font-size: 13px;
     }
-    .related-agent { font-weight: 700; color: #a78bfa; }
-    .related-meta { color: #cbd5e1; margin-top: 4px; }
+    .related-agent { font-weight: 700; color: var(--brand-2); }
+    .related-meta { color: var(--text-dim); margin-top: 4px; }
     .related-status {
       display: inline-block;
       padding: 2px 9px;
@@ -402,37 +473,37 @@
     .ras-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; }
     .ras-completed { background: rgba(56,189,248,0.15); color: #38bdf8; }
     .ras-cancelled { background: rgba(239,68,68,0.15); color: #f87171; }
-    .related-notes { color: #64748b; font-style: italic; margin-top: 6px; white-space: pre-wrap; }
-    .no-related-appts { color: #64748b; font-size: 13px; font-style: italic; padding: 8px 0; }
+    .related-notes { color: var(--text-faint); font-style: italic; margin-top: 6px; white-space: pre-wrap; }
+    .no-related-appts { color: var(--text-faint); font-size: 13px; font-style: italic; padding: 8px 0; }
 
     .notes-list { margin-bottom: 16px; }
     .note-item {
-      background: #0f172a;
+      background: var(--bg-elev);
       border-radius: 8px;
       padding: 10px 12px;
       margin-bottom: 8px;
       font-size: 13px;
     }
-    .note-text { color: #e2e8f0; }
-    .note-meta { color: #64748b; font-size: 11px; margin-top: 4px; }
-    .note-author { color: #a78bfa; font-weight: 700; }
-    .no-notes { color: #64748b; font-size: 13px; font-style: italic; padding: 8px 0; }
+    .note-text { color: var(--text); }
+    .note-meta { color: var(--text-faint); font-size: 11px; margin-top: 4px; }
+    .note-author { color: var(--brand-2); font-weight: 700; }
+    .no-notes { color: var(--text-faint); font-size: 13px; font-style: italic; padding: 8px 0; }
     .note-input-area { display: flex; gap: 8px; }
     .note-input {
       flex: 1;
-      background: #0f172a;
-      border: 1px solid #334155;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 10px 12px;
-      color: #e2e8f0;
+      color: var(--text);
       font-size: 13px;
       font-family: inherit;
       resize: vertical;
       outline: none;
     }
-    .note-input:focus { border-color: #8b5cf6; }
+    .note-input:focus { border-color: var(--brand); }
     .btn-add-note {
-      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
       color: white;
       border: none;
       border-radius: 8px;
@@ -473,40 +544,40 @@
 
 <!-- CHANGE PASSWORD MODAL -->
 <div id="followup-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center; padding:20px;">
-  <div style="background:#1e293b; padding:26px; border-radius:12px; width:100%; max-width:420px; border:1px solid #334155;">
+  <div style="background:var(--surface); padding:26px; border-radius:12px; width:100%; max-width:420px; border:1px solid var(--border);">
     <h3 style="color:white; font-size:17px; margin-bottom:6px;">📅 Book Another Viewing</h3>
-    <p style="color:#94a3b8; font-size:13px; margin-bottom:16px;">
-      For <strong id="followup-customer" style="color:#e2e8f0;"></strong>. The earlier viewing is
+    <p style="color:var(--text-dim); font-size:13px; margin-bottom:16px;">
+      For <strong id="followup-customer" style="color:var(--text);"></strong>. The earlier viewing is
       marked &ldquo;wants other options&rdquo; automatically.
     </p>
-    <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:5px;">Date</label>
+    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:5px;">Date</label>
     <input type="date" id="followup-date"
-           style="width:100%; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; padding:10px; margin-bottom:13px; font-size:14px;">
-    <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:5px;">Time</label>
+           style="width:100%; background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:10px; margin-bottom:13px; font-size:14px;">
+    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:5px;">Time</label>
     <select id="followup-time"
-            style="width:100%; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; padding:10px; margin-bottom:13px; font-size:14px;">
+            style="width:100%; background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:10px; margin-bottom:13px; font-size:14px;">
       <option>10:00 AM</option><option>12:00 PM</option><option>2:00 PM</option>
       <option>4:00 PM</option><option>6:00 PM</option>
     </select>
-    <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:5px;">Property</label>
+    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:5px;">Property</label>
     <input type="text" id="followup-property" placeholder="Which property this time?"
-           style="width:100%; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; padding:10px; margin-bottom:18px; font-size:14px;">
+           style="width:100%; background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:10px; margin-bottom:18px; font-size:14px;">
     <div style="display:flex; gap:10px;">
-      <button onclick="submitFollowup()" style="flex:1; background:#8b5cf6; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Book Viewing</button>
-      <button onclick="closeFollowup()" style="flex:1; background:#334155; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Cancel</button>
+      <button onclick="submitFollowup()" style="flex:1; background:var(--brand); color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Book Viewing</button>
+      <button onclick="closeFollowup()" style="flex:1; background:var(--border); color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Cancel</button>
     </div>
   </div>
 </div>
 
 <div id="changePasswordModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
-  <div style="background:#1e293b; padding:30px; border-radius:12px; width:100%; max-width:380px; border:1px solid #334155;">
-    <h3 style="color:#8b5cf6; margin-bottom:16px;">🔑 Change Password</h3>
+  <div style="background:var(--surface); padding:30px; border-radius:12px; width:100%; max-width:380px; border:1px solid var(--border);">
+    <h3 style="color:var(--brand); margin-bottom:16px;">🔑 Change Password</h3>
     <input type="password" id="newPasswordInput" placeholder="New password (min 6 characters)"
-           style="width:100%; padding:12px; border-radius:6px; border:1px solid #334155; background:#0f172a; color:white; font-size:14px; box-sizing:border-box; margin-bottom:14px;">
+           style="width:100%; padding:12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-elev); color:white; font-size:14px; box-sizing:border-box; margin-bottom:14px;">
     <div id="changePasswordMsg" style="font-size:13px; margin-bottom:10px; display:none;"></div>
     <div style="display:flex; gap:10px;">
       <button onclick="submitChangePassword()" style="flex:1; background:#22c55e; color:black; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Save</button>
-      <button onclick="closeChangePassword()" style="flex:1; background:#334155; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Cancel</button>
+      <button onclick="closeChangePassword()" style="flex:1; background:var(--border); color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer;">Cancel</button>
     </div>
   </div>
 </div>
@@ -580,6 +651,44 @@ async function submitChangePassword() {
     </div>
   </div>
 
+
+  <!-- ── LATEST UPDATES ── -->
+  <div class="feed-panel{{ ' open' if activity_unseen else '' }}" id="feed-panel">
+    <div class="feed-head" onclick="toggleFeed('/agent-mark-activity-seen/{{ agent.id }}')">
+      <span class="feed-title">🔔 Latest updates</span>
+      {% if activity_unseen %}
+      <span class="feed-badge" id="feed-badge">{{ activity_unseen }} new</span>
+      {% endif %}
+      <span class="feed-chevron">▾</span>
+    </div>
+    <div class="feed-list">
+      {% for e in activity %}
+      <div class="feed-item{{ ' unread' if not e.seen_by_agent }}">
+        <span class="feed-icon">{{ activity_icon(e.action) }}</span>
+        <div class="feed-body">
+          <div class="feed-text">{{ e.summary }}</div>
+          <div class="feed-meta">
+            {{ e.created_at.strftime('%b %d, %I:%M %p') if e.created_at else '' }}
+            · {{ e.actor_name }}
+          </div>
+        </div>
+        {% if e.subject_type == 'lead' and e.subject_id %}
+        <button class="feed-action" onclick="openModal({{ e.subject_id }})">View</button>
+        {% elif e.subject_type == 'appointment' and e.subject_id %}
+        <a class="feed-action" href="#appt-card-{{ e.subject_id }}">Open</a>
+        {% elif e.subject_type == 'listing' %}
+        <a class="feed-action" href="/listings/{{ agent.agency_id }}">Open</a>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="feed-empty">
+        Nothing yet. Status changes, notes and viewing outcomes from
+        everyone on the team will show up here.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
   <!-- MY LEADS -->
   <div class="section-title">🎯 My Assigned Leads</div>
   {% if leads %}
@@ -607,17 +716,25 @@ async function submitChangePassword() {
       <div class="filter-tab" data-filter="closed" onclick="filterLeads('status-tabs', this)">✅ Closed</div>
       <div class="filter-tab" data-filter="lost" onclick="filterLeads('status-tabs', this)">❌ Lost</div>
     </div>
+    <!-- Buyers vs sellers: two different jobs, same as the owner's view -->
+    <div class="filter-tabs" id="type-tabs">
+      <div class="filter-tab active" data-filter="all" onclick="filterLeads('type-tabs', this)">👥 Everyone</div>
+      <div class="filter-tab" data-filter="buyer" onclick="filterLeads('type-tabs', this)">🔍 Buyers</div>
+      <div class="filter-tab" data-filter="seller" onclick="filterLeads('type-tabs', this)">🏠 Sellers</div>
+    </div>
   </div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
+          <th>Type</th>
           <th>Quality</th>
           <th>Status</th>
           <th>Name</th>
           <th>Email</th>
           <th>Contact</th>
           <th>Budget</th>
+          <th>Timeline</th>
           <th>Date</th>
           <th>Actions</th>
         </tr>
@@ -627,8 +744,16 @@ async function submitChangePassword() {
         <tr class="lead-row" id="lead-row-{{ lead.id }}"
             data-quality="{{ lead.intent_score or 1 }}"
             data-status="{{ lead.lead_status or 'new' }}"
-            data-search="{{ ((lead.name or '') ~ ' ' ~ (lead.email or '') ~ ' ' ~ (lead.budget or '') ~ ' ' ~ (lead.phone or '') ~ ' ' ~ (lead.whatsapp_number or ''))|lower }}"
+            data-type="{{ lead.lead_type or 'buyer' }}"
+            data-search="{{ ((lead.name or '') ~ ' ' ~ (lead.email or '') ~ ' ' ~ (lead.budget or '') ~ ' ' ~ (lead.phone or '') ~ ' ' ~ (lead.whatsapp_number or '') ~ ' ' ~ timeline_label(lead.timeline))|lower }}"
             onclick="handleRowClick(event, {{ lead.id }})">
+          <td>
+            {% if lead.lead_type == 'seller' %}
+            <span class="type-badge type-seller">🏠 Seller</span>
+            {% else %}
+            <span class="type-badge type-buyer">🔍 Buyer</span>
+            {% endif %}
+          </td>
           <td class="quality">{{ '⭐' * (lead.intent_score or 1) }}</td>
           <td>
             <span class="status-pill sp-{{ lead.lead_status or 'new' }}" id="pill-{{ lead.id }}">
@@ -652,7 +777,11 @@ async function submitChangePassword() {
             {% endif %}
           </td>
           <td>{{ lead.budget or '—' }}</td>
-          <td style="white-space:nowrap; font-size:12px; color:#94a3b8;">{{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else '—' }}</td>
+          <td class="timeline-cell {{ '' if lead.timeline else 'none' }}"
+              {% if lead.timeline_raw %}title="{{ lead.timeline_raw }}"{% endif %}>
+            {{ timeline_label(lead.timeline) }}
+          </td>
+          <td style="white-space:nowrap; font-size:12px; color:var(--text-dim);">{{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else '—' }}</td>
           <td onclick="event.stopPropagation()">
             <button class="btn-view" onclick="openModal({{ lead.id }})">👁 View</button>
           </td>
@@ -749,6 +878,7 @@ async function submitChangePassword() {
         <div class="info-item"><label>💰 Budget</label><div class="info-value" id="modal-budget">—</div></div>
         <div class="info-item"><label>📅 Date</label><div class="info-value" id="modal-date">—</div></div>
         <div class="info-item"><label>📞 Prefers</label><div class="info-value" id="modal-pref">—</div></div>
+        <div class="info-item"><label>⏱️ Timeline</label><div class="info-value" id="modal-timeline">—</div></div>
         <div class="info-item"><label>🌟 Quality</label><div class="info-value" id="modal-quality">—</div></div>
       </div>
 
@@ -761,13 +891,16 @@ async function submitChangePassword() {
         <button class="status-btn status-btn-lost" onclick="updateStatus('lost')">❌ Lost</button>
       </div>
 
+      <div class="section-title">🌟 Why this rating</div>
+      <div class="score-breakdown" id="modal-score-breakdown"></div>
+
       <div class="section-title">📝 Customer Insights</div>
       <div class="insights-box" id="modal-insights">—</div>
 
       <div class="section-title">🔗 Appointments &amp; Activity</div>
       <div id="related-appts-list"><div class="no-related-appts">Loading...</div></div>
 
-      <div class="section-title">🗒️ Notes <span id="notes-count" style="color:#64748b; font-weight:400;"></span></div>
+      <div class="section-title">🗒️ Notes <span id="notes-count" style="color:var(--text-faint); font-weight:400;"></span></div>
       <div class="notes-list" id="notes-list"></div>
       <div class="note-input-area">
         <textarea class="note-input" id="note-input" placeholder="Add a note..."
@@ -802,6 +935,7 @@ async function submitChangePassword() {
   function applyLeadFilters() {
     const quality = activeFilter('quality-tabs');
     const status = activeFilter('status-tabs');
+    const type = activeFilter('type-tabs');
     const box = document.getElementById('lead-search');
     const search = box ? box.value.toLowerCase().trim() : '';
 
@@ -809,10 +943,12 @@ async function submitChangePassword() {
     document.querySelectorAll('.lead-row').forEach(row => {
       const rowQuality = row.dataset.quality || '1';
       const rowStatus = row.dataset.status || 'new';
+      const rowType = row.dataset.type || 'buyer';
       const haystack = (row.dataset.search || '') + ' ' + row.textContent.toLowerCase();
 
       const show = (quality === 'all' || rowQuality === quality)
                 && (status === 'all' || rowStatus === status)
+                && (type === 'all' || rowType === type)
                 && (!search || haystack.includes(search));
       row.style.display = show ? '' : 'none';
       if (show) visible++;
@@ -862,6 +998,9 @@ async function submitChangePassword() {
       document.getElementById('modal-date').textContent = d.created_at;
       document.getElementById('modal-pref').textContent = (d.contact_preference || 'email').replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase());
       document.getElementById('modal-quality').textContent = '⭐'.repeat(d.intent_score) + ` (${d.intent_score}/5)`;
+      document.getElementById('modal-timeline').textContent =
+        d.timeline_raw ? `${d.timeline} — "${d.timeline_raw}"` : (d.timeline || 'Not given');
+      renderScoreBreakdown(d.quality_reasons || []);
       document.getElementById('modal-insights').textContent = d.message || 'No insights available';
 
       if (d.whatsapp_link) {
@@ -943,6 +1082,48 @@ async function submitChangePassword() {
     } catch(e) {
       alert('❌ Network error');
     }
+  }
+
+
+  // The panel opens itself when something is waiting, because an update
+  // nobody expands is an update nobody read. Opening it is what marks
+  // this side as caught up - the other side's unread count is untouched.
+  function toggleFeed(markSeenUrl) {
+    const panel = document.getElementById('feed-panel');
+    if (!panel) return;
+    const wasOpen = panel.classList.contains('open');
+    panel.classList.toggle('open');
+    if (!wasOpen) markFeedSeen(markSeenUrl);
+  }
+
+  function markFeedSeen(url) {
+    const badge = document.getElementById('feed-badge');
+    if (!badge || badge.dataset.cleared === '1') return;
+    badge.dataset.cleared = '1';
+    fetch(url, { method: 'POST' })
+      .then(() => {
+        badge.remove();
+        document.querySelectorAll('.feed-item.unread')
+          .forEach(i => i.classList.remove('unread'));
+      })
+      .catch(() => { badge.dataset.cleared = '0'; });
+  }
+
+  function renderScoreBreakdown(reasons) {
+    const box = document.getElementById('modal-score-breakdown');
+    if (!box) return;
+    if (!reasons.length) {
+      box.innerHTML = '<div class="score-empty">This lead was captured before ratings '
+        + 'recorded their reasoning. New leads show the full breakdown here.</div>';
+      return;
+    }
+    box.innerHTML = reasons.map(r => {
+      const earned = r.points && r.points !== '0';
+      return `<div class="score-line">
+        <span class="score-pts ${earned ? 'earned' : 'zero'}">${r.points}</span>
+        <span>${r.reason}</span>
+      </div>`;
+    }).join('');
   }
 
   function renderNotes(notes) {

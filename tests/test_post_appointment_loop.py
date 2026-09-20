@@ -246,7 +246,14 @@ def test_feedback_page_other_choice_embeds_the_chat_widget_for_this_agency(clien
         app_module.db.session.commit()
 
 
-def test_feedback_page_not_interested_choice_records_outcome_without_notifying(client, monkeypatch):
+def test_feedback_page_not_interested_choice_records_outcome_and_tells_the_agency(client, monkeypatch):
+    """Changed Sept 20 on Moaz's instruction: "whenever an agent or agency
+    owner updates a status, all relevant parties are notified".
+
+    This used to stay completely silent. A customer saying "not interested"
+    is the one answer an agency most needs to hear - it is the difference
+    between a lead to re-work and a lead to stop chasing - and the only way
+    anyone found out was by noticing the customer had gone quiet."""
     sent = _last_sent_email(monkeypatch)
     agency = make_agency()
     appt = make_appointment(agency.id, checkin_token="fb-token-no")
@@ -254,7 +261,8 @@ def test_feedback_page_not_interested_choice_records_outcome_without_notifying(c
         res = client.get("/appointment-feedback/fb-token-no?choice=no")
         html = res.get_data(as_text=True)
         assert "Thanks for letting us know" in html
-        assert sent == []
+        assert [m["to"] for m in sent] == [agency.email]
+        assert "not interested" in sent[0]["subject"].lower()
 
         app_module.db.session.refresh(appt)
         assert appt.outcome == "not_interested"
@@ -355,6 +363,12 @@ def test_set_appointment_outcome_blocks_a_different_agency(client):
 # ── /agent-set-appointment-outcome ───────────────────────────────────
 
 def test_agent_set_appointment_outcome_for_own_appointment(client, monkeypatch):
+    """Changed Sept 20: the owner now hears about it.
+
+    The old rule was "a human recording an outcome already knows it, so
+    send nothing" - true of the person clicking, but it left the agency
+    owner with no idea what was happening on their own viewings. The
+    acting agent still gets no email about their own click."""
     sent = _last_sent_email(monkeypatch)
     agency = make_agency()
     agent = make_agent(agency.id)
@@ -367,7 +381,9 @@ def test_agent_set_appointment_outcome_for_own_appointment(client, monkeypatch):
         app_module.db.session.refresh(appt)
         assert appt.outcome == "not_interested"
         assert appt.outcome_source == "agent"
-        assert sent == []
+        recipients = [m["to"] for m in sent]
+        assert recipients == [agency.email], recipients
+        assert agent.email not in recipients
     finally:
         app_module.db.session.delete(appt)
         app_module.db.session.delete(agent)

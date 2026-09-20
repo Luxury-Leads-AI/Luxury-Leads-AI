@@ -3,6 +3,7 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Super Admin Panel - Luxury Leads AI</title>
+  <link rel="stylesheet" href="/static/theme.css">
     <style>
         * {
             margin: 0;
@@ -11,21 +12,21 @@
         }
         body { 
             font-family: Arial, sans-serif;
-            background: #0f172a;
+            background: var(--bg-elev);
             color: white;
             padding: 0;
         }
         .header {
-            background: #020617;
+            background: var(--bg);
             padding: 20px 40px;
-            border-bottom: 2px solid #1e293b;
+            border-bottom: 2px solid var(--surface);
         }
         .header h2 {
             color: #38bdf8;
             font-size: 24px;
         }
         .header p {
-            color: #64748b;
+            color: var(--text-faint);
             font-size: 14px;
             margin-top: 5px;
         }
@@ -35,7 +36,7 @@
             margin: 0 auto;
         }
         .section {
-            background: #1e293b;
+            background: var(--surface);
             padding: 30px;
             border-radius: 12px;
             margin-bottom: 30px;
@@ -53,9 +54,9 @@
         }
         input, textarea, button { 
             padding: 12px;
-            border: 1px solid #334155;
+            border: 1px solid var(--border);
             border-radius: 6px;
-            background: #0f172a;
+            background: var(--bg-elev);
             color: white;
             font-size: 14px;
         }
@@ -99,7 +100,7 @@
         /* The agency table has 11 columns, so on a phone it has to scroll
            INSIDE its own box - it used to drag the whole page sideways. */
         .table-wrap {
-            border: 1px solid #334155;
+            border: 1px solid var(--border);
             border-radius: 12px;
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
@@ -111,22 +112,22 @@
             border-collapse: collapse;
         }
         th, td {
-            border: 1px solid #334155;
+            border: 1px solid var(--border);
             padding: 14px;
             text-align: left;
         }
         th { 
-            background: #0f172a;
+            background: var(--bg-elev);
             color: #38bdf8;
             font-weight: bold;
         }
         tr:hover {
-            background: #334155;
+            background: var(--border);
         }
         .empty-state {
             text-align: center;
             padding: 40px;
-            color: #64748b;
+            color: var(--text-faint);
         }
         .status-active {
             color: #22c55e;
@@ -139,7 +140,7 @@
         .loading {
             text-align: center;
             padding: 20px;
-            color: #64748b;
+            color: var(--text-faint);
         }
         .stats-grid {
             display: grid;
@@ -148,13 +149,13 @@
             margin-bottom: 30px;
         }
         .stat-card {
-            background: #1e293b;
+            background: var(--surface);
             border-radius: 12px;
             padding: 18px 20px;
         }
         .stat-label {
             font-size: 12px;
-            color: #94a3b8;
+            color: var(--text-dim);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 8px;
@@ -166,7 +167,7 @@
         }
         .stat-sub {
             font-size: 12px;
-            color: #64748b;
+            color: var(--text-faint);
             margin-top: 4px;
         }
         .tier-pill {
@@ -178,13 +179,13 @@
             text-transform: uppercase;
         }
         .tier-solo { background: rgba(56,189,248,0.15); color: #38bdf8; }
-        .tier-agency { background: rgba(139,92,246,0.15); color: #a78bfa; }
+        .tier-agency { background: rgba(139,92,246,0.15); color: var(--brand-2); }
         .tier-corporation { background: rgba(16,185,129,0.15); color: #34d399; }
         .sub-trialing { color: #eab308; font-weight: bold; }
         .sub-active { color: #22c55e; font-weight: bold; }
         .sub-cancelled { color: #ef4444; font-weight: bold; }
         .trial-expired { color: #ef4444; font-size: 11px; }
-        .trial-ok { color: #64748b; font-size: 11px; }
+        .trial-ok { color: var(--text-faint); font-size: 11px; }
 
         @media (max-width: 768px) {
             .header { padding: 16px; flex-wrap: wrap; gap: 12px; }
@@ -206,7 +207,7 @@
         <h2>⚙️ Super Admin Panel</h2>
         <p>Manage all agencies and their configurations</p>
     </div>
-    <a href="/super-admin-logout" style="color:#94a3b8; text-decoration:none; font-size:14px; border:1px solid #334155; padding:8px 16px; border-radius:6px;">🚪 Logout</a>
+    <a href="/super-admin-logout" style="color:var(--text-dim); text-decoration:none; font-size:14px; border:1px solid var(--border); padding:8px 16px; border-radius:6px;">🚪 Logout</a>
 </div>
 
 <div class="container">
@@ -355,7 +356,7 @@ async function loadAgencies() {
                 tbody.innerHTML += `
                     <tr>
                         <td><strong>${a.id}</strong></td>
-                        <td>${a.name}<br><span style="font-size:11px; color:#64748b;">${a.assistant_name || "AI Assistant"}</span></td>
+                        <td>${a.name}<br><span style="font-size:11px; color:var(--text-faint);">${a.assistant_name || "AI Assistant"}</span></td>
                         <td>${a.owner_name || "—"}</td>
                         <td>${a.email}</td>
                         <td><span class="tier-pill tier-${tier}">${tier}</span></td>

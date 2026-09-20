@@ -3,9 +3,10 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agency Owner Login - Luxury Leads AI</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body {
-      background: #111;
+      background: var(--bg);
       color: white;
       font-family: Arial, sans-serif;
       display: flex;
@@ -15,7 +16,7 @@
       margin: 0;
     }
     .box {
-      background: #1e1e1e;
+      background: var(--surface);
       padding: 40px;
       border-radius: 12px;
       width: 100%;
@@ -25,13 +26,13 @@
     h3 {
       margin-top: 0;
       text-align: center;
-      color: #38bdf8;
+      color: var(--brand-2);
       font-size: 24px;
       margin-bottom: 10px;
     }
     .subtitle {
       text-align: center;
-      color: #888;
+      color: var(--text-faint);
       font-size: 14px;
       margin-bottom: 30px;
     }
@@ -39,29 +40,29 @@
       display: block;
       margin-bottom: 8px;
       font-size: 14px;
-      color: #aaa;
+      color: var(--text-dim);
     }
     input {
       width: 100%;
       padding: 12px;
       margin-bottom: 20px;
-      border: 1px solid #333;
+      border: 1px solid var(--border);
       border-radius: 6px;
-      background: #222;
+      background: var(--bg-elev);
       color: white;
       font-size: 14px;
       box-sizing: border-box;
     }
     input:focus {
       outline: none;
-      border-color: #38bdf8;
+      border-color: var(--brand-2);
     }
     button {
       width: 100%;
       padding: 14px;
       border: none;
       border-radius: 6px;
-      background: #38bdf8;
+      background: var(--brand-2);
       color: white;
       font-size: 16px;
       font-weight: bold;
@@ -69,15 +70,15 @@
       transition: background 0.3s;
     }
     button:hover {
-      background: #0ea5e9;
+      background: var(--brand-dark);
     }
     button:disabled {
-      background: #333;
+      background: var(--border);
       cursor: not-allowed;
     }
     .helper-text {
       font-size: 12px;
-      color: #666;
+      color: var(--text-faint);
       margin-top: -15px;
       margin-bottom: 20px;
     }
@@ -85,10 +86,10 @@
       text-align: center;
       margin-top: 20px;
       font-size: 14px;
-      color: #888;
+      color: var(--text-faint);
     }
     .signup-link a {
-      color: #38bdf8;
+      color: var(--brand-2);
       text-decoration: none;
     }
     .signup-link a:hover {

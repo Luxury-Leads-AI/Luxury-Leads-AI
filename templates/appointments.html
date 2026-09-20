@@ -3,17 +3,18 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Appointments - {{ agency.name }}</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      background: #0f172a;
-      color: #e5e7eb;
+      background: var(--bg-elev);
+      color: var(--text);
     }
 
     .topbar {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand-dark) 100%);
       padding: 16px 28px;
       display: flex;
       justify-content: space-between;
@@ -49,7 +50,7 @@
     }
     .topbar-actions a:hover, .topbar-actions button:hover { transform: translateY(-2px); }
     .btn-leads { background: #22c55e; color: white; }
-    .btn-new-appt { background: #667eea; color: white; }
+    .btn-new-appt { background: var(--brand-dark); color: white; }
     .btn-logout { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3) !important; }
 
     .container { padding: 30px 40px; max-width: 1400px; margin: 0 auto; }
@@ -63,21 +64,21 @@
     }
 
     .stat-card {
-      background: #1e293b;
+      background: var(--surface);
       padding: 18px 20px;
       border-radius: 12px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
     }
     .stat-icon { font-size: 20px; margin-bottom: 8px; }
-    .stat-label { font-size: 12px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-label { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
     .stat-value { font-size: 28px; font-weight: bold; color: white; }
 
     .filter-section {
-      background: #1e293b;
+      background: var(--surface);
       padding: 20px;
       border-radius: 12px;
       margin-bottom: 20px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -89,16 +90,16 @@
     .filter-tab {
       padding: 8px 16px;
       border-radius: 6px;
-      background: #0f172a;
-      color: #94a3b8;
+      background: var(--bg-elev);
+      color: var(--text-dim);
       cursor: pointer;
       font-size: 14px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       transition: all 0.2s;
     }
-    .filter-tab:hover { background: #334155; color: white; }
+    .filter-tab:hover { background: var(--border); color: white; }
     .filter-tab.active {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand-dark) 100%);
       color: white;
       border-color: transparent;
     }
@@ -116,7 +117,7 @@
     .agent-group-header {
       display: flex; justify-content: space-between; align-items: center;
       gap: 12px; flex-wrap: wrap;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid var(--border);
       padding-bottom: 10px; margin-bottom: 16px;
     }
     .agent-group-name {
@@ -128,28 +129,28 @@
       border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600;
     }
     .agent-group-link {
-      font-size: 12.5px; color: #94a3b8; text-decoration: none;
-      border: 1px solid #334155; border-radius: 6px; padding: 5px 11px;
+      font-size: 12.5px; color: var(--text-dim); text-decoration: none;
+      border: 1px solid var(--border); border-radius: 6px; padding: 5px 11px;
     }
-    .agent-group-link:hover { color: white; border-color: #64748b; }
+    .agent-group-link:hover { color: white; border-color: var(--text-faint); }
 
     .stage-row {
       display: flex; align-items: center; gap: 8px;
       margin-bottom: 12px; flex-wrap: wrap;
     }
-    .stage-label { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+    .stage-label { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
     .stage-select {
       flex: 1; min-width: 150px;
-      background: #0f172a; border: 1px solid #334155; border-radius: 6px;
-      color: #e2e8f0; font-size: 12.5px; padding: 7px 9px;
+      background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); font-size: 12.5px; padding: 7px 9px;
       outline: none; cursor: pointer;
     }
     .stage-select:focus { border-color: #f59e0b; }
 
     .appt-card {
-      background: #1e293b;
+      background: var(--surface);
       border-radius: 12px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       padding: 20px;
       transition: transform 0.2s, box-shadow 0.2s;
       position: relative;
@@ -172,7 +173,7 @@
     }
 
     .appt-name { font-size: 18px; font-weight: 700; color: white; }
-    .appt-created { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .appt-created { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
 
     .status-badge {
       padding: 4px 12px;
@@ -195,13 +196,13 @@
       gap: 10px;
       margin-bottom: 8px;
       font-size: 14px;
-      color: #cbd5e1;
+      color: var(--text-dim);
     }
     .detail-icon { font-size: 16px; width: 20px; flex-shrink: 0; }
-    .detail-value { color: #e2e8f0; }
+    .detail-value { color: var(--text); }
 
     .appt-datetime {
-      background: #0f172a;
+      background: var(--bg-elev);
       border-radius: 8px;
       padding: 12px;
       margin-bottom: 16px;
@@ -209,7 +210,7 @@
       gap: 20px;
     }
     .datetime-item { text-align: center; flex: 1; }
-    .datetime-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .datetime-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
     .datetime-value { font-size: 16px; font-weight: 700; color: white; }
 
     .appt-property {
@@ -245,17 +246,17 @@
     .btn-complete:hover { background: rgba(56,189,248,0.3); }
     .btn-cancel { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
     .btn-cancel:hover { background: rgba(239,68,68,0.3); }
-    .btn-delete-appt { background: rgba(148,163,184,0.1); color: #94a3b8; border: 1px solid #334155; }
+    .btn-delete-appt { background: rgba(148,163,184,0.1); color: var(--text-dim); border: 1px solid var(--border); }
     .btn-delete-appt:hover { background: rgba(239,68,68,0.15); color: #f87171; }
 
     .empty-state {
       text-align: center;
       padding: 80px 20px;
-      color: #64748b;
+      color: var(--text-faint);
       grid-column: 1 / -1;
     }
     .empty-icon { font-size: 64px; margin-bottom: 20px; opacity: 0.4; }
-    .empty-title { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: #94a3b8; }
+    .empty-title { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: var(--text-dim); }
     .empty-text { font-size: 14px; line-height: 1.6; }
 
     /* New Appointment Modal */
@@ -272,17 +273,17 @@
     .modal-overlay.open { display: flex; }
 
     .modal {
-      background: #1e293b;
+      background: var(--surface);
       border-radius: 16px;
       width: 100%;
       max-width: 520px;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
 
     .modal-header {
       padding: 20px 24px;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -290,11 +291,11 @@
     .modal-title { font-size: 18px; font-weight: 700; color: white; }
     .modal-close {
       background: transparent; border: none;
-      color: #94a3b8; font-size: 22px;
+      color: var(--text-dim); font-size: 22px;
       cursor: pointer; padding: 4px 8px;
       border-radius: 6px;
     }
-    .modal-close:hover { background: #334155; color: white; }
+    .modal-close:hover { background: var(--border); color: white; }
 
     .modal-body { padding: 24px; }
 
@@ -302,7 +303,7 @@
     .form-label {
       display: block;
       font-size: 12px;
-      color: #94a3b8;
+      color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 6px;
@@ -310,23 +311,23 @@
     }
     .form-input, .form-select {
       width: 100%;
-      background: #0f172a;
-      border: 1px solid #334155;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 10px 14px;
-      color: #e2e8f0;
+      color: var(--text);
       font-size: 14px;
       outline: none;
       transition: border-color 0.2s;
     }
-    .form-input:focus, .form-select:focus { border-color: #667eea; }
-    .form-select option { background: #1e293b; }
+    .form-input:focus, .form-select:focus { border-color: var(--brand-dark); }
+    .form-select option { background: var(--surface); }
 
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
     .btn-submit {
       width: 100%;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand-dark) 100%);
       color: white;
       border: none;
       padding: 12px;
@@ -397,13 +398,13 @@
   </div>
 
   <!-- SLOT CAPACITY SETTING -->
-  <div style="background:#1e293b; border:1px solid #334155; border-radius:12px; padding:16px 20px; margin-bottom:20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-    <span style="font-size:14px; color:#94a3b8; font-weight:600;">⚙️ Max viewings per time slot:</span>
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+    <span style="font-size:14px; color:var(--text-dim); font-weight:600;">⚙️ Max viewings per time slot:</span>
     <input type="number" id="slot-capacity" min="1" max="20" value="{{ agency.max_viewings_per_slot or 2 }}"
-      style="width:70px; padding:8px 10px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:14px; outline:none; text-align:center;">
+      style="width:70px; padding:8px 10px; background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:14px; outline:none; text-align:center;">
     <button onclick="saveCapacity()"
-      style="background:#667eea; color:white; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">Save</button>
-    <span style="font-size:12px; color:#64748b;">How many customers can book the same date & time. Full slots are automatically hidden from the AI.{% if agency.tier in ['agency', 'corporation'] %} On the Agency/Corporation plan, effective capacity is based on your active agent count.{% endif %}</span>
+      style="background:var(--brand-dark); color:white; border:none; padding:8px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">Save</button>
+    <span style="font-size:12px; color:var(--text-faint);">How many customers can book the same date & time. Full slots are automatically hidden from the AI.{% if agency.tier in ['agency', 'corporation'] %} On the Agency/Corporation plan, effective capacity is based on your active agent count.{% endif %}</span>
   </div>
 
   <!-- FILTER -->
@@ -420,8 +421,8 @@
     </div>
     <input type="text" placeholder="🔍 Search by name or email..."
       id="appt-search" oninput="searchAppts(this.value)"
-      style="padding: 8px 14px; background: #0f172a; border: 1px solid #334155;
-             border-radius: 6px; color: #e2e8f0; font-size: 14px; width: 260px; outline: none;">
+      style="padding: 8px 14px; background: var(--bg-elev); border: 1px solid var(--border);
+             border-radius: 6px; color: var(--text); font-size: 14px; width: 260px; outline: none;">
   </div>
 
   <!-- APPOINTMENTS, GROUPED BY AGENT -->
@@ -461,9 +462,9 @@
 
         {% if agency.tier in ['agency', 'corporation'] %}
         <div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-          <span style="font-size:12px; color:#94a3b8;">👤 Agent:</span>
+          <span style="font-size:12px; color:var(--text-dim);">👤 Agent:</span>
           <select onchange="reassignAppt({{ appt.id }}, this.value)"
-            style="background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:12px; padding:5px 8px; outline:none;">
+            style="background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; padding:5px 8px; outline:none;">
             <option value="">Unassigned</option>
             {% for ag in agents %}
             <option value="{{ ag.id }}" {{ 'selected' if appt.agent_id == ag.id }}>{{ ag.name }}</option>
@@ -498,7 +499,7 @@
           {% if appt.notes %}
           <div class="detail-row">
             <span class="detail-icon">📝</span>
-            <span class="detail-value" style="color:#94a3b8; white-space:pre-wrap;">{{ appt.notes }}</span>
+            <span class="detail-value" style="color:var(--text-dim); white-space:pre-wrap;">{{ appt.notes }}</span>
           </div>
           {% endif %}
         </div>
@@ -552,8 +553,8 @@
       <button class="modal-close" onclick="closeFollowup()">✕</button>
     </div>
     <div class="modal-body">
-      <p style="color:#94a3b8; font-size:13px; margin-bottom:16px;">
-        Booking a follow-up viewing for <strong id="followup-customer" style="color:#e2e8f0;"></strong>.
+      <p style="color:var(--text-dim); font-size:13px; margin-bottom:16px;">
+        Booking a follow-up viewing for <strong id="followup-customer" style="color:var(--text);"></strong>.
         They stay with the same agent where possible, and the earlier viewing is marked
         &ldquo;wants other options&rdquo;.
       </p>

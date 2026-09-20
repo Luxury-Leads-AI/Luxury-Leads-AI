@@ -5,97 +5,137 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Luxury Leads AI - Convert Website Visitors into Qualified Real Estate Leads</title>
     <meta name="description" content="AI-powered lead generation for real estate agencies. Capture and qualify leads 24/7 with intelligent conversations.">
+  <link rel="stylesheet" href="/static/theme.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
-            color: #333;
+            color: var(--text);
         }
 
-        /* Hero Section */
+        /* ── Hero ── */
         .hero {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 100px 20px;
+            background: var(--grad-hero);
+            border-bottom: 1px solid var(--border-soft);
+            padding: 110px 20px 96px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
         }
+        /* A soft violet bloom behind the headline, so the hero has a
+           light source rather than being a flat block of colour. */
+        .hero::after {
+            content: "";
+            position: absolute; inset: auto 0 -55% 0; height: 90%;
+            background: radial-gradient(60% 100% at 50% 0%,
+                        rgba(139,92,246,0.30), transparent 70%);
+            pointer-events: none;
+        }
+        .hero > * { position: relative; z-index: 1; }
 
         .hero h1 {
             font-size: 48px;
             margin-bottom: 20px;
             font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #fff;
         }
 
         .hero p {
             font-size: 24px;
             margin-bottom: 40px;
-            opacity: 0.95;
+            color: var(--text-dim);
         }
 
         .cta-button {
             display: inline-block;
-            background: white;
-            color: #667eea;
+            background: var(--grad-brand);
+            color: #fff;
             padding: 18px 40px;
             border-radius: 50px;
             text-decoration: none;
             font-size: 18px;
             font-weight: 600;
-            transition: transform 0.3s, box-shadow 0.3s;
+            box-shadow: var(--glow);
+            transition: transform 0.25s, box-shadow 0.25s;
         }
 
         .cta-button:hover {
             transform: translateY(-3px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            box-shadow: var(--glow-strong);
         }
 
-        /* Features Section */
+        /* ── Features ── */
         .features {
             max-width: 1200px;
-            margin: 80px auto;
+            margin: 90px auto;
             padding: 0 20px;
         }
 
         .features h2 {
             text-align: center;
             font-size: 36px;
-            margin-bottom: 60px;
-            color: #2d3748;
+            margin-bottom: 56px;
+            color: #fff;
         }
 
         .feature-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 40px;
+            gap: 28px;
         }
 
         .feature {
             text-align: center;
-            padding: 30px;
+            padding: 36px 28px;
+            background: var(--surface);
+            border: 1px solid var(--brand-line);
+            border-radius: 20px;
+            box-shadow: var(--glow);
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+        }
+
+        .feature:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--glow-strong);
         }
 
         .feature-icon {
-            font-size: 48px;
-            margin-bottom: 20px;
+            font-size: 44px;
+            margin-bottom: 18px;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 78px; height: 78px; border-radius: 20px;
+            background: var(--bg-elev);
+            border: 1px solid var(--brand-line);
+            box-shadow: 0 0 22px -6px rgba(139,92,246,0.55);
         }
 
         .feature h3 {
-            font-size: 24px;
-            margin-bottom: 15px;
-            color: #2d3748;
+            font-size: 22px;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        /* The short brand rule under each heading, as on the reference. */
+        .feature h3::after {
+            content: "";
+            display: block; width: 54px; height: 3px; margin: 14px auto 14px;
+            border-radius: 3px; background: var(--grad-brand);
         }
 
         .feature p {
-            color: #718096;
-            font-size: 16px;
+            color: var(--text-dim);
+            font-size: 15.5px;
         }
 
-        /* Stats Section */
+        /* ── Stats ── */
         .stats {
-            background: #f7fafc;
-            padding: 60px 20px;
+            background: var(--bg-elev);
+            border-top: 1px solid var(--border-soft);
+            border-bottom: 1px solid var(--border-soft);
+            padding: 62px 20px;
             text-align: center;
         }
 
@@ -109,70 +149,80 @@
 
         .stat h3 {
             font-size: 48px;
-            color: #667eea;
-            margin-bottom: 10px;
+            color: var(--brand-2);
+            margin-bottom: 6px;
         }
 
         .stat p {
-            color: #718096;
+            color: var(--text-dim);
             font-size: 18px;
         }
 
-        /* CTA Section */
+        /* ── Closing call to action ── */
         .cta-section {
-            background: #2d3748;
-            color: white;
-            padding: 80px 20px;
+            background: var(--surface);
+            border-top: 1px solid var(--border-soft);
+            color: var(--text);
+            padding: 84px 20px;
             text-align: center;
         }
 
         .cta-section h2 {
             font-size: 36px;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
+            color: #fff;
         }
 
         .cta-section p {
             font-size: 20px;
-            margin-bottom: 40px;
-            opacity: 0.9;
+            margin-bottom: 38px;
+            color: var(--text-dim);
         }
 
         .cta-secondary {
-            background: #667eea;
-            color: white;
+            background: var(--grad-brand);
+            color: #fff;
             padding: 18px 40px;
             border-radius: 50px;
             text-decoration: none;
             font-size: 18px;
             font-weight: 600;
             display: inline-block;
-            transition: background 0.3s;
+            box-shadow: var(--glow);
+            transition: transform 0.25s, box-shadow 0.25s;
         }
 
         .cta-secondary:hover {
-            background: #5568d3;
+            transform: translateY(-3px);
+            box-shadow: var(--glow-strong);
         }
 
-        /* Footer */
+        /* ── Footer ── */
         footer {
-            background: #1a202c;
-            color: white;
-            padding: 40px 20px;
+            background: var(--bg);
+            border-top: 1px solid var(--border-soft);
+            color: var(--text-dim);
+            padding: 44px 20px;
             text-align: center;
         }
 
         footer a {
-            color: #667eea;
+            color: var(--brand-2);
             text-decoration: none;
             margin: 0 15px;
         }
 
-        footer a:hover {
-            text-decoration: underline;
-        }
+        footer a:hover { color: var(--brand-3); text-decoration: underline; }
 
-        .footer-links {
-            margin: 20px 0;
+        .footer-links { margin: 20px 0; }
+
+        @media (max-width: 640px) {
+            .hero { padding: 72px 18px 64px; }
+            .hero h1 { font-size: 33px; }
+            .hero p { font-size: 18px; }
+            .features { margin: 60px auto; }
+            .features h2, .cta-section h2 { font-size: 27px; }
+            .feature { padding: 28px 22px; }
         }
     </style>
 </head>
@@ -262,4 +312,4 @@
         <p style="margin-top: 20px;">&copy; 2026 Luxury Leads AI. All rights reserved.</p>
     </footer>
 </body>
-</html>
+</html>

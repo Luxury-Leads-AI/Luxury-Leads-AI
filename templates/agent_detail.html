@@ -4,15 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ agent.name }} - Leads &amp; Viewings</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      background: #0f172a;
-      color: #e5e7eb;
+      background: var(--bg-elev);
+      color: var(--text);
     }
     .topbar {
-      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
       padding: 18px 28px;
       display: flex;
       justify-content: space-between;
@@ -37,38 +38,38 @@
       margin-bottom: 28px;
     }
     .meta-card {
-      background: #1e293b; border: 1px solid #334155;
+      background: var(--surface); border: 1px solid var(--border);
       border-radius: 10px; padding: 15px 17px;
     }
     .meta-label {
-      font-size: 11px; color: #94a3b8; text-transform: uppercase;
+      font-size: 11px; color: var(--text-dim); text-transform: uppercase;
       letter-spacing: 0.5px; margin-bottom: 6px;
     }
     .meta-value { font-size: 17px; font-weight: 600; color: white; word-break: break-word; }
-    .meta-value.muted { color: #64748b; font-weight: 400; font-size: 14px; }
+    .meta-value.muted { color: var(--text-faint); font-weight: 400; font-size: 14px; }
 
     .section-title {
       font-size: 17px; font-weight: 700; color: white;
       margin: 26px 0 14px; display: flex; align-items: center; gap: 9px;
     }
     .count-pill {
-      background: rgba(167,139,250,0.15); color: #a78bfa;
+      background: rgba(167,139,250,0.15); color: var(--brand-2);
       border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600;
     }
 
     .table-wrap {
-      background: #1e293b; border: 1px solid #334155;
+      background: var(--surface); border: 1px solid var(--border);
       border-radius: 12px; overflow-x: auto;
     }
     table { width: 100%; border-collapse: collapse; min-width: 560px; }
     th {
-      text-align: left; padding: 12px 15px; font-size: 11px; color: #94a3b8;
+      text-align: left; padding: 12px 15px; font-size: 11px; color: var(--text-dim);
       text-transform: uppercase; letter-spacing: 0.5px;
-      border-bottom: 1px solid #334155; background: #0f172a; white-space: nowrap;
+      border-bottom: 1px solid var(--border); background: var(--bg-elev); white-space: nowrap;
     }
     td {
-      padding: 12px 15px; font-size: 14px; color: #e2e8f0;
-      border-bottom: 1px solid #26334a; vertical-align: middle;
+      padding: 12px 15px; font-size: 14px; color: var(--text);
+      border-bottom: 1px solid var(--border-soft); vertical-align: middle;
     }
     tr:last-child td { border-bottom: none; }
 
@@ -80,19 +81,23 @@
     .st-confirmed { background: rgba(34,197,94,0.15); color: #22c55e; }
     .st-completed { background: rgba(56,189,248,0.15); color: #38bdf8; }
     .st-wants_to_buy { background: rgba(34,197,94,0.2); color: #4ade80; }
-    .st-wants_other_options { background: rgba(167,139,250,0.15); color: #a78bfa; }
-    .st-not_interested { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .st-wants_other_options { background: rgba(167,139,250,0.15); color: var(--brand-2); }
+    .st-not_interested { background: rgba(148,163,184,0.15); color: var(--text-dim); }
     .st-cancelled { background: rgba(239,68,68,0.15); color: #f87171; }
     .lead-new { background: rgba(56,189,248,0.15); color: #38bdf8; }
     .lead-contacted { background: rgba(245,158,11,0.15); color: #f59e0b; }
-    .lead-meeting { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .lead-meeting { background: rgba(167,139,250,0.15); color: var(--brand-2); }
     .lead-closed { background: rgba(34,197,94,0.15); color: #22c55e; }
-    .lead-lost { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .lead-lost { background: rgba(148,163,184,0.15); color: var(--text-dim); }
 
     .quality { color: #fbbf24; white-space: nowrap; }
+    .type-buyer { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); }
+    .type-seller { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .timeline-cell { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
+    .timeline-cell.none { color: var(--text-faint); }
     .empty {
-      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
-      padding: 40px 20px; text-align: center; color: #64748b;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 40px 20px; text-align: center; color: var(--text-faint);
     }
 
     @media (max-width: 640px) {
@@ -148,19 +153,30 @@
     <table>
       <thead>
         <tr>
-          <th>Name</th><th>Contact</th><th>Budget</th>
-          <th>Quality</th><th>Status</th><th>Captured</th>
+          <th>Type</th><th>Name</th><th>Contact</th><th>Budget</th>
+          <th>Timeline</th><th>Quality</th><th>Status</th><th>Captured</th>
         </tr>
       </thead>
       <tbody>
         {% for lead in leads %}
         <tr>
+          <td>
+            {% if lead.lead_type == 'seller' %}
+            <span class="pill type-seller">🏠 Seller</span>
+            {% else %}
+            <span class="pill type-buyer">🔍 Buyer</span>
+            {% endif %}
+          </td>
           <td><strong>{{ lead.name or 'Unknown' }}</strong></td>
-          <td style="font-size:13px; color:#94a3b8;">{{ lead.email or '—' }}</td>
+          <td style="font-size:13px; color:var(--text-dim);">{{ lead.email or '—' }}</td>
           <td>{{ lead.budget or '—' }}</td>
+          <td class="timeline-cell {{ '' if lead.timeline else 'none' }}"
+              {% if lead.timeline_raw %}title="{{ lead.timeline_raw }}"{% endif %}>
+            {{ timeline_label(lead.timeline) }}
+          </td>
           <td class="quality">{{ '⭐' * (lead.intent_score or 1) }}</td>
           <td><span class="pill lead-{{ lead.lead_status or 'new' }}">{{ (lead.lead_status or 'new')|upper }}</span></td>
-          <td style="font-size:13px; color:#94a3b8;">
+          <td style="font-size:13px; color:var(--text-dim);">
             {{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else '—' }}
           </td>
         </tr>
@@ -187,7 +203,7 @@
         {% set stage = stage_of(appt) %}
         <tr>
           <td><strong>{{ appt.customer_name or 'Unknown' }}</strong><br>
-            <span style="font-size:12px; color:#94a3b8;">{{ appt.customer_email or '' }}</span>
+            <span style="font-size:12px; color:var(--text-dim);">{{ appt.customer_email or '' }}</span>
           </td>
           <td style="font-size:13px;">{{ appt.property_interest or '—' }}</td>
           <td style="font-size:13px;">{{ appt.appointment_date or '—' }}</td>

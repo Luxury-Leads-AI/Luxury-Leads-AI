@@ -3,10 +3,11 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign Up - Luxury Leads AI</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body {
       font-family: Arial, sans-serif;
-      background: #111;
+      background: var(--bg);
       color: white;
       display: flex;
       justify-content: center;
@@ -20,13 +21,13 @@
     }
     h2 {
       margin-top: 0;
-      color: #38bdf8;
+      color: var(--brand-2);
       text-align: center;
       margin-bottom: 10px;
     }
     .subtitle {
       text-align: center;
-      color: #888;
+      color: var(--text-faint);
       font-size: 14px;
       margin-bottom: 30px;
     }
@@ -40,8 +41,8 @@
     }
     .choice-card {
       display: block;
-      background: #1c1c1c;
-      border: 2px solid #333;
+      background: var(--surface);
+      border: 2px solid var(--border);
       border-radius: 12px;
       padding: 30px 20px;
       text-align: center;
@@ -51,18 +52,18 @@
       box-shadow: 0 8px 30px rgba(0,0,0,0.5);
     }
     .choice-card:hover {
-      border-color: #38bdf8;
+      border-color: var(--brand-2);
       transform: translateY(-4px);
     }
     .choice-icon { font-size: 40px; margin-bottom: 12px; }
     .choice-name { font-size: 20px; font-weight: bold; margin-bottom: 6px; }
-    .choice-price { font-size: 22px; font-weight: bold; color: #38bdf8; margin-bottom: 10px; }
-    .choice-price span { font-size: 12px; color: #888; font-weight: normal; }
-    .choice-desc { font-size: 13px; color: #999; line-height: 1.5; margin-bottom: 16px; }
+    .choice-price { font-size: 22px; font-weight: bold; color: var(--brand-2); margin-bottom: 10px; }
+    .choice-price span { font-size: 12px; color: var(--text-faint); font-weight: normal; }
+    .choice-desc { font-size: 13px; color: var(--text-faint); line-height: 1.5; margin-bottom: 16px; }
     .choice-cta {
       display: inline-block;
-      background: #38bdf8;
-      color: #111;
+      background: var(--brand-2);
+      color: var(--bg);
       font-weight: bold;
       font-size: 13px;
       padding: 8px 18px;
@@ -79,18 +80,18 @@
     }
     .contact-note {
       text-align: center;
-      color: #666;
+      color: var(--text-faint);
       font-size: 13px;
       margin-top: 24px;
     }
-    .contact-note a { color: #38bdf8; text-decoration: none; }
+    .contact-note a { color: var(--brand-2); text-decoration: none; }
     .login-link {
       text-align: center;
       margin-top: 20px;
       font-size: 14px;
-      color: #888;
+      color: var(--text-faint);
     }
-    .login-link a { color: #38bdf8; text-decoration: none; }
+    .login-link a { color: var(--brand-2); text-decoration: none; }
   </style>
 </head>
 <body>
