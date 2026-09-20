@@ -1,0 +1,237 @@
+/* ============================================================
+   Luxury Leads AI — dark premium theme
+   ------------------------------------------------------------
+   One palette for the whole product. Before this, the marketing
+   site was light indigo-on-white, the login pages were near-black
+   with cyan, and the dashboards were slate with purple: three
+   different products as far as a visitor could tell.
+
+   Everything here is a variable so a colour is changed once, in
+   one place, and every page follows. Page-specific rules stay in
+   that page's own <style> block and reference these names.
+   ============================================================ */
+
+:root {
+  /* Surfaces, darkest to lightest */
+  --bg:          #070b1a;   /* the page itself */
+  --bg-elev:     #0b1226;   /* sunken areas: table headers, inputs, code */
+  --surface:     #101935;   /* cards, panels, modals */
+  --surface-2:   #16203f;   /* hover, raised rows */
+  --surface-3:   #1d2952;   /* pressed / selected */
+
+  /* Lines */
+  --border:      #22305c;
+  --border-soft: #1a2547;
+
+  /* Type */
+  --text:        #e8ecf8;
+  --text-dim:    #9aa8c7;
+  --text-faint:  #8090b5;   /* 5.4:1 on --surface - WCAG AA for body text */
+
+  /* Brand */
+  --brand:       #8b5cf6;
+  --brand-2:     #a78bfa;
+  --brand-3:     #c4b5fd;
+  --brand-dark:  #6d28d9;
+  --brand-soft:  rgba(139, 92, 246, 0.14);
+  --brand-line:  rgba(139, 92, 246, 0.42);
+  --grad-brand:  linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); /* white on this: 5.7:1+ */
+  --grad-hero:   linear-gradient(135deg, #1b1145 0%, #0b1226 55%, #070b1a 100%);
+
+  /* Status */
+  --success:     #4ade80;
+  --success-bg:  rgba(34, 197, 94, 0.14);
+  --warn:        #fbbf24;
+  --warn-bg:     rgba(251, 191, 36, 0.14);
+  --danger:      #f87171;
+  --danger-bg:   rgba(239, 68, 68, 0.14);
+  --info:        #38bdf8;
+  --info-bg:     rgba(56, 189, 248, 0.14);
+
+  /* Depth. The glow is what makes a card read as premium rather
+     than as a grey box: a hairline of brand colour, then a soft
+     coloured shadow cast well below the card. */
+  --ring:        0 0 0 1px rgba(139, 92, 246, 0.20);
+  --glow:        var(--ring), 0 18px 40px -20px rgba(88, 40, 220, 0.75);
+  --glow-strong: 0 0 0 1px rgba(139, 92, 246, 0.42),
+                 0 0 26px -6px rgba(139, 92, 246, 0.38),
+                 0 24px 50px -22px rgba(88, 40, 220, 0.9);
+  --shadow-soft: 0 10px 28px -16px rgba(3, 7, 24, 0.9);
+  --radius:      14px;
+}
+
+html { background: var(--bg); }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  /* A single, very wide violet wash behind everything, so the page
+     has depth without any element having to carry a gradient. */
+  background-image:
+    radial-gradient(1100px 620px at 12% -8%,  rgba(109, 40, 217, 0.26), transparent 62%),
+    radial-gradient(900px 520px at 100% 0%,   rgba(139, 92, 246, 0.16), transparent 58%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── The premium treatment ──────────────────────────────────
+   Applied by class name so every page picks it up without each
+   one re-declaring a shadow. Cards lift slightly on hover; the
+   ones that are just containers for text do not. */
+.stat-card, .meta-card, .card, .feed-panel, .appt-card, .listing-card,
+.agent-card, .chart-card, .panel, .pricing-card, .feature-card,
+.table-wrap, .modal, .box, .login-box, .choice-card, .plan-card,
+.legal-card, .filter-section, .insights-box, .empty, .empty-state {
+  box-shadow: var(--glow);
+}
+
+/* The auth pages are a single card on an empty page: give it the
+   border the dashboards' cards have, so it reads as the same product. */
+.box, .login-box {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius);
+}
+
+.stat-card, .meta-card, .card, .appt-card, .listing-card,
+.agent-card, .pricing-card, .feature-card, .choice-card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.stat-card:hover, .meta-card:hover, .card:hover, .appt-card:hover,
+.listing-card:hover, .agent-card:hover, .pricing-card:hover,
+.feature-card:hover, .choice-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glow-strong);
+  border-color: var(--brand-line);
+}
+
+.modal { box-shadow: var(--glow-strong); }
+
+/* ── Form controls ───────────────────────────────────────── */
+input, textarea, select {
+  color: var(--text);
+  font-family: inherit;
+}
+input::placeholder, textarea::placeholder { color: var(--text-faint); }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--brand) !important;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+}
+select option { background: var(--surface); color: var(--text); }
+
+/* ── Scrollbars ──────────────────────────────────────────── */
+* { scrollbar-color: var(--surface-3) transparent; scrollbar-width: thin; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--surface-3); border-radius: 8px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--brand-dark); background-clip: content-box; }
+
+::selection { background: rgba(139, 92, 246, 0.35); color: #fff; }
+
+/* Respect a reader who has asked for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+  .stat-card:hover, .meta-card:hover, .card:hover, .appt-card:hover,
+  .listing-card:hover, .agent-card:hover, .pricing-card:hover,
+  .feature-card:hover, .choice-card:hover { transform: none; }
+}
+
+
+/* ── Top bars ──────────────────────────────────────────────
+   Every dashboard has one, each declaring its own lavender
+   gradient. On the deep palette that read as a bright band
+   stapled to the top of a dark page, so they are unified here
+   into a dark brand bar with a lit edge underneath. */
+.topbar, .header, .top-bar {
+  background: linear-gradient(135deg, #1a1040 0%, #150e33 45%, #0d1228 100%) !important;
+  border-bottom: 1px solid var(--brand-line);
+  box-shadow: 0 10px 34px -22px rgba(88, 40, 220, 0.95),
+              inset 0 -1px 0 rgba(139, 92, 246, 0.25);
+  position: relative;
+}
+/* A thin lit rule along the bottom edge - the detail that makes a
+   flat bar look deliberate rather than unfinished. */
+.topbar::after, .header::after, .top-bar::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: linear-gradient(90deg, transparent,
+              rgba(167, 139, 250, 0.75) 22%, rgba(167, 139, 250, 0.75) 78%, transparent);
+  pointer-events: none;
+}
+
+/* ── Top-bar navigation ────────────────────────────────────
+   Each dashboard's nav links carried their own saturated fill,
+   set inline: eight buttons, eight colours, a row of sweets
+   across the top of an otherwise restrained page. They become
+   one glass pill here, with the brand hairline doing the work.
+   !important is needed only because those fills are inline. */
+.topbar .actions a,
+.topbar .actions button,
+.topbar .topbar-actions a,
+.topbar .topbar-actions button,
+.header .actions a,
+.header .actions button {
+  background: rgba(139, 92, 246, 0.12) !important;
+  color: var(--brand-3) !important;
+  border: 1px solid var(--brand-line) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(6px);
+}
+.topbar .actions a:hover,
+.topbar .actions button:hover,
+.topbar .topbar-actions a:hover,
+.topbar .topbar-actions button:hover,
+.header .actions a:hover,
+.header .actions button:hover {
+  background: rgba(139, 92, 246, 0.26) !important;
+  color: #fff !important;
+  border-color: var(--brand-2) !important;
+  box-shadow: 0 0 18px -4px rgba(139, 92, 246, 0.7) !important;
+}
+
+/* The two that destroy something keep a warning colour, because
+   "Clear All Leads" should never look like "Listings". */
+.topbar .clear-all-btn, .topbar .actions .clear-all-btn {
+  background: rgba(245, 158, 11, 0.16) !important;
+  color: #fcd34d !important;
+  border-color: rgba(245, 158, 11, 0.5) !important;
+}
+.topbar .clear-all-btn:hover, .topbar .actions .clear-all-btn:hover {
+  background: rgba(245, 158, 11, 0.3) !important;
+  color: #fff !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 18px -4px rgba(245, 158, 11, 0.75) !important;
+}
+
+
+/* ── Readability fixes found by a WCAG pass over every page ──
+   Each of these was a real "white text on a pale fill" case that
+   measured under 4.5:1 with the eye happy to skate over it. */
+
+/* Primary buttons: the solid --brand-2 fill they used gives white
+   text 2.7:1. The brand gradient is the same hue, three shades
+   deeper, and reads as more premium besides. */
+button[type="submit"], .cta-button:not(.secondary), .btn-primary,
+.submit-btn, .save-btn, .btn-view, .feed-action {
+  background-image: var(--grad-brand) !important;
+  background-color: #6d28d9 !important;
+  color: #fff !important;
+  border-color: transparent;
+}
+.feed-action { border: 1px solid var(--brand-line) !important; }
+.cta-button.secondary, .btn-secondary {
+  background-image: none !important;
+  background-color: var(--surface) !important;
+  color: var(--brand-3) !important;
+  border: 1px solid var(--brand-line) !important;
+}
+
+/* Small white-on-colour pills: #ef4444 gives 3.8:1, #dc2626 gives 4.8:1. */
+.feed-badge, .btn-delete, .badge-danger {
+  background-color: #dc2626 !important;
+  color: #fff !important;
+}

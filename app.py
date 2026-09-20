@@ -361,6 +361,32 @@ def is_number_question(ai_text):
     return False
 
 
+def is_timeline_question(ai_text):
+    """True if the AI message is asking WHEN the customer wants to move,
+    buy, or sell. Timeline is the single strongest predictor of whether a
+    lead is worth an agent's afternoon, and until now nobody was asking."""
+    ai_lower = (ai_text or '').lower()
+    english_patterns = [
+        "how soon", "what's your timeline", "what is your timeline",
+        "your timeline", "time frame", "timeframe", "how quickly",
+        "when are you hoping", "when are you looking", "when would you like to move",
+        "when do you want to move", "when do you need", "when are you planning",
+        "looking to move", "hoping to move", "hoping to sell", "looking to sell by",
+        "planning to sell", "when would you want to", "how urgent",
+    ]
+    if any(pat in ai_lower for pat in english_patterns):
+        return True
+    # Other languages: a "when" word next to a move/buy/sell verb.
+    when_words = ['cuándo', 'cuando', 'quand', 'wann', 'quando', 'wanneer',
+                  'ne zaman', 'kiedy', 'kogda']
+    move_words = ['mudar', 'mudanza', 'umziehen', 'déménager', 'verhuizen',
+                  'comprar', 'kaufen', 'acheter', 'vender', 'verkaufen', 'vendre',
+                  'taşın', 'przeprowad', 'kupi']
+    if any(w in ai_lower for w in when_words) and any(w in ai_lower for w in move_words):
+        return True
+    return False
+
+
 # ─────────────────────────────────────────────────────
 # APPOINTMENT DATE + CAPACITY HELPERS
 # ─────────────────────────────────────────────────────
@@ -1071,6 +1097,19 @@ def get_listings_context(agency_id, conversation_history=None):
         return ""
 
 
+def quality_reasons_text(lead):
+    """The star rating spelled out, for emails. An owner who disagrees
+    with a score should be able to see exactly which signal produced it
+    rather than arguing with a number."""
+    try:
+        reasons = json.loads(lead.quality_reasons or '[]')
+    except Exception:
+        return ""
+    if not reasons:
+        return ""
+    return "\n".join(f"   {pts}  {why}" for pts, why in reasons)
+
+
 def send_lead_email(agency, lead):
     subject = f"🎯 New Qualified Lead for {agency.name}"
     contact_info = ""
@@ -1097,12 +1136,14 @@ New QUALIFIED Lead Received from {agency.name}
 📧 Email:   {lead.email or 'Not provided'}
 {contact_info}
 💰 Budget:  {lead.budget or 'Not provided'}
+⏱️ Timeline: {timeline_label(lead.timeline)}{f" — “{lead.timeline_raw}”" if lead.timeline_raw else ""}
 📞 Prefers: {pref_display}
 
 📝 CUSTOMER INSIGHTS:
 {lead.message or 'No summary available'}
 
 🌟 Lead Quality: {"⭐" * (lead.intent_score or 1)} ({lead.intent_score}/5)
+{quality_reasons_text(lead)}
 
 📅 Date: {lead.created_at.strftime('%Y-%m-%d %H:%M:%S')}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1251,6 +1292,140 @@ def notify_other_agents_of_update(appt, acting_agent, action_desc):
                     f"Appointment date: {appt.appointment_date}\nTime: {appt.appointment_time}\n"
                     f"Status: {appt.status}\nNotes: {appt.notes or '-'}\n\n"
                     f"Login to see the full picture: https://luxury-leads-ai.onrender.com/agent-login")
+
+
+# ─────────────────────────────────────────────────────
+# ACTIVITY FEED - who changed what, and who gets told
+# ─────────────────────────────────────────────────────
+
+ACTIVITY_ICONS = {
+    'lead_status': '📊', 'lead_note': '🗒️', 'lead_new': '🎯',
+    'lead_reassigned': '🔄',
+    'appointment_stage': '📅', 'appointment_note': '🗒️',
+    'appointment_outcome': '🏁', 'appointment_new': '🆕',
+    'appointment_reassigned': '🔄', 'appointment_cancelled': '❌',
+    'listing_approved': '✅', 'listing_rejected': '🚫',
+    'seller_lead': '🏠', 'customer_feedback': '💬',
+}
+
+LOGIN_URLS = {
+    'owner': 'https://luxury-leads-ai.onrender.com/owner-login',
+    'agent': 'https://luxury-leads-ai.onrender.com/agent-login',
+}
+
+
+def activity_icon(action):
+    return ACTIVITY_ICONS.get(action, '🔔')
+
+
+def record_activity(agency_id, action, summary, actor_type='system',
+                    actor_name=None, subject_type=None, subject_id=None,
+                    subject_name=None, agent_id=None, notify=True):
+    """Write one feed row and tell the other side by email.
+
+    Deliberately never raises: a failed notification must not roll back
+    the status change the user actually asked for. The feed row is
+    committed first for the same reason - if Brevo is down, the dashboard
+    still shows what happened.
+
+    'The other side' means: an agent acts, the owner hears about it; the
+    owner acts, the assigned agent hears about it. Nobody is emailed
+    about their own click."""
+    event = None
+    try:
+        event = ActivityEvent(
+            agency_id=agency_id, agent_id=agent_id,
+            actor_type=actor_type, actor_name=actor_name or 'System',
+            action=action, summary=summary[:400],
+            subject_type=subject_type, subject_id=subject_id,
+            subject_name=(subject_name or '')[:150] or None,
+            # The side that did it has already seen it.
+            seen_by_owner=1 if actor_type == 'owner' else 0,
+            seen_by_agent=1 if actor_type == 'agent' else 0,
+        )
+        db.session.add(event)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ Activity record failed: {e}")
+
+    if not notify:
+        return event
+
+    try:
+        agency = db.session.get(Agency, agency_id)
+        subject_line = f"{activity_icon(action)} {summary[:120]}"
+        who = subject_name or 'a client'
+
+        def body_for(greeting, login_url):
+            lines = [
+                f"Hi {greeting},", "",
+                summary, "",
+                f"Client: {who}",
+                f"When:   {event.created_at.strftime('%b %d, %Y at %I:%M %p') if event and event.created_at else 'just now'}",
+                "", f"See the full picture: {login_url}",
+            ]
+            return "\n".join(lines)
+
+        if actor_type == 'agent':
+            if agency and agency.email:
+                send_email_brevo(agency.email, subject_line,
+                                 body_for(agency.owner_name or agency.name, LOGIN_URLS['owner']))
+        elif actor_type == 'owner':
+            if agent_id:
+                agent = db.session.get(Agent, agent_id)
+                if agent:
+                    notify_agent(agent, subject_line, body_for(agent.name, LOGIN_URLS['agent']))
+        else:
+            # System events (a new lead, a customer's own feedback) concern
+            # both sides, so both get told.
+            if agency and agency.email:
+                send_email_brevo(agency.email, subject_line,
+                                 body_for(agency.owner_name or agency.name, LOGIN_URLS['owner']))
+            if agent_id:
+                agent = db.session.get(Agent, agent_id)
+                if agent:
+                    notify_agent(agent, subject_line, body_for(agent.name, LOGIN_URLS['agent']))
+    except Exception as e:
+        print(f"⚠️ Activity notification failed: {e}")
+
+    return event
+
+
+def acting_identity():
+    """Who is making this request, from the session only. A client-supplied
+    actor could otherwise put anyone's name against anyone's change."""
+    agent_id = session.get('agent_id')
+    if agent_id:
+        agent = db.session.get(Agent, int(agent_id))
+        return 'agent', (agent.name if agent else 'An agent'), int(agent_id)
+    if session.get('agency_id'):
+        agency = db.session.get(Agency, int(session['agency_id']))
+        return 'owner', (agency.owner_name or agency.name if agency else 'The owner'), None
+    if session.get('super_admin'):
+        return 'owner', 'Platform admin', None
+    return 'system', 'System', None
+
+
+def recent_activity(agency_id, agent_id=None, limit=20):
+    """The feed for one dashboard. The owner sees the whole agency; an
+    agent sees only what touches their own leads and viewings, which is
+    the difference between a useful feed and a noisy one."""
+    q = ActivityEvent.query.filter_by(agency_id=agency_id)
+    if agent_id is not None:
+        q = q.filter(ActivityEvent.agent_id == agent_id)
+    return q.order_by(ActivityEvent.created_at.desc(),
+                      ActivityEvent.id.desc()).limit(limit).all()
+
+
+def unseen_activity_count(agency_id, agent_id=None):
+    q = ActivityEvent.query.filter_by(agency_id=agency_id)
+    if agent_id is not None:
+        q = q.filter(ActivityEvent.agent_id == agent_id,
+                     ActivityEvent.seen_by_agent == 0)
+    else:
+        q = q.filter(ActivityEvent.seen_by_owner == 0)
+    return q.count()
 
 
 def send_crm_webhook(agency, lead):
@@ -1879,7 +2054,8 @@ def extract_lead_data(agency_id, conversation_history):
     ])
     lead_data = {
         'name': None, 'email': None, 'phone': None,
-        'whatsapp_number': None, 'contact_preference': 'email', 'budget': None
+        'whatsapp_number': None, 'contact_preference': 'email', 'budget': None,
+        'timeline': None, 'timeline_raw': None, 'budget_inferred': False
     }
     email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", full_conversation_user)
     if email_match:
@@ -1967,7 +2143,12 @@ def extract_lead_data(agency_id, conversation_history):
     if not lead_data['budget']:
         lead_data['budget'] = infer_budget_from_discussed_listings(agency_id, conversation_history)
         if lead_data['budget']:
+            lead_data['budget_inferred'] = True
             print(f"✅ Budget (inferred from discussed listings): {lead_data['budget']}")
+
+    lead_data['timeline'], lead_data['timeline_raw'] = extract_timeline(conversation_history)
+    if lead_data['timeline']:
+        print(f"✅ Timeline: {timeline_label(lead_data['timeline'])}")
     return lead_data
 
 
@@ -2174,20 +2355,255 @@ def generate_objection_response(objection_type, agency_name):
     return responses.get(objection_type, None)
 
 
+# ─────────────────────────────────────────────────────
+# TIMELINE - when they actually intend to move
+# ─────────────────────────────────────────────────────
+# Moaz's Sept 20 note: the bot was collecting name, budget, contact and
+# property details but never asking WHEN. An agent's afternoon is worth
+# more on a buyer moving in three weeks than on one browsing for next
+# year, and nothing in the old score could tell those two apart.
+
+TIMELINE_LABELS = {
+    'immediate':   'Immediately / within a month',
+    '1_3_months':  '1-3 months',
+    '3_6_months':  '3-6 months',
+    '6_12_months': '6-12 months',
+    'over_1_year': 'More than a year',
+    'browsing':    'Just browsing, no date',
+}
+
+# How much each bucket is worth in the quality score. "Just browsing" is
+# deliberately worth the same as "no answer": both mean an agent cannot
+# plan around this person yet.
+TIMELINE_POINTS = {
+    'immediate': 3, '1_3_months': 2, '3_6_months': 1,
+    '6_12_months': 1, 'over_1_year': 0, 'browsing': 0,
+}
+
+# Checked in order - the first hit wins, so the longer and more specific
+# phrases must come before the short ones they contain.
+TIMELINE_PHRASES = [
+    ('browsing', ['just looking', 'just browsing', 'just curious', 'no rush',
+                  'no hurry', 'not in a hurry', 'no timeline', 'no specific time',
+                  'no particular time', 'just exploring', 'just researching',
+                  'someday', 'some day', 'no fixed', 'whenever']),
+    ('immediate', ['as soon as possible', 'asap', 'a.s.a.p', 'immediately',
+                   'right away', 'straight away', 'right now', 'this week',
+                   'next week', 'within a week', 'within days', 'urgently',
+                   'very urgent', 'urgent', 'this month', 'within a month',
+                   'within the month', 'end of the month', 'ready now',
+                   'ready to move now', 'yesterday']),
+    ('1_3_months', ['next month', 'couple of months', 'a couple months',
+                    'few months', 'a few months', 'next quarter',
+                    'within three months', 'within 3 months', 'by the summer']),
+    ('3_6_months', ['half a year', 'within six months', 'within 6 months',
+                    'end of the year', 'end of this year', 'by year end',
+                    'by the end of the year']),
+    ('6_12_months', ['within a year', 'within the year', 'in a year',
+                     'next year', 'sometime next year']),
+    ('over_1_year', ['couple of years', 'a couple years', 'few years',
+                     'a few years', 'two years', 'long term', 'long-term',
+                     'not for a while', 'not any time soon', 'not anytime soon']),
+]
+
+_TIMELINE_NUMBER_WORDS = {
+    'a': 1, 'an': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'eleven': 11,
+    'twelve': 12, 'eighteen': 18, 'twenty': 20, 'twenty four': 24,
+}
+
+
+def _months_to_bucket(months):
+    if months is None:
+        return None
+    if months <= 1:
+        return 'immediate'
+    if months <= 3:
+        return '1_3_months'
+    if months <= 6:
+        return '3_6_months'
+    if months <= 12:
+        return '6_12_months'
+    return 'over_1_year'
+
+
+def _timeline_from_numbers(text):
+    """'in 2 months', 'within 6-8 weeks', 'about a year and a half'.
+
+    A range is bucketed on its FAR end on purpose - '3 to 6 months' is a
+    lead who might still be looking in six months, and an agent planning
+    their week should be told the honest later date, not the hopeful one."""
+    best = None
+    pattern = (r'(\d{1,2}|' + '|'.join(sorted(_TIMELINE_NUMBER_WORDS, key=len, reverse=True)) + r')'
+               r'(?:\s*(?:-|to|or|and)\s*(\d{1,2}))?'
+               r'\s*(day|days|week|weeks|month|months|year|years)\b')
+    for m in re.finditer(pattern, text):
+        low_raw, high_raw, unit = m.group(1), m.group(2), m.group(3)
+        try:
+            low = int(low_raw)
+        except ValueError:
+            low = _TIMELINE_NUMBER_WORDS.get(low_raw)
+        if low is None:
+            continue
+        value = int(high_raw) if high_raw else low
+        if unit.startswith('day'):
+            months = value / 30.0
+        elif unit.startswith('week'):
+            months = value / 4.0
+        elif unit.startswith('month'):
+            months = float(value)
+        else:
+            months = value * 12.0
+        # A conversation can mention several durations ("6 month lease",
+        # "moving in 2 months"). The soonest one is the commitment.
+        if best is None or months < best:
+            best = months
+    return _months_to_bucket(best)
+
+
+def extract_timeline(conversation_history):
+    """Returns (bucket, what_they_actually_said).
+
+    The answer to the timeline question is read first and on its own -
+    that reply is unambiguous. Only if the bot never asked (older
+    conversations, or the customer volunteered it early) does this fall
+    back to scanning everything the customer said, where 'this week' might
+    belong to something else entirely."""
+    def classify(text):
+        low = (text or '').lower()
+        for bucket, phrases in TIMELINE_PHRASES:
+            for phrase in phrases:
+                if phrase in low:
+                    return bucket
+        return _timeline_from_numbers(low)
+
+    for i, msg in enumerate(conversation_history):
+        if msg['role'] != 'assistant' or not is_timeline_question(msg['content']):
+            continue
+        if i + 1 >= len(conversation_history):
+            continue
+        reply = conversation_history[i + 1]
+        if reply['role'] != 'user':
+            continue
+        bucket = classify(reply['content'])
+        if bucket:
+            return bucket, reply['content'].strip()[:200]
+
+    user_text = " ".join(m['content'] for m in conversation_history if m['role'] == 'user')
+    bucket = classify(user_text)
+    if bucket:
+        return bucket, None
+    return None, None
+
+
+def timeline_label(bucket):
+    return TIMELINE_LABELS.get(bucket or '', 'Not given')
+
+
+# Every lead table shows the timeline, so make it a template global
+# rather than threading it through a dozen render_template calls.
+app.jinja_env.globals['timeline_label'] = timeline_label
+
+
+def score_lead_quality(lead_data, conversation_history, has_booking=False,
+                       lead_type='buyer', seller_property=None):
+    """Score a lead 1-5 and say WHY, in words an agent can argue with.
+
+    The old version gave a point for a name (the bot asks for it first,
+    so everyone had one), a point for a budget, a point for a phone, and
+    a bonus if the word "month" or "week" appeared anywhere the customer
+    typed - which fired on "I signed a 12 month lease" as readily as on
+    "I need to move next month". Timeline, the thing an agent actually
+    plans around, was never asked and so never really counted.
+
+    Now each signal is weighted by how much it predicts a deal, and the
+    reasons are stored alongside the score so the dashboard can show the
+    working instead of an unexplained number of stars."""
+    reasons = []
+    points = 0
+
+    # ── Reachability. An email is the minimum; a number is what an agent
+    #    actually uses on the day they want to close something.
+    if lead_data.get('email'):
+        points += 1
+        reasons.append(('+1', 'Email address given'))
+    else:
+        reasons.append(('0', 'No email address'))
+    if lead_data.get('whatsapp_number') or lead_data.get('phone'):
+        points += 2
+        reasons.append(('+2', 'Phone or WhatsApp number given'))
+    else:
+        reasons.append(('0', 'No phone or WhatsApp number'))
+
+    # ── Money. Said out loud beats inferred from what they browsed.
+    money_word = 'Asking price' if lead_type == 'seller' else 'Budget'
+    if lead_data.get('budget'):
+        if lead_data.get('budget_inferred'):
+            points += 1
+            reasons.append(('+1', f'{money_word} inferred from the properties discussed'))
+        else:
+            points += 2
+            reasons.append(('+2', f'{money_word} stated: {lead_data["budget"]}'))
+    else:
+        reasons.append(('0', f'No {money_word.lower()} given'))
+
+    # ── Timeline. The signal that was missing entirely.
+    bucket = lead_data.get('timeline')
+    if bucket:
+        earned = TIMELINE_POINTS.get(bucket, 0)
+        points += earned
+        reasons.append((f'+{earned}', f'Timeline: {timeline_label(bucket)}'))
+    else:
+        reasons.append(('0', 'Timeline: not given'))
+
+    # ── Commitment. A buyer who booked a viewing has put their own time
+    #    on the line; a seller's equivalent is a property we could list.
+    if lead_type == 'seller':
+        prop = seller_property or {}
+        if prop.get('location') and prop.get('price_raw'):
+            points += 2
+            reasons.append(('+2', 'Property described in full (location and price)'))
+        elif prop.get('location') or prop.get('price_raw'):
+            points += 1
+            reasons.append(('+1', 'Property partly described'))
+        else:
+            reasons.append(('0', 'Property details incomplete'))
+    elif has_booking:
+        points += 2
+        reasons.append(('+2', 'Booked a viewing'))
+    else:
+        reasons.append(('0', 'No viewing booked'))
+
+    # ── Engagement. Someone still answering after eight turns is invested.
+    user_msgs = len([m for m in conversation_history if m['role'] == 'user'])
+    if user_msgs >= 8:
+        points += 1
+        reasons.append(('+1', f'Engaged conversation ({user_msgs} messages)'))
+    else:
+        reasons.append(('0', f'Short conversation ({user_msgs} messages)'))
+
+    # 11 points available. The thresholds are set so that a 5 has to be
+    # earned on several fronts at once - contactable AND funded AND soon
+    # AND committed - rather than by filling in a form.
+    if points >= 9:
+        score = 5
+    elif points >= 7:
+        score = 4
+    elif points >= 5:
+        score = 3
+    elif points >= 3:
+        score = 2
+    else:
+        score = 1
+
+    print(f"📊 Quality {score}/5 ({points}/11 pts): "
+          + ", ".join(f"{pts} {why}" for pts, why in reasons))
+    return score, reasons
+
+
 def analyze_lead_quality(lead_data, conversation_history):
-    score = 1
-    has_name = bool(lead_data.get('name'))
-    has_phone = bool(lead_data.get('phone') or lead_data.get('whatsapp_number'))
-    has_budget = bool(lead_data.get('budget'))
-    if has_name: score += 1
-    if has_budget: score += 1
-    if has_phone: score += 1
-    full_text = " ".join([msg['content'].lower() for msg in conversation_history if msg['role'] == 'user'])
-    urgency = ['asap', 'urgent', 'soon', 'quickly', 'this week', 'this month', 'within', 'month', 'week']
-    if any(kw in full_text for kw in urgency):
-        score = min(score + 1, 5)
-    print(f"📊 Quality: Name={has_name}, Phone={has_phone}, Budget={has_budget} → {score}/5")
-    return min(score, 5)
+    """Back-compatible wrapper - returns just the star rating."""
+    return score_lead_quality(lead_data, conversation_history)[0]
 
 
 def is_lead_qualified(lead_data, conversation_history, has_booking=False):
@@ -2264,6 +2680,42 @@ class Lead(db.Model):
     # listing one). Two completely different jobs for an agent, so the
     # dashboard keeps them visibly apart.
     lead_type = db.Column(db.String(20), default='buyer')
+    # When they intend to act. Bucket key from TIMELINE_LABELS, plus the
+    # sentence they actually said so an agent reads it in their words.
+    timeline = db.Column(db.String(40), nullable=True)
+    timeline_raw = db.Column(db.String(200), nullable=True)
+    # JSON list of [points, reason] - the working behind intent_score, so
+    # "why is this a 3?" has an answer on the lead card.
+    quality_reasons = db.Column(db.Text, nullable=True)
+
+class ActivityEvent(db.Model):
+    """One line in the agency's shared feed.
+
+    Moaz's Sept 20 note: "whenever an agent or agency owner updates a
+    status, all relevant parties are notified... there should also be a
+    mechanism to track these updates directly on the dashboards."
+
+    Email alone is a notification you can miss; a feed alone is one you
+    have to remember to check. Every status change, outcome and note
+    writes a row here AND emails the other side, and each side carries
+    its own seen flag so the owner reading the feed doesn't mark it read
+    for the agent."""
+    id = db.Column(db.Integer, primary_key=True)
+    agency_id = db.Column(db.Integer, nullable=False, index=True)
+    # The agent this event concerns - not necessarily the one who acted.
+    # An owner closing an agent's lead is an event *for* that agent.
+    agent_id = db.Column(db.Integer, nullable=True, index=True)
+    actor_type = db.Column(db.String(20))     # owner | agent | customer | system
+    actor_name = db.Column(db.String(120))
+    action = db.Column(db.String(40))         # lead_status | appointment_stage | note | ...
+    summary = db.Column(db.String(400))       # the sentence shown in the feed
+    subject_type = db.Column(db.String(20))   # lead | appointment | listing
+    subject_id = db.Column(db.Integer, nullable=True)
+    subject_name = db.Column(db.String(150))  # the customer, for the feed line
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Karachi')))
+    seen_by_owner = db.Column(db.Integer, default=0)
+    seen_by_agent = db.Column(db.Integer, default=0)
+
 
 class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -2411,7 +2863,10 @@ def admin():
         return render_template("admin.html", leads=leads, agency=agency,
                                now=datetime.utcnow(), seller_count=seller_count,
                                buyer_count=len(leads) - seller_count,
-                               pending_listings=pending_listings)
+                               pending_listings=pending_listings,
+                               activity=recent_activity(agency_id_int),
+                               activity_unseen=unseen_activity_count(agency_id_int),
+                               activity_icon=activity_icon)
     except Exception as e:
         print(f"❌ ADMIN ERROR: {e}")
         return redirect("/owner-login?error=Something+went+wrong")
@@ -2650,6 +3105,12 @@ def _agent_in_agency(agency_id):
     return bool(agent and agent.agency_id == agency_id)
 
 
+
+LEAD_STATUS_LABELS = {
+    'new': 'New', 'contacted': 'Contacted', 'meeting': 'Meeting booked',
+    'closed': 'Closed', 'lost': 'Lost',
+}
+
 @app.route("/update-lead-status/<int:lead_id>", methods=["POST"])
 def update_lead_status(lead_id):
     try:
@@ -2662,8 +3123,18 @@ def update_lead_status(lead_id):
         new_status = data.get("status", "new")
         if new_status not in ['new', 'contacted', 'meeting', 'closed', 'lost']:
             return jsonify({"error": "Invalid status"}), 400
+        previous = lead.lead_status or 'new'
         lead.lead_status = new_status
         db.session.commit()
+        actor_type, actor_name, _ = acting_identity()
+        record_activity(
+            lead.agency_id, 'lead_status',
+            f"{actor_name} moved {lead.name or 'a lead'} from "
+            f"{LEAD_STATUS_LABELS.get(previous, previous)} to "
+            f"{LEAD_STATUS_LABELS.get(new_status, new_status)}",
+            actor_type=actor_type, actor_name=actor_name,
+            subject_type='lead', subject_id=lead.id, subject_name=lead.name,
+            agent_id=lead.agent_id)
         return jsonify({"success": True, "status": new_status})
     except Exception as e:
         return jsonify({"error": "Failed to update status"}), 500
@@ -2694,6 +3165,14 @@ def add_lead_note(lead_id):
         notes.append(new_note)
         lead.notes = json.dumps(notes)
         db.session.commit()
+        actor_type, actor_name, _ = acting_identity()
+        record_activity(
+            lead.agency_id, 'lead_note',
+            f"{actor_name} added a note on {lead.name or 'a lead'}: "
+            f"{note_text[:120]}",
+            actor_type=actor_type, actor_name=actor_name,
+            subject_type='lead', subject_id=lead.id, subject_name=lead.name,
+            agent_id=lead.agent_id)
         return jsonify({"success": True, "note": new_note, "total_notes": len(notes)})
     except Exception as e:
         return jsonify({"error": "Failed to add note"}), 500
@@ -2717,6 +3196,17 @@ def delete_lead_note(lead_id, note_id):
         return jsonify({"success": True, "total_notes": len(notes)})
     except Exception as e:
         return jsonify({"error": "Failed to delete note"}), 500
+
+
+def _quality_reasons(lead):
+    """The stored working behind a lead's star rating. Leads captured
+    before the score was made explainable simply have none - the card
+    says so rather than inventing a justification after the fact."""
+    try:
+        return [{"points": pts, "reason": why}
+                for pts, why in json.loads(lead.quality_reasons or '[]')]
+    except Exception:
+        return []
 
 
 @app.route("/get-lead-detail/<int:lead_id>")
@@ -2763,6 +3253,10 @@ def get_lead_detail(lead_id):
             "contact_preference": lead.contact_preference or "email",
             "budget": lead.budget or "—", "message": lead.message or "—",
             "intent_score": lead.intent_score or 1,
+            "lead_type": lead.lead_type or "buyer",
+            "timeline": timeline_label(lead.timeline),
+            "timeline_raw": lead.timeline_raw or None,
+            "quality_reasons": _quality_reasons(lead),
             "lead_status": lead.lead_status or "new", "notes": notes,
             "agent_name": agent_name,
             "related_appointments": related_appointments,
@@ -2770,6 +3264,41 @@ def get_lead_detail(lead_id):
         })
     except Exception as e:
         return jsonify({"error": "Failed to get lead"}), 500
+
+
+@app.route("/mark-activity-seen/<int:agency_id>", methods=["POST"])
+def mark_activity_seen(agency_id):
+    """Called when the owner opens the updates panel. Marking read is the
+    owner's flag alone - the agent's unread count is untouched, so one
+    person reading the feed never hides an update from the other."""
+    if not _owner_owns_agency(agency_id):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        ActivityEvent.query.filter_by(agency_id=agency_id, seen_by_owner=0)\
+            .update({ActivityEvent.seen_by_owner: 1}, synchronize_session=False)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Failed"}), 500
+
+
+@app.route("/agent-mark-activity-seen/<int:agent_id>", methods=["POST"])
+def agent_mark_activity_seen(agent_id):
+    if session.get('agent_id') != agent_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return jsonify({"error": "Agent not found"}), 404
+    try:
+        ActivityEvent.query.filter_by(agency_id=agent.agency_id,
+                                      agent_id=agent_id, seen_by_agent=0)\
+            .update({ActivityEvent.seen_by_agent: 1}, synchronize_session=False)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Failed"}), 500
 
 
 @app.route("/bulk-delete-leads", methods=["POST"])
@@ -2847,9 +3376,29 @@ def reassign_appointment(appt_id):
         if appt.appointment_date_iso and appt.appointment_time:
             if agent_busy_at(agent.id, appt.appointment_date_iso, appt.appointment_time) and appt.agent_id != agent.id:
                 return jsonify({"error": f"{agent.name} already has a booking at that time"}), 409
+        previous_agent_id = appt.agent_id
         appt.agent_id = agent.id
         db.session.commit()
         print(f"✅ Appointment {appt_id} reassigned → agent {agent.name}")
+        actor_type, actor_name, _ = acting_identity()
+        summary = (f"{actor_name} reassigned {appt.customer_name or 'a client'}'s viewing "
+                   f"({appt.appointment_date or 'no date'}) to {agent.name}")
+        record_activity(
+            appt.agency_id, 'appointment_reassigned', summary,
+            actor_type=actor_type, actor_name=actor_name,
+            subject_type='appointment', subject_id=appt.id,
+            subject_name=appt.customer_name, agent_id=agent.id)
+        # The agent who just lost it needs to know as much as the one who
+        # gained it - otherwise they keep preparing for a viewing that is
+        # no longer theirs.
+        if previous_agent_id and previous_agent_id != agent.id:
+            record_activity(
+                appt.agency_id, 'appointment_reassigned',
+                f"{actor_name} moved {appt.customer_name or 'a client'}'s viewing "
+                f"({appt.appointment_date or 'no date'}) from you to {agent.name}",
+                actor_type=actor_type, actor_name=actor_name,
+                subject_type='appointment', subject_id=appt.id,
+                subject_name=appt.customer_name, agent_id=previous_agent_id)
         return jsonify({"success": True, "agent_id": agent.id})
     except Exception as e:
         db.session.rollback()
@@ -2969,6 +3518,15 @@ def update_appointment_status(appt_id):
         new_status = data.get("stage") or data.get("status") or "pending"
         if not apply_appointment_stage(appt, new_status, "owner"):
             return jsonify({"error": "Invalid status"}), 400
+        actor_type, actor_name, _ = acting_identity()
+        record_activity(
+            appt.agency_id, 'appointment_stage',
+            f"{actor_name} set {appt.customer_name or 'a client'}'s viewing "
+            f"({appt.appointment_date or 'no date'}) to "
+            f"{APPOINTMENT_STAGE_LABELS.get(new_status, new_status)}",
+            actor_type=actor_type, actor_name=actor_name,
+            subject_type='appointment', subject_id=appt.id,
+            subject_name=appt.customer_name, agent_id=appt.agent_id)
         return jsonify({"success": True, "status": new_status,
                         "stage": appointment_stage(appt)})
     except Exception as e:
@@ -3189,7 +3747,10 @@ def agent_dashboard(agent_id):
                            appt_owner_lead_notes=appt_owner_lead_notes,
                            stage_of=appointment_stage,
                            stage_labels=APPOINTMENT_STAGE_LABELS,
-                           time_slots=TIME_SLOTS)
+                           time_slots=TIME_SLOTS,
+                           activity=recent_activity(agent.agency_id, agent_id=agent.id),
+                           activity_unseen=unseen_activity_count(agent.agency_id, agent_id=agent.id),
+                           activity_icon=activity_icon)
 
 
 @app.route("/change-agent-password/<int:agent_id>", methods=["POST"])
@@ -3453,8 +4014,18 @@ def agent_update_lead_status(lead_id):
         new_status = data.get("status", "new")
         if new_status not in ['new', 'contacted', 'meeting', 'closed', 'lost']:
             return jsonify({"error": "Invalid status"}), 400
+        previous = lead.lead_status or 'new'
         lead.lead_status = new_status
         db.session.commit()
+        actor_type, actor_name, acting_agent_id = acting_identity()
+        record_activity(
+            lead.agency_id, 'lead_status',
+            f"{actor_name} moved {lead.name or 'a lead'} from "
+            f"{LEAD_STATUS_LABELS.get(previous, previous)} to "
+            f"{LEAD_STATUS_LABELS.get(new_status, new_status)}",
+            actor_type=actor_type, actor_name=actor_name,
+            subject_type='lead', subject_id=lead.id, subject_name=lead.name,
+            agent_id=lead.agent_id or acting_agent_id)
         return jsonify({"success": True, "status": new_status})
     except Exception:
         return jsonify({"error": "Failed to update"}), 500
@@ -3486,6 +4057,13 @@ def agent_add_lead_note(lead_id):
         })
         lead.notes = json.dumps(notes)
         db.session.commit()
+        actor_type, actor_name, acting_agent_id = acting_identity()
+        record_activity(
+            lead.agency_id, 'lead_note',
+            f"{actor_name} added a note on {lead.name or 'a lead'}: {note_text[:120]}",
+            actor_type=actor_type, actor_name=actor_name,
+            subject_type='lead', subject_id=lead.id, subject_name=lead.name,
+            agent_id=lead.agent_id or acting_agent_id)
         return jsonify({"success": True})
     except Exception:
         return jsonify({"error": "Failed"}), 500
@@ -3508,6 +4086,16 @@ def agent_update_appointment_status(appt_id):
         notify_other_agents_of_update(
             appt, acting_agent,
             f"set an appointment to '{APPOINTMENT_STAGE_LABELS.get(new_status, new_status)}'")
+        record_activity(
+            appt.agency_id, 'appointment_stage',
+            f"{acting_agent.name if acting_agent else 'An agent'} set "
+            f"{appt.customer_name or 'a client'}'s viewing "
+            f"({appt.appointment_date or 'no date'}) to "
+            f"{APPOINTMENT_STAGE_LABELS.get(new_status, new_status)}",
+            actor_type='agent',
+            actor_name=acting_agent.name if acting_agent else 'An agent',
+            subject_type='appointment', subject_id=appt.id,
+            subject_name=appt.customer_name, agent_id=appt.agent_id)
         return jsonify({"success": True, "status": new_status,
                         "stage": appointment_stage(appt)})
     except Exception:
@@ -3531,6 +4119,14 @@ def agent_add_appointment_note(appt_id):
         db.session.commit()
         acting_agent = db.session.get(Agent, int(agent_id))
         notify_other_agents_of_update(appt, acting_agent, "added a note to an appointment")
+        record_activity(
+            appt.agency_id, 'appointment_note',
+            f"{acting_agent.name if acting_agent else 'An agent'} added a note on "
+            f"{appt.customer_name or 'a client'}'s viewing: {note_text[:120]}",
+            actor_type='agent',
+            actor_name=acting_agent.name if acting_agent else 'An agent',
+            subject_type='appointment', subject_id=appt.id,
+            subject_name=appt.customer_name, agent_id=appt.agent_id)
         return jsonify({"success": True})
     except Exception:
         return jsonify({"error": "Failed"}), 500
@@ -3550,6 +4146,14 @@ def set_appointment_outcome(appt_id):
         outcome = data.get("outcome", "")
         if not apply_appointment_outcome(appt, outcome, "owner"):
             return jsonify({"error": "Invalid outcome"}), 400
+        actor_type, actor_name, _ = acting_identity()
+        record_activity(
+            appt.agency_id, 'appointment_outcome',
+            f"{actor_name} recorded the outcome of {appt.customer_name or 'a client'}'s "
+            f"viewing: {APPOINTMENT_STAGE_LABELS.get(outcome, outcome)}",
+            actor_type=actor_type, actor_name=actor_name,
+            subject_type='appointment', subject_id=appt.id,
+            subject_name=appt.customer_name, agent_id=appt.agent_id)
         return jsonify({"success": True, "outcome": outcome})
     except Exception:
         return jsonify({"error": "Failed to update"}), 500
@@ -3573,6 +4177,15 @@ def agent_set_appointment_outcome(appt_id):
             return jsonify({"error": "Invalid outcome"}), 400
         acting_agent = db.session.get(Agent, int(agent_id))
         notify_other_agents_of_update(appt, acting_agent, f"set an appointment outcome to '{outcome}'")
+        record_activity(
+            appt.agency_id, 'appointment_outcome',
+            f"{acting_agent.name if acting_agent else 'An agent'} recorded the outcome of "
+            f"{appt.customer_name or 'a client'}'s viewing: "
+            f"{APPOINTMENT_STAGE_LABELS.get(outcome, outcome)}",
+            actor_type='agent',
+            actor_name=acting_agent.name if acting_agent else 'An agent',
+            subject_type='appointment', subject_id=appt.id,
+            subject_name=appt.customer_name, agent_id=appt.agent_id)
         return jsonify({"success": True, "outcome": outcome})
     except Exception:
         return jsonify({"error": "Failed to update"}), 500
@@ -3658,6 +4271,16 @@ def book_followup_viewing(appt_id):
                      f"Property: {new_appt.property_interest}\n"
                      f"Date: {new_appt.appointment_date}\nTime: {new_appt.appointment_time}\n\n"
                      f"Login: https://luxury-leads-ai.onrender.com/agent-login")
+    actor_type, actor_name, _ = acting_identity()
+    record_activity(
+        appt.agency_id, 'appointment_new',
+        f"{actor_name} booked a follow-up viewing for {new_appt.customer_name or 'a client'} "
+        f"on {new_appt.appointment_date} at {time_label}"
+        + (f" with {chosen.name}" if chosen else ""),
+        actor_type=actor_type, actor_name=actor_name,
+        subject_type='appointment', subject_id=new_appt.id,
+        subject_name=new_appt.customer_name,
+        agent_id=chosen.id if chosen else None)
     return jsonify({"success": True, "appointment_id": new_appt.id,
                      "message": f"Follow-up viewing booked for {new_appt.appointment_date} at {time_label}"})
 
@@ -3679,6 +4302,21 @@ def appointment_feedback(token):
         outcome = choice_map.get(choice)
         if not outcome or not apply_appointment_outcome(appt, outcome, "customer"):
             return render_template("appointment_feedback.html", invalid=True)
+        # The customer answering for themselves is the most important
+        # update of all, and until now nobody was told it had happened.
+        record_activity(
+            appt.agency_id, 'customer_feedback',
+            f"{appt.customer_name or 'A client'} answered the check-in email after their "
+            f"viewing: {APPOINTMENT_STAGE_LABELS.get(outcome, outcome)}",
+            actor_type='customer', actor_name=appt.customer_name or 'Client',
+            subject_type='appointment', subject_id=appt.id,
+            subject_name=appt.customer_name, agent_id=appt.agent_id,
+            # 'wants to buy' already sends its own richer email from
+            # apply_appointment_outcome - the feed row is enough here. The
+            # other two answers used to go completely unannounced, which
+            # is how an agent found out a viewing went nowhere by
+            # noticing the customer had stopped replying.
+            notify=(outcome != 'wants_to_buy'))
 
     agency = db.session.get(Agency, appt.agency_id)
     return render_template("appointment_feedback.html", invalid=False,
@@ -3884,6 +4522,18 @@ def review_seller_listing(listing_id):
     db.session.commit()
     print(f"🏠 Listing #{listing.id} {decision}d by owner")
 
+    actor_type, actor_name, _ = acting_identity()
+    seller_lead = db.session.get(Lead, listing.seller_lead_id) if listing.seller_lead_id else None
+    record_activity(
+        listing.agency_id,
+        'listing_approved' if decision == 'approve' else 'listing_rejected',
+        f"{actor_name} {'approved' if decision == 'approve' else 'rejected'} the property "
+        f"\"{listing.title}\"{f' submitted by {seller_lead.name}' if seller_lead and seller_lead.name else ''}",
+        actor_type=actor_type, actor_name=actor_name,
+        subject_type='listing', subject_id=listing.id,
+        subject_name=listing.title,
+        agent_id=seller_lead.agent_id if seller_lead else None)
+
     # Tell the owner who submitted it that it's now live.
     if decision == 'approve' and listing.seller_lead_id:
         seller = db.session.get(Lead, listing.seller_lead_id)
@@ -4014,8 +4664,9 @@ skipping anything already in ALREADY CAPTURED):
 4. How many bathrooms
 5. Standout features and amenities ("Anything that makes it stand out - pool, garden, solar, parking?")
 6. The {money} ("What {'price are you hoping for' if chat_intent == 'sell' else 'monthly rent are you asking'}?")
-7. Email address
-8. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
+7. Timeline ("How soon are you hoping to {'sell' if chat_intent == 'sell' else 'have it rented out'}?") - ask this every time, in its own message. "No particular rush" is a complete answer; accept it and move on. Never press for a firmer date and never imply urgency they didn't express.
+8. Email address
+9. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
 
 If they volunteer several of these at once, accept all of it and move to the next MISSING one.
 Acknowledge what they describe warmly and specifically ("A pool and a home cinema - that will
@@ -4042,6 +4693,8 @@ commission rates, or contract terms - an agent handles all of that."""
             known_bits.append(f"Phone: {known['phone']}")
         if known.get('budget'):
             known_bits.append(f"Budget: {known['budget']}")
+        if known.get('timeline'):
+            known_bits.append(f"Timeline: {timeline_label(known['timeline'])} (ALREADY ANSWERED)")
         if contact_step_completed(history):
             known_bits.append(
                 f"Contact preference: {(known.get('contact_preference') or 'email').replace('_', ' ')} (ALREADY ANSWERED)")
@@ -4108,9 +4761,15 @@ INFORMATION TO COLLECT FROM A BUYER OR RENTER (strictly one at a time, in this o
 3. Buying or renting? ("Are you looking to buy or rent?")
 4. Location ONLY ("Any particular area in mind?") - do NOT mention budget yet
 5. Budget ONLY (after location is answered: "And what budget are you working with?")
-6. Email (after they're satisfied or a viewing is planned)
-7. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
-8. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
+6. Timeline ONLY ("How soon are you looking to move?") - ask this every time, in its own message, right after the budget. It is never optional and never combined with another question. If they have booked a viewing and you never asked it, ask it once straight after the booking is confirmed.
+7. Email (after they're satisfied or a viewing is planned)
+8. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
+9. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
+
+WHY THE TIMELINE MATTERS - accept any answer, never push:
+- "Just looking for now" is a complete, acceptable answer. Thank them and move on to the next item.
+- Never ask a second time, never rephrase it to get a firmer date, and never imply urgency they didn't express.
+- If they give a vague answer ("sometime this year"), that is enough - do not press for a month.
 {seller_context}
 
 NEVER combine location and budget in one question.
@@ -4232,6 +4891,19 @@ Respond naturally in plain text only:"""
                     db.session.commit()
                     booked_slots.add(slot_id)
                     print(f"✅ Appointment auto-booked: {new_appt.customer_name} | {slot['display']} at {slot['time']} ({booked + 1}/{max_slot})")
+                    # notify=False: the confirmation and the agent's own
+                    # assignment email fire right below. The feed row is
+                    # what the dashboards read, not a second inbox copy.
+                    record_activity(
+                        agency_id, 'appointment_new',
+                        f"{new_appt.customer_name or 'A visitor'} booked a viewing of "
+                        f"{new_appt.property_interest or 'a property'} on "
+                        f"{new_appt.appointment_date} at {new_appt.appointment_time}",
+                        actor_type='customer', actor_name=new_appt.customer_name or 'Website visitor',
+                        subject_type='appointment', subject_id=new_appt.id,
+                        subject_name=new_appt.customer_name,
+                        agent_id=chosen_agent.id if chosen_agent else None,
+                        notify=False)
                     send_appointment_confirmation(agency, new_appt)
                     if chosen_agent:
                         notify_agent(chosen_agent,
@@ -4254,6 +4926,9 @@ Respond naturally in plain text only:"""
                     # Sellers are routed by where their PROPERTY is.
                     seller_property = extract_seller_property(history, chat_intent)
                     assigned = assign_next_agent(agency, seller_property.get('location'))
+                    seller_score, seller_reasons = score_lead_quality(
+                        lead_data, history, lead_type='seller',
+                        seller_property=seller_property)
                     seller_lead = Lead(
                         agency_id=agency_id,
                         agent_id=assigned.id if assigned else None,
@@ -4264,7 +4939,10 @@ Respond naturally in plain text only:"""
                         contact_preference=lead_data.get('contact_preference', 'email'),
                         budget=lead_data['budget'],          # their asking price
                         message=ai_summary,
-                        intent_score=analyze_lead_quality(lead_data, history),
+                        intent_score=seller_score,
+                        quality_reasons=json.dumps(seller_reasons),
+                        timeline=lead_data.get('timeline'),
+                        timeline_raw=lead_data.get('timeline_raw'),
                         lead_status='new',
                         lead_type='seller',
                         notes='[]',
@@ -4296,6 +4974,16 @@ Respond naturally in plain text only:"""
                         db.session.commit()
                         print(f"🏠 Pending listing #{listing.id} from seller lead {seller_lead.id}")
 
+                    record_activity(
+                        agency_id, 'seller_lead',
+                        f"New {seller_score}-star seller lead: {seller_lead.name or 'unnamed'} wants to "
+                        f"{'sell' if chat_intent == 'sell' else 'rent out'} "
+                        f"{listing.title if listing else 'a property'}"
+                        + (f" — awaiting your approval" if listing else ""),
+                        actor_type='system', actor_name='Chatbot',
+                        subject_type='lead', subject_id=seller_lead.id,
+                        subject_name=seller_lead.name,
+                        agent_id=seller_lead.agent_id, notify=False)
                     notify_owner_of_seller_lead(agency, seller_lead, listing, chat_intent)
                     if assigned:
                         notify_agent(assigned,
@@ -4328,6 +5016,18 @@ Respond naturally in plain text only:"""
                         existing_lead.phone = lead_data['phone']
                         existing_lead.contact_preference = lead_data['contact_preference']
                         updated = True
+                    # A returning customer who finally names a date is a
+                    # different lead to the agent than the one who didn't.
+                    if not existing_lead.timeline and lead_data.get('timeline'):
+                        existing_lead.timeline = lead_data['timeline']
+                        existing_lead.timeline_raw = lead_data.get('timeline_raw')
+                        updated = True
+                    if updated:
+                        rescore, rereasons = score_lead_quality(
+                            lead_data, history, has_booking=bool(booked_slots),
+                            lead_type=existing_lead.lead_type or 'buyer')
+                        existing_lead.intent_score = rescore
+                        existing_lead.quality_reasons = json.dumps(rereasons)
                     if updated:
                         db.session.commit()
                         print(f"✅ Lead {existing_lead.id} silently updated")
@@ -4335,7 +5035,8 @@ Respond naturally in plain text only:"""
                         print(f"⚠️ Duplicate: {lead_data['email']}")
                 else:
                     ai_summary = generate_lead_summary(history, agency.name)
-                    quality_score = analyze_lead_quality(lead_data, history)
+                    quality_score, quality_reasons = score_lead_quality(
+                        lead_data, history, has_booking=bool(booked_slots))
                     # Route to an agent who covers the area this customer
                     # actually asked about, before falling back to round-robin.
                     wanted_cities = detect_location(agency_id, history)
@@ -4352,12 +5053,23 @@ Respond naturally in plain text only:"""
                         budget=lead_data['budget'],
                         message=ai_summary,
                         intent_score=quality_score,
+                        quality_reasons=json.dumps(quality_reasons),
+                        timeline=lead_data.get('timeline'),
+                        timeline_raw=lead_data.get('timeline_raw'),
                         lead_status='new',
                         notes='[]'
                     )
                     db.session.add(lead)
                     db.session.commit()
                     print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
+                    record_activity(
+                        agency_id, 'lead_new',
+                        f"New {quality_score}-star buyer lead: {lead.name or 'unnamed'}"
+                        + (f", timeline {timeline_label(lead.timeline)}" if lead.timeline else "")
+                        + (f", assigned to {db.session.get(Agent, lead.agent_id).name}" if lead.agent_id and db.session.get(Agent, lead.agent_id) else ""),
+                        actor_type='system', actor_name='Chatbot',
+                        subject_type='lead', subject_id=lead.id, subject_name=lead.name,
+                        agent_id=lead.agent_id, notify=False)
                     send_lead_email(agency, lead)
                     send_crm_webhook(agency, lead)
                     if lead.agent_id:
@@ -4418,8 +5130,8 @@ def export_leads(agency_id):
         wb = Workbook()
         ws = wb.active
         ws.title = "Leads"
-        headers = ["Sr #", "Quality", "Status", "Name", "Email", "Contact",
-                   "Preference", "Budget", "Customer Insights", "Date"]
+        headers = ["Sr #", "Quality", "Type", "Status", "Name", "Email", "Contact",
+                   "Preference", "Budget", "Timeline", "Customer Insights", "Date"]
         ws.append(headers)
         for cell in ws[1]:
             cell.font = Font(bold=True)
@@ -4429,8 +5141,10 @@ def export_leads(agency_id):
             preference = lead.contact_preference.replace('_', ' ').title() if lead.contact_preference else "Email"
             status = (lead.lead_status or 'new').title()
             ws.append([
-                i, quality_stars, status, lead.name or "—", lead.email or "—",
-                contact, preference, lead.budget or "—", lead.message or "—",
+                i, quality_stars, (lead.lead_type or 'buyer').title(), status,
+                lead.name or "—", lead.email or "—",
+                contact, preference, lead.budget or "—",
+                timeline_label(lead.timeline), lead.message or "—",
                 lead.created_at.strftime('%Y-%m-%d') if lead.created_at else "—"
             ])
         for column in ws.columns:
@@ -4732,9 +5446,37 @@ with app.app_context():
         db.session.rollback()
         print(f"⚠️ seller-side migration error: {e}")
 
+    # ── LEAD TIMELINE + SCORE BREAKDOWN MIGRATION (self-contained) ──
+    try:
+        from sqlalchemy import text as _text8, inspect as _inspect8
+        _insp8 = _inspect8(db.engine)
+        _lead_cols8 = [c['name'] for c in _insp8.get_columns('lead')]
+        for _col, _ddl in (('timeline', 'VARCHAR(40)'),
+                           ('timeline_raw', 'VARCHAR(200)'),
+                           ('quality_reasons', 'TEXT')):
+            if _col not in _lead_cols8:
+                db.session.execute(_text8(f"ALTER TABLE lead ADD COLUMN {_col} {_ddl};"))
+                db.session.commit()
+                print(f"✅ Migration: lead.{_col} added")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ lead-timeline migration error: {e}")
+
+    # ── ACTIVITY FEED MIGRATION (self-contained) ──
+    # create_all() above already makes the table on a fresh database; this
+    # is only here so an existing deployment picks it up on restart.
+    try:
+        from sqlalchemy import inspect as _inspect9
+        if 'activity_event' not in _inspect9(db.engine).get_table_names():
+            ActivityEvent.__table__.create(db.engine)
+            print("✅ Migration: activity_event table created")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ activity-feed migration error: {e}")
+
 # -------------------------
 # RUN
 # -------------------------
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
