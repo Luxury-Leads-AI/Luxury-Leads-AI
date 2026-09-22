@@ -38,7 +38,10 @@ SECRET_KEY=
 DATABASE_URL=          # Optional; defaults to SQLite (luxury_leads.db)
 SUPER_ADMIN_PASSWORD=  # Gates /super-admin-login (/owner, /agencies, /delete-agency)
 SHOW_TIER_3=           # Optional; "true" to re-show the Corporation tier on /pricing and /signup
+PUBLIC_BASE_URL=       # Optional; the public address used in every emailed link and in the embed code (default https://luxury-leads-ai.onrender.com)
 ```
+
+On Render, `SECRET_KEY` is mandatory: if it is missing or still the `'change-this-in-production'` fallback, `app.py` raises at import and the deploy fails with a message saying so (`secret_key_problem()`, keyed off Render's own `RENDER=true`). Locally the fallback still works.
 
 ## Architecture
 
@@ -60,7 +63,11 @@ SHOW_TIER_3=           # Optional; "true" to re-show the Corporation tier on /pr
 
 **Email** — Brevo (`send_email_brevo()`) is the only working email path on Render (Gmail SMTP is blocked, and the old SendGrid integration was replaced). The `BREVO_API_KEY` env var must be set or emails are silently skipped (logged, not raised).
 
-**Widget delivery** — `static/widget.js` is a self-contained IIFE. It hard-codes `BASE_URL = "https://luxury-leads-ai.onrender.com"`. When developing locally, you must temporarily change this URL or use ngrok.
+**Widget delivery** — `static/widget.js` is a self-contained IIFE. It finds its server from the address it was loaded from (`new URL(document.currentScript.src).origin`), so a locally served widget talks to the local app and a custom domain needs no edit. `data-base-url` on the script tag overrides it; `https://luxury-leads-ai.onrender.com` is the last resort and the fallback if the derived address doesn't answer `/agency/<id>`. The widget shows an AI disclosure (header label plus a first line in the message list, localized by browser language: en, fr, es, pt, pt-BR, de, it, nl, ar) for EU AI Act Article 50.
+
+**Public address** — every link `app.py` writes (emails, `LOGIN_URLS`, the check-in email) and the embed code in `admin.html` / `signup_*.html` read `PUBLIC_BASE_URL` (a Jinja global, `public_base_url`, for templates). The Render address appears exactly once, as `DEFAULT_PUBLIC_BASE_URL`; `tests/test_phase0_cycle1.py` fails if a second copy creeps in.
+
+**Rate limits** — Flask-Limiter with in-memory storage (right for one Render instance with one gunicorn worker; more instances would need a Redis-style store). Keyed on the first `X-Forwarded-For` entry, which Render sets to the real client (`client_ip()`). Limits: `/chat` 20/min and 200/hour, `/create-agency` 5/hour and 20/day (super admin exempt), `/owner-login` and `/agent-login` 10 per 15 min, `/super-admin-login` 5 per 15 min, `/forgot-password` 5/hour - POST only. The 429 handler answers in each caller's own shape (JSON `reply` for the widget, JSON `error` for signup, `?error=` redirect for logins). `tests/conftest.py` resets the counters before every test.
 
 ## Deployment
 

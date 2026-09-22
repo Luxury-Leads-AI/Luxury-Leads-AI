@@ -18,6 +18,7 @@ import secrets
 import pytz
 from collections import defaultdict
 import httpx  # used for Brevo email API + webhooks
+from flask_limiter import Limiter
 
 # -------------------------
 # LOAD ENV VARIABLES
@@ -31,6 +32,28 @@ load_dotenv(dotenv_path=env_path)
 # -------------------------
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+# -------------------------
+# PUBLIC ADDRESS
+# -------------------------
+# Every link the app writes into an email, and the embed code it shows an
+# agency, starts with this one value. Today that is the Render address.
+# When the custom domain is live, set PUBLIC_BASE_URL on Render
+# (for example https://app.yourdomain.com) and every link moves with it -
+# no code change. The old onrender.com address keeps working either way.
+DEFAULT_PUBLIC_BASE_URL = 'https://luxury-leads-ai.onrender.com'
+
+def normalize_base_url(value):
+    """'app.example.com/' -> 'https://app.example.com'. Blank -> the default."""
+    value = (value or '').strip().rstrip('/')
+    if not value:
+        return DEFAULT_PUBLIC_BASE_URL
+    if not value.startswith(('http://', 'https://')):
+        value = 'https://' + value
+    return value
+
+PUBLIC_BASE_URL = normalize_base_url(os.getenv('PUBLIC_BASE_URL'))
+app.jinja_env.globals['public_base_url'] = PUBLIC_BASE_URL
 
 import re as _re
 app.jinja_env.filters['regex_replace'] = lambda s, find, replace: _re.sub(find, replace, s)
@@ -46,6 +69,29 @@ app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-this-in-production')
 
+# Every login session is signed with SECRET_KEY. The fallback above is
+# written in this file, so anyone who reads the code could use it to forge
+# a super admin session. It is fine on your own computer; on Render the app
+# refuses to start with it. Render sets RENDER=true on every service.
+_INSECURE_SECRET_KEYS = {'', 'change-this-in-production'}
+
+def secret_key_problem(secret_key, on_render):
+    """Why this key must not be used in production, or None if it's fine."""
+    if not on_render:
+        return None
+    if (secret_key or '').strip() in _INSECURE_SECRET_KEYS:
+        return ("SECRET_KEY is not set on Render, so sessions would be signed "
+                "with the public fallback value. Add SECRET_KEY in Render -> "
+                "Environment (a long random value), then redeploy.")
+    return None
+
+_ON_RENDER = os.getenv('RENDER', '').strip().lower() == 'true'
+_secret_problem = secret_key_problem(os.getenv('SECRET_KEY'), _ON_RENDER)
+if _secret_problem:
+    raise RuntimeError(_secret_problem)
+if _ON_RENDER and len(os.getenv('SECRET_KEY', '')) < 32:
+    print("⚠️ SECRET_KEY is shorter than 32 characters - consider a longer one.")
+
 # Super Admin panel password (protects /owner, /agencies, /delete-agency/<id>).
 # Must be set in the environment on Render - if it's blank, the login route
 # refuses every attempt rather than silently allowing access.
@@ -59,6 +105,61 @@ SUPER_ADMIN_PASSWORD = os.getenv('SUPER_ADMIN_PASSWORD', '')
 SHOW_TIER_3 = os.getenv('SHOW_TIER_3', 'false').strip().lower() == 'true'
 
 db = SQLAlchemy(app)
+
+# -------------------------
+# RATE LIMITS
+# -------------------------
+# Public endpoints cost money (every /chat message is an OpenAI call) or
+# guard a login, so each visitor gets a sensible ceiling. Counters live in
+# this process's memory: right for one Render instance with one worker.
+# More than one instance would need a Redis-style store (Flask-Limiter
+# cannot keep its counters in Postgres).
+def client_ip():
+    """The visitor's own address. On Render every request arrives through
+    Render's proxy, so request.remote_addr is the proxy; Render puts the
+    real client address first in X-Forwarded-For."""
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    first = forwarded.split(',')[0].strip()
+    return first or request.remote_addr or 'unknown'
+
+limiter = Limiter(
+    key_func=client_ip,
+    app=app,
+    storage_uri="memory://",
+    default_limits=[],
+    swallow_errors=True,   # a limiter fault must never take /chat down
+)
+
+CHAT_LIMIT = "20 per minute;200 per hour"
+SIGNUP_LIMIT = "5 per hour;20 per day"
+LOGIN_LIMIT = "10 per 15 minutes"
+SUPER_ADMIN_LOGIN_LIMIT = "5 per 15 minutes"
+PASSWORD_RESET_LIMIT = "5 per hour"
+
+_LOGIN_PAGES = {'/owner-login', '/agent-login', '/super-admin-login'}
+
+@app.errorhandler(429)
+def too_many_requests(e):
+    """Answer a blocked request in the shape its caller already understands,
+    so the widget and the forms show a readable message, not a blank error."""
+    path = request.path
+    if path == '/chat':
+        return jsonify({
+            "reply": "You're sending messages a little too fast. "
+                     "Please wait a minute and try again.",
+            "error": "rate_limited",
+        }), 429
+    if path == '/create-agency':
+        return jsonify({"error": "Too many sign-up attempts from your network. "
+                                 "Please try again in an hour."}), 429
+    if path in _LOGIN_PAGES:
+        return redirect(f"{path}?error=Too+many+attempts.+Please+wait+15+minutes+and+try+again.")
+    if path == '/forgot-password':
+        return render_template(
+            "forgot_password.html",
+            message="Too many reset requests from your network. "
+                    "Please wait an hour and try again."), 429
+    return jsonify({"error": "Too many requests. Please slow down."}), 429
 
 # -------------------------
 # OPENAI CLIENT
@@ -1149,7 +1250,7 @@ New QUALIFIED Lead Received from {agency.name}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Login to view all leads:
-https://luxury-leads-ai.onrender.com/owner-login
+{PUBLIC_BASE_URL}/owner-login
 
 Agency ID: {agency.id}
 """
@@ -1199,7 +1300,7 @@ New Appointment Booked!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 View all appointments:
-https://luxury-leads-ai.onrender.com/appointments/{agency.id}
+{PUBLIC_BASE_URL}/appointments/{agency.id}
 """
     sent_customer = send_email_brevo(appointment.customer_email, customer_subject, customer_body)
     sent_agency = send_email_brevo(agency.email, agency_subject, agency_body)
@@ -1291,7 +1392,7 @@ def notify_other_agents_of_update(appt, acting_agent, action_desc):
                     f"Client: {lead.name or appt.customer_name}\nEmail: {appt.customer_email}\n"
                     f"Appointment date: {appt.appointment_date}\nTime: {appt.appointment_time}\n"
                     f"Status: {appt.status}\nNotes: {appt.notes or '-'}\n\n"
-                    f"Login to see the full picture: https://luxury-leads-ai.onrender.com/agent-login")
+                    f"Login to see the full picture: {PUBLIC_BASE_URL}/agent-login")
 
 
 # ─────────────────────────────────────────────────────
@@ -1309,8 +1410,8 @@ ACTIVITY_ICONS = {
 }
 
 LOGIN_URLS = {
-    'owner': 'https://luxury-leads-ai.onrender.com/owner-login',
-    'agent': 'https://luxury-leads-ai.onrender.com/agent-login',
+    'owner': f'{PUBLIC_BASE_URL}/owner-login',
+    'agent': f'{PUBLIC_BASE_URL}/agent-login',
 }
 
 
@@ -1473,7 +1574,7 @@ Time to follow up with your qualified lead from yesterday!
 
 🎯 Suggested Action: Reach out via {(lead.contact_preference or 'email').title()} within 24 hours.
 
-Login to view: https://luxury-leads-ai.onrender.com/owner-login
+Login to view: {PUBLIC_BASE_URL}/owner-login
 """
     elif day == 7:
         subject = f"📅 7-Day Check-in: {lead.name or 'Lead'} | {agency.name}"
@@ -1494,7 +1595,7 @@ It's been 7 days since {lead.name or 'this lead'} qualified. Time for a re-engag
 "Hey {lead.name or 'there'}, just checking in! Have you found anything you like yet?
 I have a couple of new listings that might fit what you're looking for."
 
-Login to view: https://luxury-leads-ai.onrender.com/owner-login
+Login to view: {PUBLIC_BASE_URL}/owner-login
 """
     else:
         return False
@@ -1511,8 +1612,8 @@ Login to view: https://luxury-leads-ai.onrender.com/owner-login
                 f"Hi {agency.owner_name or agency.name},",
                 f"Hi {agent.name},", 1
             ).replace(
-                "https://luxury-leads-ai.onrender.com/owner-login",
-                "https://luxury-leads-ai.onrender.com/agent-login"
+                f"{PUBLIC_BASE_URL}/owner-login",
+                f"{PUBLIC_BASE_URL}/agent-login"
             )
             agent_body = agent_body.replace(
                 "your qualified lead", "your assigned lead", 1)
@@ -1640,7 +1741,7 @@ def _appointment_datetime(appt):
 
 
 def send_appointment_checkin_email(agency, appt, token):
-    base_url = "https://luxury-leads-ai.onrender.com"
+    base_url = PUBLIC_BASE_URL
     subject = f"How did your viewing go? - {agency.name}"
     body = f"""
 Hi {appt.customer_name or 'there'},
@@ -1942,10 +2043,10 @@ def notify_owner_of_seller_lead(agency, lead, listing, intent):
             "",
             "It's saved as a PENDING listing - review and approve it before",
             "it becomes visible to buyers:",
-            f"https://luxury-leads-ai.onrender.com/listings/{agency.id}",
+            f"{PUBLIC_BASE_URL}/listings/{agency.id}",
         ]
     else:
-        lines.append("Log in to review the conversation: https://luxury-leads-ai.onrender.com/owner-login")
+        lines.append(f"Log in to review the conversation: {PUBLIC_BASE_URL}/owner-login")
     return send_email_brevo(
         agency.email,
         f"🏠 New Seller Lead: {lead.name or 'Property owner'} | {agency.name}",
@@ -2815,6 +2916,7 @@ def signup_agency():
     return render_template("signup_agency.html")
 
 @app.route("/owner-login", methods=["GET", "POST"])
+@limiter.limit(LOGIN_LIMIT, methods=["POST"])
 def owner_login():
     if request.method == "GET":
         return render_template("owner_login.html")
@@ -2872,6 +2974,7 @@ def admin():
         return redirect("/owner-login?error=Something+went+wrong")
 
 @app.route("/super-admin-login", methods=["GET", "POST"])
+@limiter.limit(SUPER_ADMIN_LOGIN_LIMIT, methods=["POST"])
 def super_admin_login():
     if request.method == "GET":
         return render_template("super_admin_login.html")
@@ -2897,6 +3000,8 @@ def ping():
     return jsonify({"status": "ok", "message": "pong"})
 
 @app.route("/create-agency", methods=["POST", "OPTIONS"])
+@limiter.limit(SIGNUP_LIMIT, methods=["POST"],
+               exempt_when=lambda: bool(session.get('super_admin')))
 def create_agency():
     if request.method == "OPTIONS":
         return "", 200
@@ -3674,6 +3779,7 @@ def delete_agent(agent_id):
 
 
 @app.route("/agent-login", methods=["GET", "POST"])
+@limiter.limit(LOGIN_LIMIT, methods=["POST"])
 def agent_login():
     if request.method == "GET":
         return render_template("agent_login.html")
@@ -3791,6 +3897,7 @@ _GENERIC_RESET_MESSAGE = (
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
+@limiter.limit(PASSWORD_RESET_LIMIT, methods=["POST"])
 def forgot_password():
     if request.method == "GET":
         return render_template("forgot_password.html")
@@ -4270,7 +4377,7 @@ def book_followup_viewing(appt_id):
                      f"Customer: {new_appt.customer_name}\nEmail: {new_appt.customer_email}\n"
                      f"Property: {new_appt.property_interest}\n"
                      f"Date: {new_appt.appointment_date}\nTime: {new_appt.appointment_time}\n\n"
-                     f"Login: https://luxury-leads-ai.onrender.com/agent-login")
+                     f"Login: {PUBLIC_BASE_URL}/agent-login")
     actor_type, actor_name, _ = acting_identity()
     record_activity(
         appt.agency_id, 'appointment_new',
@@ -4603,6 +4710,7 @@ def get_listings_api(agency_id):
 # ─────────────────────────────────────────────────────
 
 @app.route("/chat", methods=["POST", "OPTIONS"])
+@limiter.limit(CHAT_LIMIT, methods=["POST"])
 def chat():
     if request.method == "OPTIONS":
         return "", 200
@@ -4908,7 +5016,7 @@ Respond naturally in plain text only:"""
                     if chosen_agent:
                         notify_agent(chosen_agent,
                             f"📅 New Viewing Assigned - {new_appt.customer_name}",
-                            f"Hi {chosen_agent.name},\n\nA viewing was booked and assigned to you:\n\nCustomer: {new_appt.customer_name}\nEmail: {new_appt.customer_email}\nDate: {new_appt.appointment_date}\nTime: {new_appt.appointment_time}\n\nLogin: https://luxury-leads-ai.onrender.com/agent-login")
+                            f"Hi {chosen_agent.name},\n\nA viewing was booked and assigned to you:\n\nCustomer: {new_appt.customer_name}\nEmail: {new_appt.customer_email}\nDate: {new_appt.appointment_date}\nTime: {new_appt.appointment_time}\n\nLogin: {PUBLIC_BASE_URL}/agent-login")
                 except Exception as appt_err:
                     print(f"⚠️ Auto-appointment error: {appt_err}")
                     db.session.rollback()
@@ -4995,7 +5103,7 @@ Respond naturally in plain text only:"""
                                      f"Property: {listing.title if listing else '—'}\n"
                                      f"Location: {listing.location if listing else '—'}\n"
                                      f"Asking: {listing.price_raw if listing else seller_lead.budget or '—'}\n\n"
-                                     f"Login: https://luxury-leads-ai.onrender.com/agent-login")
+                                     f"Login: {PUBLIC_BASE_URL}/agent-login")
                     print(f"✅ SELLER LEAD #{seller_lead.id} captured: {seller_lead.name}")
             except Exception as seller_err:
                 print(f"⚠️ Seller lead error: {seller_err}")
@@ -5076,7 +5184,7 @@ Respond naturally in plain text only:"""
                         assigned_agent = db.session.get(Agent, lead.agent_id)
                         notify_agent(assigned_agent,
                             f"🎯 New Lead Assigned - {lead.name}",
-                            f"Hi {assigned_agent.name},\n\nA new lead was assigned to you:\n\nName: {lead.name}\nEmail: {lead.email}\nBudget: {lead.budget}\n\nLogin: https://luxury-leads-ai.onrender.com/agent-login")
+                            f"Hi {assigned_agent.name},\n\nA new lead was assigned to you:\n\nName: {lead.name}\nEmail: {lead.email}\nBudget: {lead.budget}\n\nLogin: {PUBLIC_BASE_URL}/agent-login")
             except Exception as save_err:
                 print(f"❌ Lead save error: {save_err}")
                 db.session.rollback()

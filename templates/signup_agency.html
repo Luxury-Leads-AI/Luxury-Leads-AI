@@ -206,7 +206,7 @@ async function submitForm(event) {
         <span style="font-size:12px; color:#a7f3d0;">Save this now - it won't be shown again. You can change it after logging in.</span><br><br>
 
         <strong>📋 Embed Code (Copy & Paste on your website):</strong>
-        <div class="embed-code">&lt;script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="${json.agency_id}"&gt;&lt;/script&gt;</div>
+        <div class="embed-code">&lt;script src="{{ public_base_url }}/static/widget.js" data-agency="${json.agency_id}"&gt;&lt;/script&gt;</div>
         <br>
         <strong>🔐 Login to add agents & view leads:</strong><br>
         <a href="/owner-login" style="color: #38bdf8;">Click here to login</a>

@@ -29,6 +29,15 @@ import pytest  # noqa: E402
 import app as app_module  # noqa: E402  (import triggers db.create_all())
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Every test starts with empty rate-limit counters. The whole suite runs
+    from one address (127.0.0.1) in one process, so without this the login
+    tests would eventually lock each other out."""
+    app_module.limiter.reset()
+    yield
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _flask_app_context():
     """All app.py DB calls expect an active Flask app context."""

@@ -1,6 +1,59 @@
 (function () {
-  const agencyId = document.currentScript.getAttribute("data-agency");
-  const BASE_URL = "https://luxury-leads-ai.onrender.com";
+  const script = document.currentScript;
+  const agencyId = script.getAttribute("data-agency");
+
+  // ── WHERE THE SERVER IS ──
+  // Read from the address this script was loaded from, so moving to a
+  // custom domain needs no edit here: the embed code's src decides.
+  // data-base-url overrides it. The Render address is the last resort,
+  // and also the fallback if the derived address doesn't answer (for
+  // example, a site that copied widget.js onto its own server).
+  const DEFAULT_BASE_URL = "https://luxury-leads-ai.onrender.com";
+  function resolveBaseUrl() {
+    const override = script.getAttribute("data-base-url");
+    if (override) return override.replace(/\/+$/, "");
+    try {
+      const origin = new URL(script.src).origin;
+      if (/^https?:\/\//.test(origin)) return origin;
+    } catch (e) { /* inline or unusual src - use the default */ }
+    return DEFAULT_BASE_URL;
+  }
+  let BASE_URL = resolveBaseUrl();
+
+  // ── AI DISCLOSURE ──
+  // Visitors must be told they are talking to an AI (EU AI Act, Article 50,
+  // in force since 2 August 2026). Shown in the header and as the first line
+  // of every chat, in the visitor's browser language where we have it.
+  const DISCLOSURES = {
+    "en":    { label: "AI assistant",       note: "You're chatting with an AI assistant." },
+    "fr":    { label: "Assistant IA",       note: "Vous discutez avec un assistant IA." },
+    "es":    { label: "Asistente de IA",    note: "Estás hablando con un asistente de IA." },
+    "pt":    { label: "Assistente de IA",   note: "Está a conversar com um assistente de IA." },
+    "pt-br": { label: "Assistente de IA",   note: "Você está conversando com um assistente de IA." },
+    "de":    { label: "KI-Assistent",       note: "Sie chatten mit einem KI-Assistenten." },
+    "it":    { label: "Assistente IA",      note: "Stai chattando con un assistente IA." },
+    "nl":    { label: "AI-assistent",       note: "U chat met een AI-assistent." },
+    "ar":    { label: "مساعد ذكاء اصطناعي", note: "أنت تتحدث مع مساعد يعمل بالذكاء الاصطناعي." }
+  };
+  function pickDisclosure() {
+    const langs = (navigator.languages && navigator.languages.length)
+      ? navigator.languages : [navigator.language || "en"];
+    for (const raw of langs) {
+      const tag = String(raw || "").toLowerCase();
+      if (DISCLOSURES[tag]) return DISCLOSURES[tag];
+      const base = tag.split("-")[0];
+      if (DISCLOSURES[base]) return DISCLOSURES[base];
+    }
+    return DISCLOSURES.en;
+  }
+  const disclosure = pickDisclosure();
+
+  // Names come from the agency's settings; never let them become markup.
+  function esc(value) {
+    return String(value).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
 
   // ── UNIQUE SESSION ID - generated fresh on every page load ──
   // Guarantees each visitor/visit gets an isolated conversation
@@ -10,17 +63,28 @@
   let proactiveShown = false;
   let messagesExchanged = 0;
 
+  async function fetchAgencyInfo(base) {
+    const res = await fetch(`${base}/agency/${agencyId}`);
+    if (!res.ok) throw new Error("agency lookup failed");
+    return res.json();
+  }
+
   async function getAgencyInfo() {
+    let data = null;
     try {
-      const res = await fetch(`${BASE_URL}/agency/${agencyId}`);
-      const data = await res.json();
-      return {
-        agency: data.name || "Assistant",
-        assistant: data.assistant || "Assistant"
-      };
+      data = await fetchAgencyInfo(BASE_URL);
     } catch {
-      return { agency: "Assistant", assistant: "Assistant" };
+      if (BASE_URL !== DEFAULT_BASE_URL) {
+        try {
+          data = await fetchAgencyInfo(DEFAULT_BASE_URL);
+          BASE_URL = DEFAULT_BASE_URL;
+        } catch { /* fall through to the defaults below */ }
+      }
     }
+    return {
+      agency: (data && data.name) || "Assistant",
+      assistant: (data && data.assistant) || "Assistant"
+    };
   }
 
   getAgencyInfo().then((info) => {
@@ -143,8 +207,8 @@
             font-size: 18px;
           ">👤</div>
           <div>
-            <div style="font-size: 15px; font-weight: 500; color: #e9edef;">${info.assistant}</div>
-            <div style="font-size: 12px; color: #8696a0; margin-top: 1px;">from ${info.agency}</div>
+            <div style="font-size: 15px; font-weight: 500; color: #e9edef;">${esc(info.assistant)}</div>
+            <div id="chat-ai-label" style="font-size: 12px; color: #8696a0; margin-top: 1px;">${esc(disclosure.label)} · ${esc(info.agency)}</div>
           </div>
         </div>
         <span id="chat-close" style="cursor: pointer; font-size: 22px; color: #8696a0; padding: 4px;">✖</span>
@@ -158,7 +222,18 @@
         flex-direction: column;
         gap: 8px;
         background: #0b141a;
-      "></div>
+      "><div id="chat-ai-disclosure" dir="auto" style="
+          align-self: center;
+          max-width: 85%;
+          text-align: center;
+          font-size: 12px;
+          line-height: 1.4;
+          color: #d1d7db;
+          background: #182229;
+          border-radius: 8px;
+          padding: 6px 10px;
+          margin: 2px 0 6px;
+        ">🤖 ${esc(disclosure.note)}</div></div>
 
       <div id="typing-indicator" style="
         padding: 8px 12px;

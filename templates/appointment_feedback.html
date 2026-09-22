@@ -77,7 +77,7 @@
     <h2>Let's find you something else!</h2>
     <p class="result-message">No problem at all — chat with {{ agency.assistant_name if agency else 'our assistant' }} below and we'll help you find other properties that match what you're looking for, and get a new viewing booked.</p>
     {% if agency %}
-    <script src="https://luxury-leads-ai.onrender.com/static/widget.js" data-agency="{{ agency.id }}"></script>
+    <script src="/static/widget.js" data-agency="{{ agency.id }}"></script>
     {% endif %}
 
   {% elif outcome == 'not_interested' %}
