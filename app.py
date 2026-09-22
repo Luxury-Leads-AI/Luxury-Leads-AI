@@ -17,8 +17,12 @@ import hashlib
 import secrets
 import pytz
 from collections import defaultdict
+import time
 import httpx  # used for Brevo email API + webhooks
 from flask_limiter import Limiter
+import pyotp
+import qrcode
+import qrcode.image.svg
 
 # -------------------------
 # LOAD ENV VARIABLES
@@ -97,6 +101,23 @@ if _ON_RENDER and len(os.getenv('SECRET_KEY', '')) < 32:
 # refuses every attempt rather than silently allowing access.
 SUPER_ADMIN_PASSWORD = os.getenv('SUPER_ADMIN_PASSWORD', '')
 
+# Preferred: a hash of that password, made with tools/make_admin_hash.py and
+# pasted into Render. Then the password itself is nowhere in the settings.
+# The plain variable above still works as a fallback, so deploying this can
+# never lock you out; on Render you get a reminder in the log until the hash
+# is set.
+SUPER_ADMIN_PASSWORD_HASH = os.getenv('SUPER_ADMIN_PASSWORD_HASH', '').strip()
+
+# A token that lets us prove the chat works for a new agency without paying
+# for an OpenAI call. Set SMOKE_TEST_TOKEN on Render to switch it on; with
+# the header X-Smoke-Test: <token>, /chat answers from a fixed string.
+SMOKE_TEST_TOKEN = os.getenv('SMOKE_TEST_TOKEN', '').strip()
+SMOKE_TEST_REPLY = "Smoke test OK - the assistant is reachable for this agency."
+
+if _ON_RENDER and not SUPER_ADMIN_PASSWORD_HASH:
+    print("⚠️ SUPER_ADMIN_PASSWORD_HASH is not set - the super admin password "
+          "is still stored in plain text. Run tools/make_admin_hash.py.")
+
 # Feature flag: whether the Corporation tier is shown on the signup page and
 # pricing page. Nothing about the tier's backend logic (TIER_LIMITS, the
 # agency.tier in ['agency', 'corporation'] checks elsewhere) is removed -
@@ -136,7 +157,8 @@ LOGIN_LIMIT = "10 per 15 minutes"
 SUPER_ADMIN_LOGIN_LIMIT = "5 per 15 minutes"
 PASSWORD_RESET_LIMIT = "5 per hour"
 
-_LOGIN_PAGES = {'/owner-login', '/agent-login', '/super-admin-login'}
+_LOGIN_PAGES = {'/owner-login', '/agent-login', '/super-admin-login',
+                '/super-admin-2fa'}
 
 @app.errorhandler(429)
 def too_many_requests(e):
@@ -194,9 +216,22 @@ def get_tier_limits(agency):
     """Single source of truth for what an agency can do."""
     return TIER_LIMITS.get((agency.tier or 'solo'), TIER_LIMITS['solo'])
 
+ENTITLED_STATUSES = ('active', 'trialing', 'past_due')
+
+def is_entitled(agency):
+    """Is this agency allowed to use the product right now?
+
+    One question, one answer, for every caller: the dashboards today, the
+    pilot and Paddle billing providers later. Pre-Paddle everybody with a
+    live-looking subscription status passes.
+    """
+    if agency is None:
+        return False
+    return (agency.subscription_status or 'active') in ENTITLED_STATUSES
+
 def has_dashboard_access(agency):
-    """Billing-state gate. Pre-Paddle: everyone passes."""
-    return (agency.subscription_status or 'active') in ('active', 'trialing', 'past_due')
+    """The old name, kept so existing callers keep working."""
+    return is_entitled(agency)
 
 def agent_covers_location(agent, target_location):
     """True if this agent's stated coverage area overlaps the property's
@@ -2894,7 +2929,240 @@ class Agent(db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
-    
+
+
+# ─────────────────────────────────────────────────────
+# SUPER ADMIN SECURITY (password, 2FA, audit)
+# ─────────────────────────────────────────────────────
+class AdminSecurity(db.Model):
+    """Two-factor settings for the one super admin account. Always row id=1.
+
+    The secret is what an authenticator app turns into a 6-digit code. It is
+    written here when you scan the QR code and only counts as switched on
+    once you have typed a code back (confirmed_at), so a half-finished setup
+    can never lock you out.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    totp_secret = db.Column(db.String(64), nullable=True)
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+    # The 30-second slot of the last accepted code. A code already used
+    # cannot be replayed by someone reading it over your shoulder.
+    last_step = db.Column(db.BigInteger, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AdminBackupCode(db.Model):
+    """One-time codes for the day the phone is lost. Stored as hashes, so
+    reading the database does not hand anyone a way in."""
+    id = db.Column(db.Integer, primary_key=True)
+    code_hash = db.Column(db.String(200), nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AdminAudit(db.Model):
+    """Who did what in the Super Admin panel, and from where."""
+    id = db.Column(db.Integer, primary_key=True)
+    action = db.Column(db.String(60), nullable=False)
+    detail = db.Column(db.Text, nullable=True)
+    ip = db.Column(db.String(60), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+ADMIN_AUDIT_LABELS = {
+    'login': 'Super admin signed in',
+    'login_failed': 'Wrong super admin password',
+    'password_ok_2fa_required': 'Password accepted, code requested',
+    'twofa_failed': 'Wrong two-factor code',
+    'twofa_backup_used': 'Backup code used',
+    'twofa_enabled': 'Two-factor turned on',
+    'twofa_disabled': 'Two-factor turned off',
+    'backup_codes_regenerated': 'New backup codes made',
+    'logout': 'Super admin signed out',
+    'agency_created': 'Agency created',
+    'agency_deleted': 'Agency deleted',
+}
+
+BACKUP_CODE_COUNT = 8
+
+
+def record_admin_action(action, detail=None):
+    """Write one line to the audit log. Never raises: an audit failure must
+    not stop the thing it was recording."""
+    try:
+        entry = AdminAudit(action=action, detail=detail, ip=client_ip())
+        db.session.add(entry)
+        db.session.commit()
+        return entry
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ admin audit error: {e}")
+        return None
+
+
+def admin_audit_label(action):
+    return ADMIN_AUDIT_LABELS.get(action, (action or '').replace('_', ' ').capitalize())
+
+
+def admin_security_row(create=False):
+    """The single settings row, or None when 2FA was never set up."""
+    row = db.session.get(AdminSecurity, 1)
+    if row is None and create:
+        row = AdminSecurity(id=1)
+        db.session.add(row)
+        db.session.commit()
+    return row
+
+
+def admin_2fa_is_on():
+    row = admin_security_row()
+    return bool(row and row.totp_secret and row.confirmed_at)
+
+
+def check_super_admin_password(password):
+    """Constant-time check, hash first. Comparing with == leaks how much of
+    a guess was right through how long the comparison takes."""
+    password = password or ''
+    if SUPER_ADMIN_PASSWORD_HASH:
+        try:
+            return check_password_hash(SUPER_ADMIN_PASSWORD_HASH, password)
+        except Exception as e:
+            print(f"⚠️ SUPER_ADMIN_PASSWORD_HASH is not a usable hash: {e}")
+            return False
+    if SUPER_ADMIN_PASSWORD:
+        return secrets.compare_digest(password, SUPER_ADMIN_PASSWORD)
+    return False
+
+
+def _totp_steps(now=None):
+    """The current 30-second slot, plus one either side, so a slow typist
+    and a slightly wrong clock still work."""
+    current = int((now if now is not None else time.time()) // 30)
+    return [current - 1, current, current + 1]
+
+
+def verify_totp_code(code, secret=None, remember=True):
+    """True when the 6 digits match the authenticator app.
+
+    remember=False is for the setup page, where the same code is checked
+    before there is anything to protect."""
+    row = admin_security_row()
+    secret = secret or (row.totp_secret if row else None)
+    code = re.sub(r'\s+', '', code or '')
+    if not secret or not code.isdigit() or len(code) != 6:
+        return False
+    totp = pyotp.TOTP(secret)
+    for step in _totp_steps():
+        if secrets.compare_digest(totp.at(step * 30), code):
+            if remember and row is not None:
+                if row.last_step is not None and step <= row.last_step:
+                    return False      # this code was already used
+                row.last_step = step
+                db.session.commit()
+            return True
+    return False
+
+
+def normalize_backup_code(code):
+    return re.sub(r'[^a-z0-9]', '', (code or '').lower())
+
+
+def generate_backup_codes(count=BACKUP_CODE_COUNT):
+    """Replace the old codes with new ones. The plain codes are returned
+    once, here, and never stored."""
+    AdminBackupCode.query.delete()
+    plain = []
+    for _ in range(count):
+        code = secrets.token_hex(4)          # 8 characters, shown as xxxx-xxxx
+        plain.append(code)
+        db.session.add(AdminBackupCode(code_hash=generate_password_hash(code)))
+    db.session.commit()
+    return plain
+
+
+def format_backup_code(code):
+    return f"{code[:4]}-{code[4:]}" if len(code) == 8 else code
+
+
+def use_backup_code(code):
+    """Spend one unused backup code. Each works exactly once."""
+    code = normalize_backup_code(code)
+    if not code:
+        return False
+    for row in AdminBackupCode.query.filter_by(used_at=None).all():
+        try:
+            matched = check_password_hash(row.code_hash, code)
+        except Exception:
+            matched = False
+        if matched:
+            row.used_at = datetime.utcnow()
+            db.session.commit()
+            return True
+    return False
+
+
+def unused_backup_code_count():
+    return AdminBackupCode.query.filter_by(used_at=None).count()
+
+
+def totp_qr_svg(uri):
+    """The QR code as inline SVG - no image files, no outside service."""
+    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage,
+                      box_size=9, border=2)
+    buffer = BytesIO()
+    img.save(buffer)
+    return buffer.getvalue().decode('utf-8')
+
+
+def is_smoke_test_request():
+    """A request that proves the path works without calling OpenAI."""
+    if not SMOKE_TEST_TOKEN:
+        return False
+    supplied = request.headers.get('X-Smoke-Test', '')
+    return bool(supplied) and secrets.compare_digest(supplied, SMOKE_TEST_TOKEN)
+
+
+# ─────────────────────────────────────────────────────
+# PROVISIONING - the one door into the SaaS
+# ─────────────────────────────────────────────────────
+def provision_agency(name, email, tier='solo', prompt=None, assistant_name=None,
+                     owner_name=None, whatsapp=None, subscription_type='Basic',
+                     billing_email=None, password=None, trial_days=14,
+                     status='Active', subscription_status='trialing'):
+    """Create an agency and return (agency, temp_password).
+
+    Every route that makes an agency comes through here: the Super Admin
+    panel, the two signup forms, and later the pilot onboarding and Paddle
+    checkout. temp_password is None when the caller supplied its own.
+    """
+    if not name or not email:
+        raise ValueError("name and email are required")
+    if tier not in TIER_LIMITS:
+        tier = 'solo'
+    supplied_password = (password or '').strip()
+    temp_password = supplied_password or secrets.token_urlsafe(9)
+    agency = Agency(
+        name=name,
+        prompt=prompt or "You are a luxury real estate assistant.",
+        assistant_name=assistant_name or "AI Assistant",
+        owner_name=owner_name,
+        email=email,
+        whatsapp=whatsapp,
+        subscription_type=subscription_type or 'Basic',
+        status=status,
+        tier=tier,
+        subscription_status=subscription_status,
+        trial_ends_at=datetime.utcnow() + timedelta(days=trial_days),
+        billing_email=billing_email or email,
+    )
+    agency.set_password(temp_password)
+    db.session.add(agency)
+    db.session.commit()
+    print(f"✅ Agency created: ID {agency.id} | Tier: {tier} | "
+          f"Trial ends: {agency.trial_ends_at.date()}")
+    return agency, (None if supplied_password else temp_password)
+
+
 # -------------------------
 # ROUTES
 # -------------------------
@@ -2979,14 +3247,127 @@ def super_admin_login():
     if request.method == "GET":
         return render_template("super_admin_login.html")
     password = request.form.get("password", "").strip()
-    if SUPER_ADMIN_PASSWORD and password == SUPER_ADMIN_PASSWORD:
+    if not check_super_admin_password(password):
+        record_admin_action('login_failed')
+        return redirect("/super-admin-login?error=Invalid+password")
+    session.pop('super_admin', None)
+    if admin_2fa_is_on():
+        # The password alone is not a session yet.
+        session['super_admin_pending'] = True
+        record_admin_action('password_ok_2fa_required')
+        return redirect("/super-admin-2fa")
+    session.pop('super_admin_pending', None)
+    session['super_admin'] = True
+    record_admin_action('login')
+    return redirect("/owner")
+
+
+@app.route("/super-admin-2fa", methods=["GET", "POST"])
+@limiter.limit(SUPER_ADMIN_LOGIN_LIMIT, methods=["POST"])
+def super_admin_2fa():
+    """Step two: the 6-digit code, or one of the backup codes."""
+    if not session.get('super_admin_pending'):
+        return redirect("/super-admin-login?error=Please+login+first")
+    if request.method == "GET":
+        return render_template("admin_2fa.html")
+    code = request.form.get("code", "").strip()
+    if verify_totp_code(code):
+        session.pop('super_admin_pending', None)
         session['super_admin'] = True
+        record_admin_action('login')
         return redirect("/owner")
-    return redirect("/super-admin-login?error=Invalid+password")
+    if use_backup_code(code):
+        session.pop('super_admin_pending', None)
+        session['super_admin'] = True
+        record_admin_action('twofa_backup_used',
+                            f"{unused_backup_code_count()} backup codes left")
+        return redirect("/super-admin-2fa/setup?used_backup=1")
+    record_admin_action('twofa_failed')
+    return redirect("/super-admin-2fa?error=That+code+did+not+work.+Try+the+next+one.")
+
+
+@app.route("/super-admin-2fa/setup", methods=["GET", "POST"])
+def super_admin_2fa_setup():
+    """Scan once, type one code back, save the backup codes."""
+    if not session.get('super_admin'):
+        return redirect("/super-admin-login?error=Please+login+first")
+
+    if request.method == "POST":
+        row = admin_security_row(create=True)
+        action = request.form.get("action", "confirm")
+
+        if action == "disable":
+            if not admin_2fa_is_on():
+                return redirect("/super-admin-2fa/setup")
+            code = request.form.get("code", "").strip()
+            if not (verify_totp_code(code) or use_backup_code(code)):
+                return redirect("/super-admin-2fa/setup?error=Enter+a+current+code+to+turn+two-factor+off.")
+            row.totp_secret = None
+            row.confirmed_at = None
+            row.last_step = None
+            AdminBackupCode.query.delete()
+            db.session.commit()
+            record_admin_action('twofa_disabled')
+            return redirect("/super-admin-2fa/setup?disabled=1")
+
+        if action == "new_codes":
+            if not admin_2fa_is_on():
+                return redirect("/super-admin-2fa/setup")
+            codes = generate_backup_codes()
+            record_admin_action('backup_codes_regenerated')
+            return render_template("admin_2fa_setup.html", two_fa_on=True,
+                                   backup_codes=[format_backup_code(c) for c in codes],
+                                   unused_codes=len(codes))
+
+        # confirm: the code typed back from the app
+        code = request.form.get("code", "").strip()
+        if not row.totp_secret:
+            return redirect("/super-admin-2fa/setup?error=Start+again+and+scan+the+QR+code.")
+        if not verify_totp_code(code, secret=row.totp_secret, remember=False):
+            return redirect("/super-admin-2fa/setup?error=That+code+did+not+match.+Try+the+next+one.")
+        row.confirmed_at = datetime.utcnow()
+        db.session.commit()
+        codes = generate_backup_codes()
+        record_admin_action('twofa_enabled')
+        return render_template("admin_2fa_setup.html", two_fa_on=True,
+                               backup_codes=[format_backup_code(c) for c in codes],
+                               unused_codes=len(codes), just_enabled=True)
+
+    if admin_2fa_is_on():
+        return render_template("admin_2fa_setup.html", two_fa_on=True,
+                               unused_codes=unused_backup_code_count())
+
+    # Not set up yet: make (or reuse) an unconfirmed secret and show the QR.
+    row = admin_security_row(create=True)
+    if not row.totp_secret or row.confirmed_at:
+        row.totp_secret = pyotp.random_base32()
+        row.confirmed_at = None
+        row.last_step = None
+        db.session.commit()
+    uri = pyotp.TOTP(row.totp_secret).provisioning_uri(
+        name="super admin", issuer_name="Luxury Leads AI")
+    return render_template("admin_2fa_setup.html", two_fa_on=False,
+                           secret=row.totp_secret, qr_svg=totp_qr_svg(uri),
+                           unused_codes=0)
+
+
+@app.route("/super-admin-audit")
+def super_admin_audit():
+    if not session.get('super_admin'):
+        return redirect("/super-admin-login?error=Please+login+first")
+    entries = AdminAudit.query.order_by(AdminAudit.created_at.desc()).limit(100).all()
+    return render_template("admin_audit.html", entries=entries,
+                           audit_label=admin_audit_label,
+                           two_fa_on=admin_2fa_is_on(),
+                           unused_codes=unused_backup_code_count())
+
 
 @app.route("/super-admin-logout")
 def super_admin_logout():
+    if session.get('super_admin'):
+        record_admin_action('logout')
     session.pop('super_admin', None)
+    session.pop('super_admin_pending', None)
     return redirect("/super-admin-login")
 
 @app.route("/owner")
@@ -3005,45 +3386,36 @@ def ping():
 def create_agency():
     if request.method == "OPTIONS":
         return "", 200
-    data = request.json
+    data = request.json or {}
     if not data.get("name") or not data.get("email"):
         return jsonify({"error": "Name and email required"}), 400
 
-    tier = data.get("tier", "solo")
-    if tier not in TIER_LIMITS:
-        tier = "solo"
-
-    # If the caller (a future signup form) already collected a real password,
-    # use it. Otherwise generate a random one-time temporary password - never
-    # a shared hardcoded default like the old "admin123".
-    supplied_password = (data.get("password") or "").strip()
-    temp_password = supplied_password or secrets.token_urlsafe(9)
-
-    agency = Agency(
+    # One door: the panel, both signup forms and (later) pilot onboarding
+    # all create agencies through provision_agency().
+    agency, temp_password = provision_agency(
         name=data.get("name"),
-        prompt=data.get("prompt", "You are a luxury real estate assistant."),
-        assistant_name=data.get("assistant_name", "AI Assistant"),
-        owner_name=data.get("owner_name"),
         email=data.get("email"),
+        tier=data.get("tier", "solo"),
+        prompt=data.get("prompt"),
+        assistant_name=data.get("assistant_name"),
+        owner_name=data.get("owner_name"),
         whatsapp=data.get("whatsapp"),
         subscription_type=data.get("subscription_type", "Basic"),
-        status="Active",
-        tier=tier,
-        subscription_status="trialing",
-        trial_ends_at=datetime.utcnow() + timedelta(days=14),
-        billing_email=data.get("billing_email") or data.get("email")
+        billing_email=data.get("billing_email"),
+        # If the caller (a signup form) already collected a real password,
+        # use it. Otherwise a random one-time password is generated - never
+        # a shared hardcoded default like the old "admin123".
+        password=data.get("password"),
     )
-    agency.set_password(temp_password)
-    db.session.add(agency)
-    db.session.commit()
-    print(f"✅ Agency created: ID {agency.id} | Tier: {tier} | Trial ends: {agency.trial_ends_at.date()}")
+    if session.get('super_admin'):
+        record_admin_action('agency_created', f"#{agency.id} {agency.name}")
     return jsonify({
         "agency_id": agency.id,
-        "tier": tier,
+        "tier": agency.tier,
         "trial_ends": agency.trial_ends_at.strftime('%Y-%m-%d'),
         # Only handed back when we generated it ourselves - if the caller
         # supplied their own password, it already knows it.
-        "temp_password": None if supplied_password else temp_password,
+        "temp_password": temp_password,
         "message": "Agency created"
     })
 
@@ -3180,8 +3552,10 @@ def delete_agency(agency_id):
     ConversationSession.query.filter(
         ConversationSession.session_key.like(f"{agency_id}_%")
     ).delete(synchronize_session=False)
+    agency_name = agency.name
     db.session.delete(agency)
     db.session.commit()
+    record_admin_action('agency_deleted', f"#{agency_id} {agency_name}")
     return jsonify({"message": "Agency deleted"})
 
 @app.route("/agency/<int:agency_id>")
@@ -4733,6 +5107,13 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
+        # An install check for a brand-new agency: everything above has run
+        # (the agency exists, the request shape is right), and we stop here
+        # rather than paying for an answer nobody reads.
+        if is_smoke_test_request():
+            return jsonify({"reply": SMOKE_TEST_REPLY, "smoke_test": True,
+                            "agency": agency.name})
+
         history, booked_slots = load_session(session_key)
         history.append({"role": "user", "content": user_message})
 
@@ -5569,6 +5950,21 @@ with app.app_context():
     except Exception as e:
         db.session.rollback()
         print(f"⚠️ lead-timeline migration error: {e}")
+
+    # ── SUPER ADMIN SECURITY MIGRATION (self-contained) ──
+    # Three small tables: the 2FA secret, the backup codes, and the audit
+    # log. create_all() above makes them on a fresh database; this is for an
+    # existing deployment picking them up on restart.
+    try:
+        from sqlalchemy import inspect as _inspect10
+        _tables10 = _inspect10(db.engine).get_table_names()
+        for _model in (AdminSecurity, AdminBackupCode, AdminAudit):
+            if _model.__tablename__ not in _tables10:
+                _model.__table__.create(db.engine)
+                print(f"✅ Migration: {_model.__tablename__} table created")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ admin-security migration error: {e}")
 
     # ── ACTIVITY FEED MIGRATION (self-contained) ──
     # create_all() above already makes the table on a fresh database; this

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Super Admin Audit Log - Luxury Leads AI</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <style>
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0 0 60px;
+    }
+    .header {
+      background: var(--grad-brand);
+      padding: 22px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .header h2 { margin: 0; font-size: 22px; color: #fff; }
+    .header a {
+      color: #fff; text-decoration: none; font-size: 14px;
+      border: 1px solid rgba(255,255,255,0.45); padding: 8px 16px; border-radius: 6px;
+    }
+    .container { max-width: 940px; margin: 28px auto; padding: 0 18px; }
+    .box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      box-shadow: var(--glow);
+    }
+    h3 { margin-top: 0; color: var(--brand-2); font-size: 18px; }
+    p { color: var(--text-dim); font-size: 15px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 620px; }
+    th, td {
+      text-align: left;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    th { color: var(--text-faint); font-weight: normal; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; }
+    td { color: var(--text); }
+    td.dim { color: var(--text-dim); }
+    tr:last-child td { border-bottom: none; }
+    .tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: var(--bg-elev);
+      border: 1px solid var(--brand-line);
+      color: var(--text);
+    }
+    .tag.bad { border-color: #ef4444; color: #fecaca; }
+    .empty { color: var(--text-faint); padding: 24px 0; text-align: center; }
+    @media (max-width: 640px) {
+      .container { margin: 18px auto; }
+      .box { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h2>📜 Super Admin Audit Log</h2>
+  <div>
+    <a href="/super-admin-2fa/setup">🔐 Security</a>
+    <a href="/owner">← Back to panel</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="box">
+    <h3>Last 100 events</h3>
+    <p>Sign-ins, failed attempts, two-factor changes, and agencies created or
+       deleted. Two-factor is
+       {% if two_fa_on %}on, with {{ unused_codes }} backup codes left{% else %}off{% endif %}.</p>
+
+    {% if entries %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>When (UTC)</th><th>What happened</th><th>Details</th><th>From</th></tr>
+        </thead>
+        <tbody>
+          {% for entry in entries %}
+          <tr>
+            <td class="dim">{{ entry.created_at.strftime('%Y-%m-%d %H:%M') if entry.created_at else '—' }}</td>
+            <td>
+              <span class="tag {% if 'failed' in entry.action %}bad{% endif %}">
+                {{ audit_label(entry.action) }}
+              </span>
+            </td>
+            <td class="dim">{{ entry.detail or '—' }}</td>
+            <td class="dim">{{ entry.ip or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">Nothing recorded yet.</div>
+    {% endif %}
+  </div>
+</div>
+
+</body>
+</html>

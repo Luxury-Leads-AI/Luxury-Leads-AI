@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Super Admin Security - Luxury Leads AI</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <style>
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0 0 60px;
+    }
+    .header {
+      background: var(--grad-brand);
+      padding: 22px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .header h2 { margin: 0; font-size: 22px; color: #fff; }
+    .header a {
+      color: #fff; text-decoration: none; font-size: 14px;
+      border: 1px solid rgba(255,255,255,0.45); padding: 8px 16px; border-radius: 6px;
+    }
+    .container { max-width: 720px; margin: 28px auto; padding: 0 18px; }
+    .box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 26px;
+      box-shadow: var(--glow);
+      margin-bottom: 22px;
+    }
+    h3 { margin-top: 0; color: var(--brand-2); font-size: 18px; }
+    p, li { color: var(--text-dim); font-size: 15px; line-height: 1.65; }
+    ol { padding-left: 20px; }
+    .qr {
+      background: #fff;
+      padding: 14px;
+      border-radius: 10px;
+      width: 220px;
+      margin: 18px 0;
+    }
+    .qr svg { width: 100%; height: auto; display: block; }
+    .secret {
+      font-family: "Courier New", monospace;
+      background: var(--bg-elev);
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--text);
+      word-break: break-all;
+      font-size: 14px;
+    }
+    form.inline { margin-top: 18px; }
+    input[type="text"] {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-elev);
+      color: var(--text);
+      font-size: 17px;
+      letter-spacing: 3px;
+      width: 180px;
+      text-align: center;
+      box-sizing: border-box;
+    }
+    input:focus { outline: none; border-color: var(--brand-2); }
+    button {
+      padding: 12px 22px;
+      border: none;
+      border-radius: 6px;
+      background: var(--grad-brand);
+      color: #fff;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: var(--glow);
+    }
+    /* theme.css paints every submit button with the brand gradient, and
+       says so with !important - these two have to say it back. */
+    button.secondary {
+      background-image: none !important;
+      background-color: var(--surface-2) !important;
+      box-shadow: none;
+      border: 1px solid var(--border);
+    }
+    button.danger {
+      background-image: none !important;
+      background-color: #dc2626 !important;
+      box-shadow: none;
+    }
+    .codes {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin: 16px 0;
+    }
+    .codes span {
+      font-family: "Courier New", monospace;
+      background: var(--bg-elev);
+      border: 1px solid var(--brand-line);
+      border-radius: 6px;
+      padding: 12px;
+      text-align: center;
+      font-size: 16px;
+      color: var(--text);
+    }
+    .notice {
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 14px;
+      margin-bottom: 18px;
+      border: 1px solid var(--brand-line);
+      background: var(--bg-elev);
+      color: var(--text);
+    }
+    .notice.warn { border-color: #b45309; }
+    .notice.error { border-color: #ef4444; color: #fecaca; background: #7f1d1d; display: none; }
+    .status-on { color: #34d399; font-weight: bold; }
+    .status-off { color: #fbbf24; font-weight: bold; }
+    @media (max-width: 640px) {
+      .container { margin: 18px auto; }
+      .box { padding: 20px; }
+      input[type="text"] { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h2>🔐 Super Admin Security</h2>
+  <div>
+    <a href="/super-admin-audit">📜 Audit log</a>
+    <a href="/owner">← Back to panel</a>
+  </div>
+</div>
+
+<div class="container">
+
+  <div id="errorMessage" class="notice error"></div>
+
+  {% if backup_codes %}
+  <div class="box">
+    <h3>{% if just_enabled %}✅ Two-factor is on{% else %}🆕 New backup codes{% endif %}</h3>
+    <p><strong>Save these now - this is the only time they are shown.</strong>
+       Each code works once, in place of the 6-digit code, if you lose your phone.</p>
+    <div class="codes">
+      {% for code in backup_codes %}<span>{{ code }}</span>{% endfor %}
+    </div>
+    <p>Print them, or keep them in your password manager. Making new codes
+       cancels the old ones.</p>
+  </div>
+  {% endif %}
+
+  {% if two_fa_on %}
+  <div class="box">
+    <h3>Status</h3>
+    <p>Two-factor is <span class="status-on">ON</span> for the super admin login.
+       Unused backup codes: <strong>{{ unused_codes }}</strong>.</p>
+    {% if unused_codes < 3 %}
+    <div class="notice warn">You are running low on backup codes. Make a new set below.</div>
+    {% endif %}
+    <form class="inline" method="POST">
+      <input type="hidden" name="action" value="new_codes">
+      <button class="secondary" type="submit">Make new backup codes</button>
+    </form>
+  </div>
+
+  <div class="box">
+    <h3>Turn two-factor off</h3>
+    <p>You will need a current code from your app (or one backup code) to do this.
+       After that, the password alone gets in - so only do it if you are setting
+       up a new phone.</p>
+    <form class="inline" method="POST">
+      <input type="hidden" name="action" value="disable">
+      <input type="text" name="code" inputmode="numeric" placeholder="000000" required>
+      <button class="danger" type="submit">Turn off</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="box">
+    <h3>Status</h3>
+    <p>Two-factor is <span class="status-off">OFF</span>. Right now the password
+       alone opens the Super Admin panel.</p>
+  </div>
+
+  <div class="box">
+    <h3>Set it up</h3>
+    <ol>
+      <li>Install Google Authenticator (or any authenticator app) on your phone.</li>
+      <li>Tap <em>Add code</em> → <em>Scan a QR code</em>, and scan this:</li>
+    </ol>
+    <div class="qr">{{ qr_svg|safe }}</div>
+    <p>Can't scan? Type this key into the app instead:</p>
+    <p class="secret">{{ secret }}</p>
+    <ol start="3">
+      <li>Type the 6-digit code the app shows, to confirm it works:</li>
+    </ol>
+    <form class="inline" method="POST">
+      <input type="hidden" name="action" value="confirm">
+      <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+             placeholder="000000" required>
+      <button type="submit">Confirm and turn on</button>
+    </form>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const error = params.get('error');
+  if (error) {
+    const box = document.getElementById("errorMessage");
+    box.textContent = "❌ " + decodeURIComponent(error);
+    box.style.display = "block";
+  }
+});
+</script>
+
+</body>
+</html>

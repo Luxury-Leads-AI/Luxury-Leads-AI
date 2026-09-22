@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Two-Factor Code - Luxury Leads AI</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <style>
+    body {
+      background: var(--bg-elev);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .box {
+      background: var(--surface);
+      padding: 36px;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: var(--glow);
+      border: 1px solid var(--border);
+    }
+    h3 { margin-top: 0; text-align: center; color: var(--brand-2); font-size: 22px; margin-bottom: 8px; }
+    .subtitle { text-align: center; color: var(--text-faint); font-size: 14px; margin-bottom: 26px; }
+    label { display: block; margin-bottom: 8px; font-size: 14px; color: var(--text-dim); }
+    input {
+      width: 100%;
+      padding: 14px;
+      margin-bottom: 18px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-elev);
+      color: var(--text);
+      font-size: 20px;
+      letter-spacing: 4px;
+      text-align: center;
+      box-sizing: border-box;
+    }
+    input:focus { outline: none; border-color: var(--brand-2); }
+    button {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 6px;
+      background: var(--grad-brand);
+      color: #fff;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: var(--glow);
+    }
+    .hint { margin-top: 22px; font-size: 13px; color: var(--text-faint); line-height: 1.6; }
+    .hint a { color: var(--brand-2); }
+    .error-message {
+      background: #7f1d1d;
+      border: 1px solid #ef4444;
+      color: #fecaca;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 18px;
+      font-size: 14px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="box">
+  <h3>🔐 Two-step check</h3>
+  <p class="subtitle">Open your authenticator app and type the 6-digit code</p>
+
+  <div id="errorMessage" class="error-message"></div>
+
+  <form method="POST">
+    <label for="code">Code</label>
+    <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+           placeholder="000000" required autofocus>
+    <button type="submit">Continue</button>
+  </form>
+
+  <p class="hint">
+    Lost your phone? Type one of your backup codes in the same box - each
+    one works once. Or <a href="/super-admin-login">start again</a>.
+  </p>
+</div>
+
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  const error = new URLSearchParams(window.location.search).get('error');
+  if (error) {
+    const box = document.getElementById("errorMessage");
+    box.textContent = "❌ " + decodeURIComponent(error);
+    box.style.display = "block";
+  }
+});
+</script>
+
+</body>
+</html>

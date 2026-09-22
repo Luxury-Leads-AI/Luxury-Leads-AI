@@ -39,6 +39,8 @@ DATABASE_URL=          # Optional; defaults to SQLite (luxury_leads.db)
 SUPER_ADMIN_PASSWORD=  # Gates /super-admin-login (/owner, /agencies, /delete-agency)
 SHOW_TIER_3=           # Optional; "true" to re-show the Corporation tier on /pricing and /signup
 PUBLIC_BASE_URL=       # Optional; the public address used in every emailed link and in the embed code (default https://luxury-leads-ai.onrender.com)
+SUPER_ADMIN_PASSWORD_HASH=  # Preferred over SUPER_ADMIN_PASSWORD; make one with `python tools/make_admin_hash.py`
+SMOKE_TEST_TOKEN=      # Optional; with header `X-Smoke-Test: <token>`, /chat answers from a fixed string instead of calling OpenAI
 ```
 
 On Render, `SECRET_KEY` is mandatory: if it is missing or still the `'change-this-in-production'` fallback, `app.py` raises at import and the deploy fails with a message saying so (`secret_key_problem()`, keyed off Render's own `RENDER=true`). Locally the fallback still works.
@@ -67,7 +69,13 @@ On Render, `SECRET_KEY` is mandatory: if it is missing or still the `'change-thi
 
 **Public address** — every link `app.py` writes (emails, `LOGIN_URLS`, the check-in email) and the embed code in `admin.html` / `signup_*.html` read `PUBLIC_BASE_URL` (a Jinja global, `public_base_url`, for templates). The Render address appears exactly once, as `DEFAULT_PUBLIC_BASE_URL`; `tests/test_phase0_cycle1.py` fails if a second copy creeps in.
 
-**Rate limits** — Flask-Limiter with in-memory storage (right for one Render instance with one gunicorn worker; more instances would need a Redis-style store). Keyed on the first `X-Forwarded-For` entry, which Render sets to the real client (`client_ip()`). Limits: `/chat` 20/min and 200/hour, `/create-agency` 5/hour and 20/day (super admin exempt), `/owner-login` and `/agent-login` 10 per 15 min, `/super-admin-login` 5 per 15 min, `/forgot-password` 5/hour - POST only. The 429 handler answers in each caller's own shape (JSON `reply` for the widget, JSON `error` for signup, `?error=` redirect for logins). `tests/conftest.py` resets the counters before every test.
+**Super admin security** — `/super-admin-login` checks the password against `SUPER_ADMIN_PASSWORD_HASH` with `check_password_hash`, falling back to `secrets.compare_digest` against the old plain `SUPER_ADMIN_PASSWORD` so a deploy can't lock anyone out (Render logs a reminder until the hash is set). When `AdminSecurity` row 1 has a confirmed TOTP secret, the password only sets `session['super_admin_pending']` and `/super-admin-2fa` asks for the 6-digit code; codes are accepted within ±30s and each 30-second slot is spent once (`last_step`), so a code can't be replayed. `AdminBackupCode` holds 8 one-time codes as hashes. `/super-admin-2fa/setup` (QR drawn locally with `qrcode`'s SVG factory - no outside service ever sees the key) confirms, regenerates codes, or turns 2FA off against a current code. `AdminAudit` + `record_admin_action()` log sign-ins, failures, 2FA changes and agency create/delete; `/super-admin-audit` shows the last 100.
+
+**One door in, one entitlement answer** — `provision_agency()` is the only place an `Agency` row is created (`/create-agency` is a thin wrapper; pilot onboarding and Paddle checkout will call it too), and `is_entitled(agency)` is the only answer to "may this agency use the product?" (`has_dashboard_access()` is kept as an alias). Both exist for the acquisition engine, which must never write to SaaS tables directly.
+
+**Smoke test** — with `SMOKE_TEST_TOKEN` set, a `/chat` POST carrying `X-Smoke-Test: <token>` returns a fixed reply after the agency lookup, so a new pilot's install can be checked end to end without an OpenAI call and without writing a lead or a conversation row.
+
+**Rate limits** — Flask-Limiter with in-memory storage (right for one Render instance with one gunicorn worker; more instances would need a Redis-style store). Keyed on the first `X-Forwarded-For` entry, which Render sets to the real client (`client_ip()`). Limits: `/chat` 20/min and 200/hour, `/create-agency` 5/hour and 20/day (super admin exempt), `/owner-login` and `/agent-login` 10 per 15 min, `/super-admin-login` and `/super-admin-2fa` 5 per 15 min, `/forgot-password` 5/hour - POST only. The 429 handler answers in each caller's own shape (JSON `reply` for the widget, JSON `error` for signup, `?error=` redirect for logins). `tests/conftest.py` resets the counters before every test.
 
 ## Deployment
 
