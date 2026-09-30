@@ -43,6 +43,56 @@ SUPER_ADMIN_PASSWORD_HASH=  # Preferred over SUPER_ADMIN_PASSWORD; make one with
 SMOKE_TEST_TOKEN=      # Optional; with header `X-Smoke-Test: <token>`, /chat answers from a fixed string instead of calling OpenAI
 ```
 
+## The acquisition engine
+
+`acquisition/` is a separate package in this repository that finds and wins
+new agencies. It shares the database with the SaaS and **never imports
+`app.py`** - `tests/acquisition/test_engine_foundation.py` fails if it ever
+does, because that would be a circular import and would load the whole app
+twice under `python app.py`. Everything it needs arrives through
+`acquisition.init_app(app, db, saas=SaaSServices(...))` at the bottom of
+`app.py`: the database, `provision_agency`, `is_entitled`, `send_email_brevo`,
+the OpenAI client and `PUBLIC_BASE_URL`.
+
+```
+acquisition/
+├── models.py        the 19 acq_* tables, built inside define(db)
+├── settings.py      mode, budgets, caps, kill switches (acq_setting)
+├── compliance.py    can_contact(): the one gate before anything is sent
+├── jobs/            runner.py (claim one, run it, record it), registry, handlers/, worker.py
+├── services/        ai.py (every OpenAI call + cost + budget), prospects.py (one row per company)
+├── admin/routes.py  the /owner/acquisition screens, behind the super admin session
+└── static/acquisition/runner.js   the browser-driven queue loop
+```
+
+**The queue.** Render's free plan has no worker, so an open dashboard tab is
+the worker: `runner.js` posts to `/owner/acquisition/jobs/run-next`, which
+runs jobs for at most `runner.BUDGET_SECONDS` (20) and returns, safely inside
+gunicorn's 30-second limit. `claim_one()` uses `FOR UPDATE SKIP LOCKED` on
+Postgres so two tabs never take the same job; a claim holds a 90-second lock,
+and `release_stale_locks()` returns anything whose owner vanished. Jobs carry
+an `idempotency_key` (so the same work is not queued twice) and retry three
+times with a growing wait. Growth mode changes nothing but who calls it:
+`python -m acquisition.jobs.worker`.
+
+**Money.** `services/ai.py` is the only code that calls OpenAI. Every call is
+costed from the token counts the API reports into `acq_cost`, model prices
+live in settings (not in code), and `can_spend()` refuses *before* a call once
+the monthly budget is gone. Outside text is always passed as untrusted data,
+the model gets no tools, and answers are parsed as JSON or thrown away.
+
+**The gate.** `compliance.can_contact()` checks the kill switch, the
+prospect's do-not-contact flag, the market's legal status (only `verified`
+allows email) and the suppression list. `acq_suppression` deliberately has no
+foreign key: an opt-out outlives the prospect row it came from.
+
+**Screens.** `/owner/acquisition/` (Today, with the Run button and the budget),
+`markets` (the registry, where a legal status is changed and logged),
+`prospects` (paste websites; the canonical domain is the identity),
+`jobs`, `costs`, `settings`, `audit`. All are behind `session['super_admin']`,
+and every form carries a CSRF token checked in the blueprint's
+`before_request`; session cookies are `SameSite=Lax` (and `Secure` on Render).
+
 On Render, `SECRET_KEY` is mandatory: if it is missing or still the `'change-this-in-production'` fallback, `app.py` raises at import and the deploy fails with a message saying so (`secret_key_problem()`, keyed off Render's own `RENDER=true`). Locally the fallback still works.
 
 ## Architecture

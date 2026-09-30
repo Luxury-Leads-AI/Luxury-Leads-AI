@@ -1,0 +1,38 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'settings' %}
+{% block title %}Settings{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>Engine settings</h3>
+  <p>These decide what may run on its own and what it may spend. Changing the
+     mode is how the engine moves from Bootstrap to Growth later — no code
+     changes, and every change here is written to the log.</p>
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for key, label in editable %}
+    <p>
+      <label for="{{ key }}">{{ label }}</label>
+      {% if key == 'mode' %}
+      <select id="mode" name="mode">
+        {% for value in modes %}
+        <option value="{{ value }}" {{ 'selected' if values.get('mode') == value }}>{{ mode_labels.get(value) }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
+      <input type="text" id="{{ key }}" name="{{ key }}" value="{{ values.get(key, '') }}">
+      {% endif %}
+    </p>
+    {% endfor %}
+    <button type="submit">Save settings</button>
+  </form>
+</div>
+
+<div class="box">
+  <h3>Model prices</h3>
+  <p class="muted">Prices are kept as a setting rather than in code, because OpenAI
+     changes them and a stale price turns the Costs page into fiction. Current
+     values: <code>{{ values.get('model_prices_json') }}</code> (dollars per million tokens).</p>
+</div>
+
+{% endblock %}

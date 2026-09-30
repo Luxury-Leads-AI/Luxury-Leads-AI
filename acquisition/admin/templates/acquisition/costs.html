@@ -1,0 +1,59 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'costs' %}
+{% block title %}Costs{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>This month</h3>
+  <div class="grid">
+    <div class="stat"><div class="n">${{ '%.2f'|format(summary.budget.spent) }}</div><div class="l">AI spend</div></div>
+    <div class="stat"><div class="n">${{ '%.2f'|format(summary.budget.budget) }}</div><div class="l">budget</div></div>
+    <div class="stat"><div class="n">${{ '%.2f'|format(summary.fixed_costs) }}</div><div class="l">fixed costs</div></div>
+    <div class="stat"><div class="n">{{ summary.prospects }}</div><div class="l">prospects</div></div>
+    <div class="stat"><div class="n">${{ '%.4f'|format(summary.per_prospect) }}</div><div class="l">AI per prospect</div></div>
+  </div>
+  <div class="budget-bar {{ 'over' if summary.budget.level == 'over' else 'warn' if summary.budget.level == 'warning' }}" style="margin-top:14px;">
+    <span style="width: {{ [summary.budget.share * 100, 100]|min }}%"></span>
+  </div>
+</div>
+
+<div class="box">
+  <h3>Where it went</h3>
+  {% if summary.by_purpose %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Purpose</th><th>Calls</th><th>Cost</th></tr></thead>
+    <tbody>
+    {% for purpose, entry in summary.by_purpose.items() %}
+      <tr><td>{{ purpose }}</td><td class="dim">{{ entry.calls }}</td><td>${{ '%.4f'|format(entry.usd) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">Nothing spent yet. Every OpenAI call the engine makes is
+     written down here as it happens, with the model and the token counts the
+     API reported — not an estimate.</p>
+  {% endif %}
+</div>
+
+{% if summary.recent %}
+<div class="box">
+  <h3>Recent calls</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>When (UTC)</th><th>Model</th><th>Purpose</th><th>In</th><th>Out</th><th>Cost</th></tr></thead>
+    <tbody>
+    {% for row in summary.recent %}
+      <tr>
+        <td class="dim">{{ row.created_at.strftime('%m-%d %H:%M') if row.created_at }}</td>
+        <td class="dim">{{ row.model }}</td>
+        <td>{{ row.purpose }}</td>
+        <td class="dim">{{ row.input_tokens }}</td>
+        <td class="dim">{{ row.output_tokens }}</td>
+        <td>${{ '%.5f'|format(row.usd or 0) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'prospects' %}
+{% block title %}Prospects{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>Add prospects</h3>
+  <p>One website per line. You can put a name after a comma:
+     <span class="muted">rivieraestates.fr, Riviera Estates</span>.
+     The same company is never added twice — the website address is its identity.</p>
+  <form method="POST" action="{{ url_for('acquisition.add_prospects') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row">
+      <select name="market_id">
+        <option value="">No market yet</option>
+        {% for market in markets %}
+        <option value="{{ market.id }}">{{ market.name }} — {{ legal_labels.get(market.legal_status) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <textarea name="websites" placeholder="https://example-realty.com&#10;another-agency.fr, Another Agency"></textarea>
+    <p><button type="submit">Add them</button></p>
+  </form>
+</div>
+
+<div class="box">
+  <h3>{{ prospects|length }} prospect{{ '' if prospects|length == 1 else 's' }}</h3>
+  <form method="GET">
+    <div class="row">
+      <select name="stage" onchange="this.form.submit()">
+        <option value="">Every stage</option>
+        {% for value, label in stage_labels.items() %}
+        <option value="{{ value }}" {{ 'selected' if stage == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select name="market_id" onchange="this.form.submit()">
+        <option value="">Every market</option>
+        {% for market in markets %}
+        <option value="{{ market.id }}" {{ 'selected' if market_id == market.id }}>{{ market.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+
+  {% if prospects %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Agency</th><th>Market</th><th>Stage</th><th>Fit</th><th>Added</th></tr></thead>
+    <tbody>
+    {% for prospect in prospects %}
+      <tr>
+        <td>
+          <a href="{{ url_for('acquisition.prospect_detail', prospect_id=prospect.id) }}">{{ prospect.name or prospect.canonical_domain }}</a>
+          <br><span class="muted">{{ prospect.canonical_domain }}</span>
+          {% if prospect.do_not_contact %}<br><span class="tag bad">do not contact</span>{% endif %}
+        </td>
+        <td class="dim">{{ prospect.market.name if prospect.market else '—' }}</td>
+        <td><span class="tag">{{ stage_labels.get(prospect.stage, prospect.stage) }}</span></td>
+        <td class="dim">{{ prospect.fit_score if prospect.fit_score is not none else '—' }}</td>
+        <td class="dim">{{ prospect.created_at.strftime('%Y-%m-%d') if prospect.created_at else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">None yet.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

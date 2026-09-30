@@ -1,0 +1,108 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'prospects' %}
+{% block title %}{{ prospect.name or prospect.canonical_domain }}{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>{{ prospect.name or prospect.canonical_domain }}</h3>
+  <p>
+    <a href="{{ prospect.website }}" target="_blank" rel="noopener noreferrer">{{ prospect.canonical_domain }}</a>
+    · <span class="tag">{{ stage_labels.get(prospect.stage, prospect.stage) }}</span>
+    {% if prospect.market %}· {{ prospect.market.name }}{% endif %}
+    {% if prospect.do_not_contact %}· <span class="tag bad">do not contact</span>{% endif %}
+  </p>
+  <p class="{{ 'notice' if decision.allowed else 'notice bad' }}">
+    {% if decision.allowed %}Outreach is allowed for this prospect.
+    {% else %}No outreach: {{ decision.reason }}{% endif %}
+  </p>
+</div>
+
+<div class="box">
+  <h3>Edit</h3>
+  <form method="POST" action="{{ url_for('acquisition.update_prospect', prospect_id=prospect.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row">
+      <input type="text" name="name" value="{{ prospect.name or '' }}" placeholder="Agency name">
+      <select name="stage">
+        {% for value in stages %}
+        <option value="{{ value }}" {{ 'selected' if prospect.stage == value }}>{{ stage_labels.get(value, value) }}</option>
+        {% endfor %}
+      </select>
+      <select name="market_id">
+        <option value="">No market</option>
+        {% for market in markets %}
+        <option value="{{ market.id }}" {{ 'selected' if prospect.market_id == market.id }}>{{ market.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <textarea name="notes" placeholder="Notes">{{ prospect.notes or '' }}</textarea>
+    <p><label><input type="checkbox" name="needs_human" {{ 'checked' if prospect.needs_human }}> Needs me to look at it</label></p>
+    <button type="submit">Save</button>
+    <button class="secondary" type="submit" name="action" value="queue_normalize">Queue a tidy-up job</button>
+  </form>
+</div>
+
+<div class="box">
+  <h3>Researched facts</h3>
+  {% if prospect.facts %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Field</th><th>Value</th><th>How sure</th><th>Source</th></tr></thead>
+    <tbody>
+    {% for fact in prospect.facts %}
+      <tr>
+        <td class="dim">{{ fact.field }}</td>
+        <td>{{ fact.value }}</td>
+        <td><span class="tag {{ 'good' if fact.confidence == 'verified' else 'warn' }}">{{ fact.confidence }}</span></td>
+        <td class="dim">{% if fact.source_url %}<a href="{{ fact.source_url }}" target="_blank" rel="noopener noreferrer">page</a>{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">Nothing researched yet. Research arrives in Phase 3; every fact will
+     carry the page it came from, and a draft may only use facts marked verified.</p>
+  {% endif %}
+</div>
+
+<div class="box">
+  <h3>Contacts</h3>
+  {% if prospect.contacts %}
+  <ul>
+    {% for contact in prospect.contacts %}
+    <li>{{ contact.email }} {% if contact.name %}({{ contact.name }}){% endif %}
+        <span class="muted">{{ contact.email_check or 'not checked' }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">None yet.</p>
+  {% endif %}
+</div>
+
+<div class="box">
+  <h3>Stop contacting this agency</h3>
+  <p>This marks the prospect do-not-contact and adds its domain to the
+     suppression list, which is never cleared automatically.</p>
+  <form method="POST" action="{{ url_for('acquisition.update_prospect', prospect_id=prospect.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row"><input type="text" name="reason" placeholder="Reason (kept in the log)"></div>
+    <button class="danger" type="submit" name="action" value="do_not_contact">Mark do not contact</button>
+  </form>
+</div>
+
+{% if jobs %}
+<div class="box">
+  <h3>Recent jobs for this prospect</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Type</th><th>Status</th><th>Result</th></tr></thead>
+    <tbody>
+    {% for job in jobs %}
+      <tr><td class="dim">{{ job.id }}</td><td>{{ job.type }}</td>
+          <td><span class="tag {{ 'good' if job.status == 'done' else 'bad' if job.status == 'failed' }}">{{ job.status }}</span></td>
+          <td class="dim">{{ job.result or job.last_error or '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+{% endblock %}

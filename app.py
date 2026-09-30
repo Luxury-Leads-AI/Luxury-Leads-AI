@@ -90,6 +90,15 @@ def secret_key_problem(secret_key, on_render):
     return None
 
 _ON_RENDER = os.getenv('RENDER', '').strip().lower() == 'true'
+
+# Session cookie rules. Lax means another site cannot make your browser
+# send this cookie with a form post, which is the ordinary way an admin
+# session gets used against its owner. Secure only on Render, because a
+# Secure cookie is never sent over plain http - which is what you use
+# locally.
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = _ON_RENDER
 _secret_problem = secret_key_problem(os.getenv('SECRET_KEY'), _ON_RENDER)
 if _secret_problem:
     raise RuntimeError(_secret_problem)
@@ -5977,6 +5986,33 @@ with app.app_context():
     except Exception as e:
         db.session.rollback()
         print(f"⚠️ activity-feed migration error: {e}")
+
+# ─────────────────────────────────────────────────────
+# CLIENT ACQUISITION ENGINE
+# ─────────────────────────────────────────────────────
+# The engine is a separate package that never imports this file. Everything
+# it needs arrives here: the database, and the few SaaS functions it is
+# allowed to call. Its screens live under /owner/acquisition, behind the
+# same super admin session as the rest of the panel.
+import acquisition
+
+acquisition.init_app(app, db, saas=acquisition.SaaSServices(
+    provision_agency=provision_agency,
+    is_entitled=is_entitled,
+    send_email=send_email_brevo,
+    openai_client=client,
+    public_base_url=PUBLIC_BASE_URL,
+))
+
+with app.app_context():
+    try:
+        _acq_created = acquisition.create_tables(db)
+        if _acq_created:
+            print(f"✅ Migration: acquisition tables created ({len(_acq_created)})")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ acquisition migration error: {e}")
+
 
 # -------------------------
 # RUN

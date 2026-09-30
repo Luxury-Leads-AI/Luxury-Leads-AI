@@ -1,0 +1,30 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'audit' %}
+{% block title %}Log{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>What happened</h3>
+  <p>Every change made on these screens: markets verified, prospects added or
+     stopped, settings changed, jobs retried.</p>
+  {% if entries %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>When (UTC)</th><th>Action</th><th>What</th><th>Details</th><th>From</th></tr></thead>
+    <tbody>
+    {% for entry in entries %}
+      <tr>
+        <td class="dim">{{ entry.created_at.strftime('%Y-%m-%d %H:%M') if entry.created_at }}</td>
+        <td><span class="tag">{{ entry.action.replace('_', ' ') }}</span></td>
+        <td class="dim">{{ entry.entity or '—' }}{% if entry.entity_id %} #{{ entry.entity_id }}{% endif %}</td>
+        <td class="dim">{{ (entry.after or entry.before or '—')[:140] }}</td>
+        <td class="dim">{{ entry.ip or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">Nothing yet.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

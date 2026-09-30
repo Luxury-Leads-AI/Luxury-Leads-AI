@@ -1,0 +1,92 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'markets' %}
+{% block title %}Markets{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>Market registry</h3>
+  <p>Each row is a city and what the law there allows. <strong>Verified</strong>
+     is the only status that lets the engine draft outreach — and even then,
+     you send every email yourself. Read the note before you change a status;
+     the change is written to the log.</p>
+  {% if not markets %}
+  <form method="POST" action="{{ url_for('acquisition.seed_markets') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="muted">Nothing here yet. You can start from the ten cities in the plan
+       (US and France as Verified, UK and UAE needing a check, Portugal unknown)
+       and edit them afterwards.</p>
+    <button type="submit">Add the ten proposed markets</button>
+  </form>
+  {% else %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Market</th><th>Prospects</th><th>Legal status</th><th>Outreach</th><th>State</th><th></th></tr></thead>
+    <tbody>
+    {% for market in markets %}
+      <tr>
+        <td>
+          <strong>{{ market.name }}</strong><br>
+          <span class="muted">{{ market.language }}{% if market.timezone %} · {{ market.timezone }}{% endif %}</span>
+          {% if market.legal_note %}<br><span class="muted">{{ market.legal_note }}</span>{% endif %}
+        </td>
+        <td class="dim">{{ counts.get(market.id, 0) }}</td>
+        <td colspan="4">
+          <form method="POST" action="{{ url_for('acquisition.update_market', market_id=market.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="row">
+              <select name="legal_status">
+                {% for value in legal_statuses %}
+                <option value="{{ value }}" {{ 'selected' if market.legal_status == value }}>{{ legal_labels.get(value) }}</option>
+                {% endfor %}
+              </select>
+              <select name="outreach_method">
+                {% for value in outreach_methods %}
+                <option value="{{ value }}" {{ 'selected' if market.outreach_method == value }}>{{ method_labels.get(value) }}</option>
+                {% endfor %}
+              </select>
+              <select name="status">
+                {% for value in ('proposed', 'active', 'paused') %}
+                <option value="{{ value }}" {{ 'selected' if market.status == value }}>{{ value }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="row">
+              <input type="text" name="legal_note" placeholder="What you checked, and where (kept in the log)">
+            </div>
+            <button class="small" type="submit">Save</button>
+            <button class="small danger" type="submit" name="action" value="delete">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+</div>
+
+<div class="box">
+  <h3>Add a market</h3>
+  <form method="POST" action="{{ url_for('acquisition.add_market') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row">
+      <input type="text" name="country" placeholder="Country (e.g. Ireland)" required>
+      <input type="text" name="city" placeholder="City (e.g. Dublin)" required>
+      <input type="text" name="country_code" placeholder="Code (IE)">
+      <input type="text" name="language" placeholder="Language (en)">
+    </div>
+    <div class="row">
+      <input type="text" name="timezone" placeholder="Timezone (Europe/Dublin)">
+      <select name="legal_status">
+        {% for value in legal_statuses %}<option value="{{ value }}">{{ legal_labels.get(value) }}</option>{% endfor %}
+      </select>
+      <select name="outreach_method">
+        {% for value in outreach_methods %}<option value="{{ value }}">{{ method_labels.get(value) }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="row">
+      <input type="text" name="legal_note" placeholder="What the rules are, and where you read them">
+    </div>
+    <button type="submit">Add market</button>
+  </form>
+</div>
+
+{% endblock %}

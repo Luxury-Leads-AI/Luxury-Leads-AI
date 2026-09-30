@@ -1,0 +1,99 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'today' %}
+{% block title %}Today{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>The queue</h3>
+  <p>Jobs run while this tab is open. Press Run and leave it for a minute;
+     closing the tab just stops it, and nothing is lost.</p>
+  <p><strong id="queue-depth">{{ queue_depth }}</strong> waiting ·
+     <span id="run-status" class="muted">Ready.</span></p>
+  <button id="run-queue" data-csrf="{{ csrf_token }}">▶ Run the queue</button>
+  <div id="run-log" style="margin-top:14px;"></div>
+</div>
+
+<div class="box">
+  <h3>Prospects</h3>
+  <div class="grid">
+    <div class="stat"><div class="n">{{ total_prospects }}</div><div class="l">total</div></div>
+    {% for stage, label in stage_labels.items() %}
+      {% if stage_counts.get(stage) %}
+      <div class="stat"><div class="n">{{ stage_counts.get(stage) }}</div><div class="l">{{ label }}</div></div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+<div class="box">
+  <h3>This month's AI spend</h3>
+  <p><strong>${{ '%.2f'|format(budget.spent) }}</strong> of ${{ '%.2f'|format(budget.budget) }}
+     {% if budget.level == 'over' %}<span class="tag bad">budget spent</span>
+     {% elif budget.level == 'warning' %}<span class="tag warn">80% used</span>
+     {% else %}<span class="tag good">fine</span>{% endif %}</p>
+  <div class="budget-bar {{ 'over' if budget.level == 'over' else 'warn' if budget.level == 'warning' }}">
+    <span style="width: {{ [budget.share * 100, 100]|min }}%"></span>
+  </div>
+  <p class="muted">At 100% the engine pauses discovery, research and drafting.
+     Rule-based work (opt-outs, suppression) never pauses.</p>
+</div>
+
+{% if unverified %}
+<div class="box">
+  <h3>Markets that need a decision</h3>
+  <p>The engine will research and score prospects in these, but it will not
+     draft outreach until you set the legal status to Verified.</p>
+  <ul>
+    {% for market in unverified %}
+    <li><strong>{{ market.name }}</strong> — {{ legal_labels.get(market.legal_status) }}
+        {% if market.legal_note %}<br><span class="muted">{{ market.legal_note }}</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <a class="btn" href="{{ url_for('acquisition.markets') }}">Open markets</a>
+</div>
+{% endif %}
+
+{% if needs_review %}
+<div class="box">
+  <h3>Prospects needing you</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Agency</th><th>Stage</th><th>Why</th></tr></thead>
+    <tbody>
+    {% for prospect in needs_review %}
+      <tr>
+        <td><a href="{{ url_for('acquisition.prospect_detail', prospect_id=prospect.id) }}">{{ prospect.name or prospect.canonical_domain }}</a></td>
+        <td class="dim">{{ stage_labels.get(prospect.stage, prospect.stage) }}</td>
+        <td class="dim">{{ prospect.needs_human_reason or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<div class="box">
+  <h3>Last jobs</h3>
+  {% if recent_jobs %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Type</th><th>Status</th><th>Took</th><th>Problem</th></tr></thead>
+    <tbody>
+    {% for job in recent_jobs %}
+      <tr>
+        <td class="dim">{{ job.id }}</td>
+        <td>{{ job.type }}</td>
+        <td><span class="tag {{ 'good' if job.status == 'done' else 'bad' if job.status == 'failed' else '' }}">{{ job.status }}</span></td>
+        <td class="dim">{{ job.duration_ms or '—' }}{% if job.duration_ms %} ms{% endif %}</td>
+        <td class="dim">{{ job.last_error or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">Nothing has run yet. Add a few prospects, or queue a test job on the Jobs page.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('acquisition.static', filename='runner.js') }}"></script>
+{% endblock %}

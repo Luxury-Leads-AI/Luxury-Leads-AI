@@ -1,0 +1,56 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'jobs' %}
+{% block title %}Jobs{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>The queue</h3>
+  <p><strong id="queue-depth">{{ queue_depth }}</strong> waiting ·
+     <span id="run-status" class="muted">Ready.</span></p>
+  <button id="run-queue" data-csrf="{{ csrf_token }}">▶ Run the queue</button>
+  <form method="POST" action="{{ url_for('acquisition.queue_ping') }}" style="display:inline;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="secondary" type="submit">Queue a test job</button>
+  </form>
+  <div id="run-log" style="margin-top:14px;"></div>
+  <p class="muted" style="margin-top:14px;">Jobs the engine knows how to do today: {{ known_types }}.
+     Each one is written to finish in a couple of seconds, well inside the
+     server's 30-second limit. A job that fails is tried again three times,
+     waiting longer each time.</p>
+</div>
+
+<div class="box">
+  <h3>Last 100 jobs</h3>
+  {% if jobs %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Type</th><th>Status</th><th>Tries</th><th>Took</th><th>Result or problem</th><th></th></tr></thead>
+    <tbody>
+    {% for job in jobs %}
+      <tr>
+        <td class="dim">{{ job.id }}</td>
+        <td>{{ job.type }}{% if job.prospect_id %}<br><span class="muted">prospect {{ job.prospect_id }}</span>{% endif %}</td>
+        <td><span class="tag {{ 'good' if job.status == 'done' else 'bad' if job.status == 'failed' else '' }}">{{ job.status }}</span></td>
+        <td class="dim">{{ job.attempts }}</td>
+        <td class="dim">{{ job.duration_ms or '—' }}</td>
+        <td class="dim">{{ (job.last_error or job.result or '—')[:160] }}</td>
+        <td>
+          {% if job.status == 'failed' %}
+          <form method="POST" action="{{ url_for('acquisition.retry_job', job_id=job.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="small secondary" type="submit">Try again</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">Nothing yet.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('acquisition.static', filename='runner.js') }}"></script>
+{% endblock %}

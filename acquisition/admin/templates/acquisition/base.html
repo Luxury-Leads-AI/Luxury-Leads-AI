@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Acquisition{% endblock %} - Luxury Leads AI</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <style>
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      margin: 0;
+      padding: 0 0 70px;
+    }
+    .header {
+      background: var(--grad-brand);
+      padding: 18px 26px;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 14px; flex-wrap: wrap;
+    }
+    .header h2 { margin: 0; font-size: 20px; color: #fff; }
+    .header .sub { color: rgba(255,255,255,0.8); font-size: 13px; margin-top: 2px; }
+    .nav { display: flex; gap: 8px; flex-wrap: wrap; }
+    .nav a {
+      color: #fff; text-decoration: none; font-size: 14px;
+      border: 1px solid rgba(255,255,255,0.4); padding: 7px 13px; border-radius: 6px;
+    }
+    .nav a.here { background: rgba(255,255,255,0.18); }
+    .container { max-width: 1080px; margin: 24px auto; padding: 0 18px; }
+    .box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 22px; box-shadow: var(--glow);
+      margin-bottom: 20px;
+    }
+    h3 { margin-top: 0; color: var(--brand-2); font-size: 17px; }
+    p, li, label { color: var(--text-dim); font-size: 14.5px; line-height: 1.6; }
+    a { color: var(--brand-2); }
+    .muted { color: var(--text-faint); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+    .stat {
+      background: var(--bg-elev); border: 1px solid var(--brand-line);
+      border-radius: 10px; padding: 14px;
+    }
+    .stat .n { font-size: 26px; font-weight: 700; color: var(--text); }
+    .stat .l { font-size: 12.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.6px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 640px; }
+    th, td { text-align: left; padding: 10px 9px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+    th { color: var(--text-faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: 1px; font-weight: 500; }
+    td { color: var(--text); vertical-align: top; }
+    td.dim { color: var(--text-dim); }
+    tr:last-child td { border-bottom: none; }
+    input[type="text"], input[type="number"], select, textarea {
+      width: 100%; padding: 9px 10px; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--bg-elev); color: var(--text);
+      font-size: 14px; box-sizing: border-box; font-family: inherit;
+    }
+    textarea { min-height: 90px; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--brand-2); }
+    .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 10px; }
+    button, .btn {
+      padding: 10px 18px; border: none; border-radius: 6px;
+      background: var(--grad-brand); color: #fff; font-size: 14px;
+      font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block;
+    }
+    button.small { padding: 6px 12px; font-size: 13px; }
+    /* theme.css paints submit buttons with the brand gradient and says
+       !important, so the quieter ones have to say it back. */
+    button.secondary {
+      background-image: none !important;
+      background-color: var(--surface-2) !important;
+      border: 1px solid var(--border); color: var(--text) !important;
+    }
+    button.danger { background-image: none !important; background-color: #dc2626 !important; }
+    .tag {
+      display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px;
+      background: var(--bg-elev); border: 1px solid var(--brand-line); color: var(--text);
+      white-space: nowrap;
+    }
+    .tag.good { border-color: #34d399; color: #34d399; }
+    .tag.warn { border-color: #fbbf24; color: #fbbf24; }
+    .tag.bad { border-color: #ef4444; color: #fecaca; }
+    .notice {
+      border-radius: 8px; padding: 12px 15px; font-size: 14px; margin-bottom: 16px;
+      border: 1px solid var(--brand-line); background: var(--bg-elev); color: var(--text);
+    }
+    .notice.bad { border-color: #ef4444; background: #7f1d1d; color: #fecaca; }
+    .budget-bar { height: 8px; border-radius: 999px; background: var(--bg-elev); overflow: hidden; margin-top: 8px; }
+    .budget-bar span { display: block; height: 100%; background: var(--grad-brand); }
+    .budget-bar.warn span { background: #fbbf24; }
+    .budget-bar.over span { background: #dc2626; }
+    .run-line { font-family: "Courier New", monospace; font-size: 12.5px; color: var(--text-dim); padding: 2px 0; }
+    .run-line.bad { color: #fecaca; }
+    @media (max-width: 640px) {
+      .container { margin: 16px auto; }
+      .box { padding: 16px; }
+      .header { padding: 14px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h2>🎯 Client Acquisition</h2>
+    <div class="sub">{{ mode_label }}</div>
+  </div>
+  <div class="nav">
+    <a href="{{ url_for('acquisition.today') }}" class="{{ 'here' if page == 'today' }}">Today</a>
+    <a href="{{ url_for('acquisition.markets') }}" class="{{ 'here' if page == 'markets' }}">Markets</a>
+    <a href="{{ url_for('acquisition.prospect_list') }}" class="{{ 'here' if page == 'prospects' }}">Prospects</a>
+    <a href="{{ url_for('acquisition.job_list') }}" class="{{ 'here' if page == 'jobs' }}">Jobs</a>
+    <a href="{{ url_for('acquisition.costs') }}" class="{{ 'here' if page == 'costs' }}">Costs</a>
+    <a href="{{ url_for('acquisition.settings_page') }}" class="{{ 'here' if page == 'settings' }}">Settings</a>
+    <a href="{{ url_for('acquisition.audit') }}" class="{{ 'here' if page == 'audit' }}">Log</a>
+    <a href="/owner">← Panel</a>
+  </div>
+</div>
+
+<div class="container">
+  {% if everything_stopped %}
+  <div class="notice bad">Everything is stopped in Settings. No job will run until you switch it back on.</div>
+  {% endif %}
+  {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="notice bad">{{ error }}</div>{% endif %}
+
+  {% block body %}{% endblock %}
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>
