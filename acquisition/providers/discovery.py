@@ -36,6 +36,13 @@ DEFAULT_OVERPASS_URLS = (
     'https://overpass-api.de/api/interpreter',
 )
 DEFAULT_OVERPASS_URL = DEFAULT_OVERPASS_URLS[0]
+# Nominatim understands a handful of plain-English "special phrases" for
+# kinds of place. This one maps to office=estate_agent, the same objects
+# Overpass is asked for.
+DEFAULT_POI_QUERY = 'estate agent'
+# What separates "that server said no to us" from "that server was busy".
+TEMPORARY_SIGNS = ('timeout', 'timed out', 'temporarily', 'too many requests',
+                   '429', 'connectionreset', 'remoteprotocolerror')
 CONTACT = 'https://luxury-leads-ai.onrender.com'
 
 
@@ -61,6 +68,9 @@ class Found:
     usd: float = 0.0
     error: str = ''
     note: str = ''
+    # True when the error was "busy", not "no". The job is then thrown back
+    # into the queue to be tried again later instead of being written off.
+    retryable: bool = False
 
 
 def user_agent():
@@ -79,6 +89,18 @@ CLOUD_BLOCK_HINT = (
     "Azure ranges in October 2025 after being abused from them, and Render is "
     "cloud hosting. Settings -> Overpass servers to try takes a list, or use "
     "AI web search for this city instead.")
+
+
+def is_temporary(text):
+    """Would asking again in five minutes plausibly work?
+
+    A refusal would not: that server turns this machine away and will do so
+    again. A timeout might: the server was busy, or the query was slow.
+    """
+    lowered = (text or '').lower()
+    if 'refused' in lowered or 'unreachable' in lowered:
+        return False
+    return any(sign in lowered for sign in TEMPORARY_SIGNS)
 
 
 def short_problem(e):
@@ -353,86 +375,63 @@ class OSMDiscovery:
         settings.set(key, f"{south},{north},{west},{east}")
         return south, north, west, east
 
-    def query_for(self, bbox, limit):
+    def query_for(self, bbox, limit, seconds=25):
         south, north, west, east = bbox
         box = f"{south},{west},{north},{east}"
         parts = ''.join(f'nwr["{key}"="{value}"]({box});' for key, value in self.AGENT_TAGS)
-        return f"[out:json][timeout:40];({parts});out center tags {limit};"
+        return f"[out:json][timeout:{seconds}];({parts});out center tags {limit};"
 
-    def ask_overpass(self, query, seconds_left):
+    def overpass_query(self, bbox, limit, seconds):
+        """The query, told to give up when we do.
+
+        The server-side timeout matches ours on purpose: a volunteer server
+        should not keep grinding on a query nobody is waiting for any more.
+        """
+        return self.query_for(bbox, limit, seconds=seconds)
+
+    def ask_overpass(self, bbox, limit, seconds_left):
         """Ask each Overpass server in turn until one answers.
 
-        Returns (response, the url that answered, what the others said). A
-        refusal, a 429 or a 5xx is that server's answer and the next one is
-        asked; nothing is retried in a loop, each server sees one request,
-        and the request always says who we are.
+        Returns (response, the url that answered, problems). Each problem is
+        (url, what happened, was it temporary). The difference matters: a
+        refusal is that server saying no to this machine and will say no
+        again in five minutes, while a timeout means it was busy and the
+        search is worth repeating.
+
+        Each server gets a short turn rather than the whole budget, because
+        a slow first server used to leave no time for the second - which is
+        exactly what happened on the first run from Render.
         """
         problems = []
         for url in self.overpass_urls:
-            if seconds_left() < 4:
-                problems.append((url, 'not tried - the search ran out of time'))
+            spare = seconds_left()
+            if spare < 6:
+                problems.append((url, 'not tried - the search ran out of time', True))
                 break
-            timeout = max(4, min(15, int(seconds_left()) - 1))
+            timeout = int(max(5, min(self.PER_SERVER_SECONDS, spare - 6)))
             try:
                 response = self.http.post(
                     url, timeout=timeout, budget=timeout,
-                    data={'data': query},
+                    data={'data': self.overpass_query(bbox, limit, timeout)},
                     headers={'User-Agent': user_agent()})
             except (fetch.Unreachable, fetch.Blocked) as e:
-                problems.append((url, short_problem(e)))
+                problems.append((url, short_problem(e), is_temporary(short_problem(e))))
                 continue
             except Exception as e:                       # noqa: BLE001
-                problems.append((url, f"{type(e).__name__}: {e}"))
+                text = f"{type(e).__name__}: {e}"
+                problems.append((url, text, is_temporary(text)))
                 continue
             if response.status_code == 429:
-                problems.append((url, 'answered 429 (too many requests)'))
+                problems.append((url, 'answered 429 (too many requests)', True))
                 continue
             if response.status_code >= 500:
-                problems.append((url, f"answered {response.status_code}"))
+                problems.append((url, f"answered {response.status_code}", True))
                 continue
             return response, url, problems
         return None, '', problems
 
-    SEARCH_BUDGET_SECONDS = 24
-
-    def search(self, market, limit=40, **kwargs):
-        started = time.monotonic()
-
-        def seconds_left():
-            return self.SEARCH_BUDGET_SECONDS - (time.monotonic() - started)
-
-        try:
-            bbox = self.bbox_for(market,
-                                 timeout=max(4, min(10, int(seconds_left()))))
-        except (fetch.Unreachable, fetch.Blocked) as e:
-            return Found(source=self.name,
-                         error=connection_problem(e, 'Nominatim (OpenStreetMap)',
-                                                  OSM_HINT))
-        except Exception as e:                           # noqa: BLE001
-            return Found(source=self.name, error=f"{type(e).__name__}: {e}")
-
-        response, url, problems = self.ask_overpass(self.query_for(bbox, limit),
-                                                    seconds_left)
-        if response is None:
-            tried = ' | '.join(f"{where}: {why}" for where, why in problems)
-            if problems and all('429' in why for _where, why in problems):
-                return Found(source=self.name,
-                             error=f"every Overpass server is busy (too many "
-                                   f"requests). Try again later. Tried: {tried}")
-            return Found(source=self.name,
-                         error=f"no Overpass server answered. Tried: {tried}. "
-                               f"{CLOUD_BLOCK_HINT}")
-        if response.status_code >= 400:
-            return Found(source=self.name,
-                         error=f"Overpass at {url} answered {response.status_code}")
-        try:
-            elements = (response.json() or {}).get('elements') or []
-        except ValueError:
-            return Found(source=self.name, error="Overpass sent something that is not JSON")
-
-        if url != (settings.get('osm_overpass_last_good') or ''):
-            settings.set('osm_overpass_last_good', url)
-
+    def candidates_from(self, elements):
+        """Overpass elements -> candidates, and how many had no website."""
         candidates, without_site = [], 0
         for element in elements:
             tags = element.get('tags') or {}
@@ -450,7 +449,92 @@ class OSMDiscovery:
                 phone=(tags.get('phone') or tags.get('contact:phone') or '').strip()[:60],
                 address=address[:300],
                 source_ref=f"osm:{element.get('type')}/{element.get('id')}"))
+        return candidates, without_site
 
+    def nominatim_candidates(self, bbox, limit, timeout):
+        """The same agencies, asked of Nominatim instead of Overpass.
+
+        Nominatim is a place search rather than a database query, so it
+        returns fewer and caps at 40. It is here because it is reachable
+        from places Overpass is not - the first searches from Render proved
+        Nominatim answers and Overpass refuses - and something is better
+        than a city that cannot be worked at all. Its usage policy asks for
+        one request a second and a real User-Agent: the fetcher does the
+        first, user_agent() the second.
+        """
+        south, north, west, east = bbox
+        response = self.http.get(
+            self.nominatim_url, timeout=timeout, budget=timeout + 2,
+            params={'q': settings.get('osm_poi_query') or DEFAULT_POI_QUERY,
+                    'format': 'jsonv2', 'limit': max(1, min(40, limit)),
+                    'extratags': 1, 'addressdetails': 1, 'bounded': 1,
+                    'viewbox': f"{west},{north},{east},{south}"},
+            headers={'User-Agent': user_agent()})
+        if response.status_code >= 400:
+            raise RuntimeError(f"Nominatim answered {response.status_code}")
+        rows = response.json() or []
+        candidates, without_site = [], 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            extra = row.get('extratags') or {}
+            website = (extra.get('website') or extra.get('contact:website')
+                       or extra.get('url') or '').strip()
+            if not website:
+                without_site += 1
+                continue
+            name = (row.get('name') or '').strip()
+            if not name:
+                name = (row.get('display_name') or '').split(',')[0].strip()
+            candidates.append(Candidate(
+                name=name[:200],
+                website=website[:300],
+                phone=(extra.get('phone') or extra.get('contact:phone') or '').strip()[:60],
+                address=(row.get('display_name') or '')[:300],
+                source_ref=f"osm:{row.get('osm_type')}/{row.get('osm_id')}"))
+        return candidates, without_site
+
+    SEARCH_BUDGET_SECONDS = 20
+    PER_SERVER_SECONDS = 8
+
+    def search(self, market, limit=40, **kwargs):
+        started = time.monotonic()
+
+        def seconds_left():
+            return self.SEARCH_BUDGET_SECONDS - (time.monotonic() - started)
+
+        try:
+            bbox = self.bbox_for(market,
+                                 timeout=max(4, min(10, int(seconds_left()))))
+        except (fetch.Unreachable, fetch.Blocked) as e:
+            # Busy is worth repeating; refused is not.
+            return Found(source=self.name,
+                         retryable=is_temporary(short_problem(e)),
+                         error=connection_problem(e, 'Nominatim (OpenStreetMap)',
+                                                  OSM_HINT))
+        except Exception as e:                           # noqa: BLE001
+            return Found(source=self.name, error=f"{type(e).__name__}: {e}")
+
+        response, url, problems = self.ask_overpass(bbox, limit, seconds_left)
+
+        if response is not None and response.status_code >= 400:
+            problems.append((url, f"answered {response.status_code}", False))
+            response = None
+
+        if response is not None:
+            try:
+                elements = (response.json() or {}).get('elements') or []
+            except ValueError:
+                problems.append((url, 'sent something that is not JSON', True))
+                response = None
+
+        if response is None:
+            return self.without_overpass(bbox, limit, problems, seconds_left)
+
+        if url != (settings.get('osm_overpass_last_good') or ''):
+            settings.set('osm_overpass_last_good', url)
+
+        candidates, without_site = self.candidates_from(elements)
         notes = []
         if without_site:
             notes.append(f"{without_site} agencies in OpenStreetMap had no website "
@@ -459,6 +543,37 @@ class OSMDiscovery:
             notes.append(f"answered by {url}, after {len(problems)} other server(s) "
                          f"would not")
         return Found(source=self.name, candidates=candidates, note='; '.join(notes))
+
+    def without_overpass(self, bbox, limit, problems, seconds_left):
+        """No Overpass server answered. Ask Nominatim, then explain."""
+        tried = ' | '.join(f"{where}: {why}" for where, why, _temp in problems)
+        temporary = any(temp for _where, _why, temp in problems)
+
+        if settings.get_bool('osm_nominatim_fallback') and seconds_left() > 6:
+            try:
+                candidates, without_site = self.nominatim_candidates(
+                    bbox, limit, timeout=max(5, min(10, int(seconds_left()) - 2)))
+            except Exception as e:                       # noqa: BLE001
+                tried += f" | Nominatim search: {type(e).__name__}: {e}"
+            else:
+                if candidates:
+                    notes = [f"no Overpass server answered ({tried}), so this came "
+                             f"from Nominatim's own search instead, which finds "
+                             f"fewer"]
+                    if without_site:
+                        notes.append(f"{without_site} had no website recorded, so "
+                                     f"they were skipped")
+                    return Found(source=self.name, candidates=candidates,
+                                 note='; '.join(notes))
+                tried += " | Nominatim search: found nothing with a website"
+
+        if problems and all('429' in why for _where, why, _temp in problems):
+            return Found(source=self.name, retryable=True,
+                         error=f"every Overpass server is busy (too many "
+                               f"requests). Try again later. Tried: {tried}")
+        return Found(source=self.name, retryable=temporary,
+                     error=f"no Overpass server answered. Tried: {tried}. "
+                           f"{CLOUD_BLOCK_HINT}")
 
 
 PROVIDERS = {

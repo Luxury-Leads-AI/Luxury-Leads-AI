@@ -701,7 +701,8 @@ def test_those_servers_can_actually_be_edited_on_the_settings_screen(admin):
 def test_the_search_stops_asking_servers_when_its_time_is_up(market):
     """Each server costs time, and gunicorn stops the request at 30 seconds."""
     provider = discovery.OSMDiscovery(http=Servers(answering=[]))
-    response, url, problems = provider.ask_overpass('[out:json];', lambda: 1.0)
+    bbox = (43.6, 43.8, 7.1, 7.4)
+    response, url, problems = provider.ask_overpass(bbox, 10, lambda: 1.0)
 
     assert response is None
     assert url == ''
@@ -724,3 +725,207 @@ def test_every_overpass_server_is_tested_by_the_connection_check(admin, monkeypa
 
     assert 'https://first.example/api/interpreter' in asked
     assert 'https://second.example/api/interpreter' in asked
+
+
+# ─────────────────────────────────────────────────────
+# Busy is not the same as closed
+# ─────────────────────────────────────────────────────
+#
+# Round three on Render: the first server accepted the connection and then
+# did not answer in time, which used the whole budget, so the second server
+# was barely tried. A slow server must cost its own turn and no more - and
+# "it was busy" must mean "ask again later", not "this city is finished".
+
+@pytest.mark.parametrize('text, temporary', [
+    ('ReadTimeout: The read operation timed out', True),
+    ('ConnectTimeout: timed out', True),
+    ('answered 429 (too many requests)', True),
+    ('162.55.144.139 said ConnectError: [Errno 111] Connection refused', False),
+    ('2a01:4f8::2 said ConnectError: [Errno 101] Network is unreachable', False),
+    ('answered 404', False),
+])
+def test_busy_is_told_apart_from_closed(text, temporary):
+    assert discovery.is_temporary(text) is temporary
+
+
+class SlowThenRefusing:
+    """The first server hangs, the second says no - what Render saw."""
+
+    def __init__(self, seconds=9):
+        self.seconds = seconds
+        self.asked = []
+
+    def get(self, url, **kwargs):
+        return Servers.Response(NOMINATIM_ROWS)
+
+    def post(self, url, timeout=None, **kwargs):
+        self.asked.append((url, timeout))
+        if len(self.asked) == 1:
+            raise fetch.Unreachable(url.split('/')[2], [
+                ('193.219.97.30', 'ReadTimeout: The read operation timed out')])
+        raise fetch.Unreachable(url.split('/')[2], [
+            ('162.55.144.139', 'ConnectError: [Errno 111] Connection refused')])
+
+
+def test_a_slow_server_only_costs_its_own_turn(market):
+    http = SlowThenRefusing()
+    settings.set('osm_nominatim_fallback', 'off')
+
+    discovery.OSMDiscovery(http=http).search(market, limit=10)
+
+    assert len(http.asked) == 2, 'the second server never got a turn'
+    for _url, timeout in http.asked:
+        assert timeout <= discovery.OSMDiscovery.PER_SERVER_SECONDS
+
+
+def test_the_query_tells_the_server_to_give_up_when_we_do(market):
+    """A volunteer server should not keep grinding on a query nobody is
+    waiting for."""
+    http = SlowThenRefusing()
+    settings.set('osm_nominatim_fallback', 'off')
+    provider = discovery.OSMDiscovery(http=http)
+
+    query = provider.overpass_query((43.6, 43.8, 7.1, 7.4), 10, 8)
+
+    assert '[timeout:8]' in query
+
+
+def test_a_timed_out_search_is_marked_worth_repeating(market):
+    """Busy means later, not never."""
+    settings.set('osm_nominatim_fallback', 'off')
+    found = discovery.OSMDiscovery(http=SlowThenRefusing()).search(market, limit=5)
+    assert found.retryable is True, found.error
+    assert 'timed out' in found.error
+
+
+def test_a_refused_search_is_not_retried_for_ever(market):
+    """Every server refusing is an answer. Asking again changes nothing."""
+    settings.set('osm_nominatim_fallback', 'off')
+    found = discovery.OSMDiscovery(http=Servers(answering=[])).search(market, limit=5)
+    assert found.retryable is False
+    assert 'cloud hosting' in found.error
+
+
+def test_the_queue_holds_a_temporary_failure_instead_of_writing_it_off(market):
+    """End to end: the job comes back queued with a wait, not 'problem'."""
+    settings.set('osm_nominatim_fallback', 'off')
+
+    class Slow:
+        name = 'osm'
+        costs_money = False
+
+        def search(self, market, limit=40, **kwargs):
+            return discovery.Found(source='osm', retryable=True,
+                                   error='no Overpass server answered in time')
+
+    discovery.PROVIDERS['osm'] = Slow
+    try:
+        job = runner.enqueue('discover', payload={'market_id': market.id,
+                                                  'source': 'osm', 'limit': 5})
+        outcome = runner.run_next()
+        row = db.session.get(models.Job, job.id)
+        assert outcome['ok'] is False
+        assert row.status == 'queued'          # waiting, not given up on
+        assert 'try again by itself' in row.last_error
+    finally:
+        discovery.PROVIDERS['osm'] = discovery.OSMDiscovery
+
+
+# ─────────────────────────────────────────────────────
+# When no Overpass server will talk to us at all
+# ─────────────────────────────────────────────────────
+
+NOMINATIM_POIS = [
+    {'osm_type': 'node', 'osm_id': 11, 'name': 'Riviera Estates',
+     'display_name': 'Riviera Estates, 12 Promenade des Anglais, Nice',
+     'extratags': {'website': 'https://riviera-estates.fr', 'phone': '+33 4 93 00 00 00'}},
+    {'osm_type': 'way', 'osm_id': 12, 'name': 'Azur Prestige',
+     'display_name': 'Azur Prestige, Nice',
+     'extratags': {'contact:website': 'http://azur-prestige.fr'}},
+    {'osm_type': 'node', 'osm_id': 13, 'name': 'No Website Immobilier',
+     'display_name': 'No Website Immobilier, Nice', 'extratags': {}},
+]
+
+
+class NoOverpass:
+    """Nominatim answers, every Overpass server refuses - Render, exactly."""
+
+    def __init__(self, pois=None):
+        self.pois = NOMINATIM_POIS if pois is None else pois
+        self.gets = []
+
+    def get(self, url, params=None, **kwargs):
+        self.gets.append(params or {})
+        if 'q' in (params or {}):
+            return Servers.Response(self.pois)
+        return Servers.Response(NOMINATIM_ROWS)
+
+    def post(self, url, **kwargs):
+        raise fetch.Unreachable(url.split('/')[2], [
+            ('162.55.144.139', 'ConnectError: [Errno 111] Connection refused')])
+
+
+def test_nominatims_own_search_keeps_the_city_moving(market):
+    """Nominatim answers from Render when Overpass does not, and it indexes
+    the same OpenStreetMap objects. Fewer agencies beats none."""
+    http = NoOverpass()
+    found = discovery.OSMDiscovery(http=http).search(market, limit=10)
+
+    assert found.error == '', found.error
+    assert [c.name for c in found.candidates] == ['Riviera Estates', 'Azur Prestige']
+    assert found.candidates[0].website == 'https://riviera-estates.fr'
+    assert found.candidates[0].phone == '+33 4 93 00 00 00'
+    assert found.candidates[0].source_ref == 'osm:node/11'
+    assert 'Nominatim' in found.note
+    assert 'had no website recorded' in found.note
+
+
+def test_that_search_is_kept_inside_the_city(market):
+    """Without the box it would answer with estate agents anywhere."""
+    http = NoOverpass()
+    discovery.OSMDiscovery(http=http).search(market, limit=10)
+
+    poi_call = [params for params in http.gets if 'q' in params][0]
+    assert poi_call['bounded'] == 1
+    assert poi_call['viewbox'] == '7.1819,43.7604,7.3275,43.646'
+    assert poi_call['extratags'] == 1
+    assert poi_call['limit'] == 10
+
+
+def test_the_fallback_can_be_switched_off(market):
+    settings.set('osm_nominatim_fallback', 'off')
+    http = NoOverpass()
+
+    found = discovery.OSMDiscovery(http=http).search(market, limit=10)
+
+    assert found.candidates == []
+    assert 'no Overpass server answered' in found.error
+    assert len([params for params in http.gets if 'q' in params]) == 0
+
+
+def test_a_fallback_that_finds_nothing_says_so(market):
+    found = discovery.OSMDiscovery(http=NoOverpass(pois=[])).search(market, limit=10)
+    assert found.candidates == []
+    assert 'Nominatim search: found nothing' in found.error
+
+
+def test_a_city_lookup_that_timed_out_is_worth_repeating(market):
+    class Busy:
+        def get(self, url, **kwargs):
+            raise fetch.Unreachable('nominatim.openstreetmap.org', [
+                ('151.101.1.91', 'ReadTimeout: The read operation timed out')])
+
+    found = discovery.OSMDiscovery(http=Busy()).search(market, limit=5)
+    assert found.retryable is True
+
+
+def test_a_city_lookup_that_was_refused_is_not(market):
+    """Three retries over half an hour against a door that is shut is just
+    noise in the queue."""
+    class Shut:
+        def get(self, url, **kwargs):
+            raise fetch.Unreachable('nominatim.openstreetmap.org', [
+                ('151.101.1.91', 'ConnectError: [Errno 111] Connection refused')])
+
+    found = discovery.OSMDiscovery(http=Shut()).search(market, limit=5)
+    assert found.retryable is False

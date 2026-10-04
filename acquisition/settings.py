@@ -50,6 +50,10 @@ DEFAULTS = {
     # outright and the search should move to the next one rather than stop.
     'osm_overpass_url': '',
     'osm_overpass_last_good': '',     # the one that answered last, tried first
+    # When no Overpass server will talk to us, ask Nominatim's own search
+    # instead. It finds fewer, but it answers from places Overpass does not.
+    'osm_nominatim_fallback': 'on',
+    'osm_poi_query': '',              # blank = 'estate agent'
     'kill_switch_all': 'off',
     'kill_switch_outreach': 'off',
     'retention_days_uncontacted': '180',
@@ -78,6 +82,7 @@ EDITABLE = (
     ('web_search_model', 'Model used for AI web search'),
     ('osm_overpass_url', 'Overpass servers to try, comma separated (blank = the built-in list)'),
     ('osm_nominatim_url', 'Nominatim server (blank = the public one)'),
+    ('osm_nominatim_fallback', 'If no Overpass server answers, search Nominatim instead (on/off)'),
     ('kill_switch_all', 'Stop everything (on/off)'),
     ('kill_switch_outreach', 'Stop outreach only (on/off)'),
     ('retention_days_uncontacted', 'Delete contact details of never-contacted prospects after (days)'),

@@ -95,6 +95,11 @@ def discover(job, payload):
 
     found = provider.search(market, limit=limit, job_id=job.id)
     if found.error:
+        if getattr(found, 'retryable', False):
+            # Busy, not closed. Raising puts the job back in the queue with a
+            # growing wait instead of writing the city off; three tries, then
+            # it stops and says so.
+            raise RuntimeError(f"{found.error} (it will try again by itself)")
         return {'error': found.error, 'source': source, 'market': market.name}
 
     queued, already, unusable = 0, 0, 0

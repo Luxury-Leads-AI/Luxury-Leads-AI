@@ -105,10 +105,25 @@ is cloud hosting, so the first real search got `[Errno 111] Connection refused`
 from both of its IPv4 addresses. `DEFAULT_OVERPASS_URLS` is tried in order
 (private.coffee first, overpass-api.de second), `osm_overpass_url` overrides it
 with a comma-separated list, and the one that answered is remembered in
-`osm_overpass_last_good` and tried first next time. A refusal, a 429 or a 5xx
+`osm_overpass_last_good` and tried first next time. A refusal, a timeout, a 429 or a 5xx
 moves to the next server; one request per server, never disguised, never
-retried in a loop. `OSMDiscovery.SEARCH_BUDGET_SECONDS` (24) bounds the whole
-search. `osm_overpass_url` and `osm_nominatim_url` are on the Settings screen,
+retried in a loop. Each server gets `PER_SERVER_SECONDS` (8), not the whole
+`SEARCH_BUDGET_SECONDS` (20) - a slow first server used to leave nothing for
+the second - and the Overpass-side `[timeout:N]` is set to the same number so
+a volunteer server stops working when we stop waiting.
+
+**Busy is not closed** (`is_temporary`). A refusal or an unreachable address
+is that server's answer and will be the same in five minutes; a timeout, a 429
+or a 5xx is worth repeating. When a search fails for a temporary reason the
+`discover` handler RAISES, so the queue's own backoff (30s, 5min, 30min) tries
+it again instead of writing the city off; a refusal returns `{'error': ...}`
+and the job goes amber straight away.
+
+**When no Overpass server answers at all**, `OSMDiscovery.nominatim_candidates()`
+asks Nominatim's own POI search (`q=estate agent`, `bounded=1` on the city's
+viewbox, `extratags=1` for the website) and uses that. It finds fewer and caps
+at 40, but Nominatim answers from Render and Overpass does not. Off with
+`osm_nominatim_fallback=off`; the phrase is `osm_poi_query`. `osm_overpass_url` and `osm_nominatim_url` are on the Settings screen,
 because the error message tells the operator to change them there.
 
 **`services/fetch.py` is the only code that opens a connection to another
