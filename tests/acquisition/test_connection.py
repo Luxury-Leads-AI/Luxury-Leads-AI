@@ -483,8 +483,29 @@ def test_an_address_that_answers_but_blocks_the_request_says_so(monkeypatch, tin
 def test_nothing_accepting_a_connection_is_called_what_it_is(monkeypatch):
     monkeypatch.setattr(fetch, 'resolve', lambda host, allow_private=False: ['192.0.2.1'])
     report = fetch.connection_report('https://nowhere.example/', timeout=1)
-    assert report['verdict'] == 'no_route'
     assert report['tcp_ok'] is False
+    # Whether an unroutable address times out or is refused depends on the
+    # network this test runs on; both are "nothing to talk to".
+    assert report['verdict'] in ('no_route', 'refused')
+
+
+def test_a_refusal_is_told_apart_from_a_dead_address(monkeypatch):
+    """The distinction that matters on Render: a refusal means the service is
+    up and turning this server away - which is what a public OpenStreetMap
+    server does to cloud hosting - while nothing at all means no route."""
+    class Refusing(socket.socket):
+        def connect(self, address):
+            raise ConnectionRefusedError(111, 'Connection refused')
+
+    monkeypatch.setattr(fetch, 'resolve',
+                        lambda host, allow_private=False: ['203.0.113.7'])
+    monkeypatch.setattr(fetch.socket, 'socket',
+                        lambda *args, **kwargs: Refusing())
+
+    report = fetch.connection_report('https://turned-away.example/', timeout=1)
+
+    assert report['verdict'] == 'refused'
+    assert 'turning this server away' in report['summary']
 
 
 def test_the_check_stops_when_its_time_is_up(monkeypatch):
@@ -574,3 +595,132 @@ def test_a_search_cannot_outlast_the_servers_request_limit(market):
     assert spent, 'the provider made no calls'
     worst = sum(call.get('budget') or call.get('timeout') or 0 for call in spent)
     assert worst <= 27, f"a single search could take {worst} seconds"
+
+
+# ─────────────────────────────────────────────────────
+# One Overpass server refusing must not end the search
+# ─────────────────────────────────────────────────────
+#
+# What Render actually hit: the main public Overpass server refuses
+# connections from cloud hosting (it blocked whole AWS and Azure ranges in
+# October 2025 after being abused from them). The engine must ask another
+# server rather than stop - and must never pretend to be somewhere else.
+
+NOMINATIM_ROWS = [{'boundingbox': ['43.6460', '43.7604', '7.1819', '7.3275']}]
+OVERPASS_ROWS = {'elements': [{'type': 'node', 'id': 1, 'tags': {
+    'office': 'estate_agent', 'name': 'Riviera Estates',
+    'website': 'https://riviera-estates.fr'}}]}
+
+
+class Servers:
+    """Answers for some Overpass servers and refuses the rest."""
+
+    class Response:
+        def __init__(self, payload, status=200):
+            self.status_code = status
+            self._payload = payload
+            self.text = json.dumps(payload)
+
+        def json(self):
+            return self._payload
+
+    def __init__(self, answering=(), status=200):
+        self.answering = set(answering)
+        self.status = status
+        self.asked = []
+
+    def get(self, url, **kwargs):
+        return self.Response(NOMINATIM_ROWS)
+
+    def post(self, url, **kwargs):
+        self.asked.append(url)
+        if url in self.answering:
+            return self.Response(OVERPASS_ROWS, self.status)
+        raise fetch.Unreachable(url.split('/')[2], [
+            ('162.55.144.139', 'ConnectError: [Errno 111] Connection refused'),
+            ('2a01:4f8:261:3c4f::2', 'ConnectError: [Errno 101] Network is unreachable')])
+
+
+def test_a_refused_server_moves_the_search_to_the_next_one(market):
+    second = discovery.DEFAULT_OVERPASS_URLS[1]
+    http = Servers(answering=[second])
+
+    found = discovery.OSMDiscovery(http=http).search(market, limit=10)
+
+    assert found.error == '', found.error
+    assert [c.name for c in found.candidates] == ['Riviera Estates']
+    assert len(http.asked) == 2, 'it gave up instead of trying the next server'
+    assert 'answered by' in found.note
+
+
+def test_the_server_that_worked_is_tried_first_next_time(market):
+    """Otherwise every search pays for the dead server all over again."""
+    second = discovery.DEFAULT_OVERPASS_URLS[1]
+    discovery.OSMDiscovery(http=Servers(answering=[second])).search(market, limit=10)
+    assert settings.get('osm_overpass_last_good') == second
+
+    again = Servers(answering=[second])
+    discovery.OSMDiscovery(http=again).search(market, limit=10)
+    assert again.asked == [second]
+
+
+def test_when_no_server_answers_the_error_names_each_one(market):
+    http = Servers(answering=[])
+    found = discovery.OSMDiscovery(http=http).search(market, limit=10)
+
+    for url in discovery.DEFAULT_OVERPASS_URLS:
+        assert url in found.error
+    assert 'Connection refused' in found.error
+    assert 'cloud hosting' in found.error      # what a refusal usually means
+    assert 'Settings' in found.error           # and what to do about it
+
+
+def test_the_servers_to_try_come_from_settings_in_order(market):
+    settings.set('osm_overpass_url',
+                 'https://first.example/api/interpreter , https://second.example/api/interpreter')
+    http = Servers(answering=['https://second.example/api/interpreter'])
+
+    discovery.OSMDiscovery(http=http).search(market, limit=10)
+
+    assert http.asked == ['https://first.example/api/interpreter',
+                          'https://second.example/api/interpreter']
+
+
+def test_those_servers_can_actually_be_edited_on_the_settings_screen(admin):
+    """The error message tells him to change this in Settings, so it has to
+    be there. It was not - the two OpenStreetMap addresses existed as
+    settings but were not on the screen."""
+    keys = [key for key, _label in settings.EDITABLE]
+    assert 'osm_overpass_url' in keys
+    assert 'osm_nominatim_url' in keys
+
+    page = admin.get('/owner/acquisition/settings').get_data(as_text=True)
+    assert 'osm_overpass_url' in page
+
+
+def test_the_search_stops_asking_servers_when_its_time_is_up(market):
+    """Each server costs time, and gunicorn stops the request at 30 seconds."""
+    provider = discovery.OSMDiscovery(http=Servers(answering=[]))
+    response, url, problems = provider.ask_overpass('[out:json];', lambda: 1.0)
+
+    assert response is None
+    assert url == ''
+    assert 'ran out of time' in problems[0][1]
+
+
+def test_every_overpass_server_is_tested_by_the_connection_check(admin, monkeypatch):
+    settings.set('osm_overpass_url',
+                 'https://first.example/api/interpreter,https://second.example/api/interpreter')
+    asked = []
+
+    def report(url, **kwargs):
+        asked.append(url)
+        return {'url': url, 'host': '', 'ok': True, 'status': 200, 'error': '',
+                'detail': '', 'ms': 1, 'addresses': [], 'extra_addresses': 0,
+                'verdict': 'ok', 'summary': 'fine', 'tcp_ok': True}
+
+    monkeypatch.setattr(fetch, 'connection_report', report)
+    admin.post('/owner/acquisition/connection', data={'csrf_token': 'test-csrf-token'})
+
+    assert 'https://first.example/api/interpreter' in asked
+    assert 'https://second.example/api/interpreter' in asked

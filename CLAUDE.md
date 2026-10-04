@@ -96,8 +96,20 @@ both tool spellings and remembers the one the API accepted - a rename at
 OpenAI costs a setting, not a deploy. The OSM provider resolves a city to a
 bounding box via Nominatim (cached in `acq_setting` as `osm_bbox:<market>`)
 then queries Overpass for `office=estate_agent`; both carry a User-Agent that
-says who we are, and `osm_nominatim_url` / `osm_overpass_url` point at a
-self-hosted copy if we ever need one.
+says who we are.
+
+**Overpass is a list, not an address.** The main public server
+(`overpass-api.de`) refuses connections from cloud hosting - it blocked whole
+AWS and Azure ranges in October 2025 after being abused from them - and Render
+is cloud hosting, so the first real search got `[Errno 111] Connection refused`
+from both of its IPv4 addresses. `DEFAULT_OVERPASS_URLS` is tried in order
+(private.coffee first, overpass-api.de second), `osm_overpass_url` overrides it
+with a comma-separated list, and the one that answered is remembered in
+`osm_overpass_last_good` and tried first next time. A refusal, a 429 or a 5xx
+moves to the next server; one request per server, never disguised, never
+retried in a loop. `OSMDiscovery.SEARCH_BUDGET_SECONDS` (24) bounds the whole
+search. `osm_overpass_url` and `osm_nominatim_url` are on the Settings screen,
+because the error message tells the operator to change them there.
 
 **`services/fetch.py` is the only code that opens a connection to another
 machine.** It resolves the name first and refuses every address that is not
@@ -129,8 +141,10 @@ queue, `last_error` filled, and "Try again" offered. A green tick over
 "Network is unreachable" is how a dead engine goes unnoticed for a week.
 `/owner/acquisition/connection` ("Check the connection" on Jobs) opens each
 address of each configured service on its own and reports one of four
-verdicts - reachable, answers-but-blocked, no-route, name-not-found - inside
-a 20-second budget.
+verdicts - reachable, answers-but-blocked, refused, no-route, name-not-found -
+inside a 20-second budget, and it tests every Overpass server in the list. A
+refusal is told apart from silence on purpose: it means the service is up and
+turning this server away.
 
 **The gate.** `compliance.can_contact()` checks the kill switch, the
 prospect's do-not-contact flag, the market's legal status (only `verified`

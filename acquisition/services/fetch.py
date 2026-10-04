@@ -493,10 +493,21 @@ def connection_report(url, timeout=3, max_addresses=4, allow_private=False,
 
     working = [row['address'] for row in report['addresses'] if row['ok']]
     if not working:
-        report['verdict'] = 'no_route'
-        report['error'] = (f"no address of {report['host']} accepted a "
-                           f"connection from this server")
-        report['summary'] = report['error']
+        refused = [row for row in report['addresses'] if 'refused' in row['detail'].lower()]
+        if refused:
+            # A refusal is an answer: something sent back "no" immediately,
+            # rather than the packet going nowhere. That is what a service
+            # that turns away whole ranges of cloud hosting looks like.
+            report['verdict'] = 'refused'
+            report['summary'] = (f"{report['host']} refused the connection. The "
+                                 f"service is up and is turning this server away, "
+                                 f"which is what blocking a hosting provider's "
+                                 f"addresses looks like.")
+        else:
+            report['verdict'] = 'no_route'
+            report['summary'] = (f"no address of {report['host']} accepted a "
+                                 f"connection from this server")
+        report['error'] = report['summary']
         return report
 
     started = time.monotonic()

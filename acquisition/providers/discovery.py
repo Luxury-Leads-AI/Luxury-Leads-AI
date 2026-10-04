@@ -14,6 +14,7 @@ That is the point of a plug: a new source is a new class in this file.
 """
 import json
 import re
+import time
 from dataclasses import dataclass, field
 
 from .. import settings
@@ -24,7 +25,17 @@ OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 # ever query them heavily, their fair-use policy asks us to run our own
 # copy - which is then a setting, not a deploy.
 DEFAULT_NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
-DEFAULT_OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+# More than one, in order, because the main public Overpass server refuses
+# connections from cloud hosting: it was being abused from there and blocked
+# whole AWS and Azure ranges in October 2025. Render is cloud hosting, so it
+# gets "Connection refused" from it. The answer is to ask a server that
+# accepts us, say who we are, and keep the volume tiny - never to disguise
+# where the request comes from.
+DEFAULT_OVERPASS_URLS = (
+    'https://overpass.private.coffee/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
+)
+DEFAULT_OVERPASS_URL = DEFAULT_OVERPASS_URLS[0]
 CONTACT = 'https://luxury-leads-ai.onrender.com'
 
 
@@ -62,6 +73,23 @@ OSM_HINT = ("Open Jobs -> Check the connection to see which addresses this "
             "OpenStreetMap server in Settings.")
 
 
+CLOUD_BLOCK_HINT = (
+    "Connection refused from every address usually means that server turns "
+    "away cloud hosting - the main OpenStreetMap server blocked whole AWS and "
+    "Azure ranges in October 2025 after being abused from them, and Render is "
+    "cloud hosting. Settings -> Overpass servers to try takes a list, or use "
+    "AI web search for this city instead.")
+
+
+def short_problem(e):
+    """What went wrong, with every address, in one line."""
+    if isinstance(e, fetch.Unreachable):
+        return '; '.join(f"{address} said {problem}" for address, problem in e.tried)
+    if isinstance(e, fetch.Blocked):
+        return str(e)
+    return f"{type(e).__name__}: {e}"
+
+
 def connection_problem(e, service, hint=''):
     """A failed connection, in words that say what actually happened.
 
@@ -71,8 +99,7 @@ def connection_problem(e, service, hint=''):
     in the message.
     """
     if isinstance(e, fetch.Unreachable):
-        detail = '; '.join(f"{address} said {problem}" for address, problem in e.tried)
-        text = f"this server could not reach {service} at {e.host} - {detail}"
+        text = f"this server could not reach {service} at {e.host} - {short_problem(e)}"
     elif isinstance(e, fetch.Blocked):
         text = f"this server will not open {service}: {e}"
     else:
@@ -280,10 +307,28 @@ class OSMDiscovery:
         return settings.get('osm_nominatim_url') or DEFAULT_NOMINATIM_URL
 
     @property
-    def overpass_url(self):
-        return settings.get('osm_overpass_url') or DEFAULT_OVERPASS_URL
+    def overpass_urls(self):
+        """Every Overpass server to try, in the order to try them.
 
-    def bbox_for(self, market):
+        A list rather than one address, because a public Overpass server
+        can refuse this server outright (CLOUD_BLOCK_HINT). The one that
+        answered last time goes first, so a working setup does not pay for
+        a dead one on every search.
+        """
+        configured = settings.get('osm_overpass_url') or ''
+        urls = [part.strip() for part in configured.split(',') if part.strip()]
+        urls = urls or list(DEFAULT_OVERPASS_URLS)
+        last_good = (settings.get('osm_overpass_last_good') or '').strip()
+        if last_good in urls:
+            urls = [last_good] + [url for url in urls if url != last_good]
+        return urls
+
+    @property
+    def overpass_url(self):
+        """The first server to try, for anything that wants a single name."""
+        return self.overpass_urls[0]
+
+    def bbox_for(self, market, timeout=10):
         """(south, north, west, east) for a market, asked once and kept."""
         key = f"osm_bbox:{market.id}"
         cached = settings.get(key, '')
@@ -294,7 +339,7 @@ class OSMDiscovery:
             except ValueError:
                 pass
         response = self.http.get(
-            self.nominatim_url, timeout=10, budget=12,
+            self.nominatim_url, timeout=timeout, budget=timeout + 2,
             params={'city': market.city, 'country': market.country,
                     'format': 'json', 'limit': 1},
             headers={'User-Agent': user_agent()})
@@ -314,9 +359,51 @@ class OSMDiscovery:
         parts = ''.join(f'nwr["{key}"="{value}"]({box});' for key, value in self.AGENT_TAGS)
         return f"[out:json][timeout:40];({parts});out center tags {limit};"
 
+    def ask_overpass(self, query, seconds_left):
+        """Ask each Overpass server in turn until one answers.
+
+        Returns (response, the url that answered, what the others said). A
+        refusal, a 429 or a 5xx is that server's answer and the next one is
+        asked; nothing is retried in a loop, each server sees one request,
+        and the request always says who we are.
+        """
+        problems = []
+        for url in self.overpass_urls:
+            if seconds_left() < 4:
+                problems.append((url, 'not tried - the search ran out of time'))
+                break
+            timeout = max(4, min(15, int(seconds_left()) - 1))
+            try:
+                response = self.http.post(
+                    url, timeout=timeout, budget=timeout,
+                    data={'data': query},
+                    headers={'User-Agent': user_agent()})
+            except (fetch.Unreachable, fetch.Blocked) as e:
+                problems.append((url, short_problem(e)))
+                continue
+            except Exception as e:                       # noqa: BLE001
+                problems.append((url, f"{type(e).__name__}: {e}"))
+                continue
+            if response.status_code == 429:
+                problems.append((url, 'answered 429 (too many requests)'))
+                continue
+            if response.status_code >= 500:
+                problems.append((url, f"answered {response.status_code}"))
+                continue
+            return response, url, problems
+        return None, '', problems
+
+    SEARCH_BUDGET_SECONDS = 24
+
     def search(self, market, limit=40, **kwargs):
+        started = time.monotonic()
+
+        def seconds_left():
+            return self.SEARCH_BUDGET_SECONDS - (time.monotonic() - started)
+
         try:
-            bbox = self.bbox_for(market)
+            bbox = self.bbox_for(market,
+                                 timeout=max(4, min(10, int(seconds_left()))))
         except (fetch.Unreachable, fetch.Blocked) as e:
             return Found(source=self.name,
                          error=connection_problem(e, 'Nominatim (OpenStreetMap)',
@@ -324,28 +411,27 @@ class OSMDiscovery:
         except Exception as e:                           # noqa: BLE001
             return Found(source=self.name, error=f"{type(e).__name__}: {e}")
 
-        try:
-            response = self.http.post(
-                self.overpass_url, timeout=15, budget=15,
-                data={'data': self.query_for(bbox, limit)},
-                headers={'User-Agent': user_agent()})
-        except (fetch.Unreachable, fetch.Blocked) as e:
+        response, url, problems = self.ask_overpass(self.query_for(bbox, limit),
+                                                    seconds_left)
+        if response is None:
+            tried = ' | '.join(f"{where}: {why}" for where, why in problems)
+            if problems and all('429' in why for _where, why in problems):
+                return Found(source=self.name,
+                             error=f"every Overpass server is busy (too many "
+                                   f"requests). Try again later. Tried: {tried}")
             return Found(source=self.name,
-                         error=connection_problem(e, 'Overpass (OpenStreetMap)',
-                                                  OSM_HINT))
-        except Exception as e:                           # noqa: BLE001
-            return Found(source=self.name, error=f"{type(e).__name__}: {e}")
-
-        if response.status_code == 429:
-            return Found(source=self.name,
-                         error="OpenStreetMap is busy (too many requests). Try again later.")
+                         error=f"no Overpass server answered. Tried: {tried}. "
+                               f"{CLOUD_BLOCK_HINT}")
         if response.status_code >= 400:
             return Found(source=self.name,
-                         error=f"Overpass answered {response.status_code}")
+                         error=f"Overpass at {url} answered {response.status_code}")
         try:
             elements = (response.json() or {}).get('elements') or []
         except ValueError:
             return Found(source=self.name, error="Overpass sent something that is not JSON")
+
+        if url != (settings.get('osm_overpass_last_good') or ''):
+            settings.set('osm_overpass_last_good', url)
 
         candidates, without_site = [], 0
         for element in elements:
@@ -365,11 +451,14 @@ class OSMDiscovery:
                 address=address[:300],
                 source_ref=f"osm:{element.get('type')}/{element.get('id')}"))
 
-        note = ''
+        notes = []
         if without_site:
-            note = (f"{without_site} agencies in OpenStreetMap had no website "
-                    f"recorded, so they were skipped")
-        return Found(source=self.name, candidates=candidates, note=note)
+            notes.append(f"{without_site} agencies in OpenStreetMap had no website "
+                         f"recorded, so they were skipped")
+        if problems:
+            notes.append(f"answered by {url}, after {len(problems)} other server(s) "
+                         f"would not")
+        return Found(source=self.name, candidates=candidates, note='; '.join(notes))
 
 
 PROVIDERS = {

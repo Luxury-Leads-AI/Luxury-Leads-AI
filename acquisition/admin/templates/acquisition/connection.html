@@ -27,6 +27,8 @@
       <span class="tag good">reachable</span>
     {% elif check.report.verdict == 'blocked' %}
       <span class="tag warn">answers, but blocked</span>
+    {% elif check.report.verdict == 'refused' %}
+      <span class="tag bad">refuses this server</span>
     {% elif check.report.verdict == 'dns' %}
       <span class="tag bad">name not found</span>
     {% else %}
@@ -84,6 +86,11 @@
     <li><strong>One service no, the rest yes</strong> — that service is down or is
         turning this server away. For OpenStreetMap you can put a different
         server's address into Settings and try again.</li>
+    <li><strong>Refuses this server</strong> — the service is up and says no
+        straight away. Public OpenStreetMap servers block whole cloud-hosting
+        address ranges, and Render is cloud hosting, so this is expected on the
+        main one. The engine moves to the next server in the list by itself;
+        you can change that list in Settings.</li>
     <li><strong>Answers, but blocked</strong> — the address accepts a connection
         and the request still does not get through. Something in between is
         refusing it: a proxy, a firewall, or the service turning this server

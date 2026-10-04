@@ -426,9 +426,11 @@ def build_blueprint(db):
             ('The internet in general', 'https://example.com/'),
             ('OpenStreetMap: Nominatim (finds the city)',
              settings.get('osm_nominatim_url') or discovery.DEFAULT_NOMINATIM_URL),
-            ('OpenStreetMap: Overpass (lists the agencies)',
-             settings.get('osm_overpass_url') or discovery.DEFAULT_OVERPASS_URL),
         ]
+        # Every Overpass server the engine would try, not just the first:
+        # the whole point is to see which of them will talk to this server.
+        for url in discovery.OSMDiscovery().overpass_urls:
+            targets.append(('OpenStreetMap: Overpass (lists the agencies)', url))
         if os.getenv('OPENAI_API_KEY'):
             targets.append(('OpenAI (AI search, drafting)',
                             'https://api.openai.com/v1/models'))

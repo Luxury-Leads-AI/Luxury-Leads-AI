@@ -45,7 +45,11 @@ DEFAULTS = {
     # API accepted, so a rename at OpenAI costs a setting, not a deploy.
     'web_search_tool_type': 'auto',
     'osm_nominatim_url': '',          # blank = the public OpenStreetMap service
-    'osm_overpass_url': '',           # blank = the public Overpass service
+    # Blank = the built-in list in providers/discovery.py. A comma-separated
+    # list, because a public Overpass server can refuse a cloud-hosted server
+    # outright and the search should move to the next one rather than stop.
+    'osm_overpass_url': '',
+    'osm_overpass_last_good': '',     # the one that answered last, tried first
     'kill_switch_all': 'off',
     'kill_switch_outreach': 'off',
     'retention_days_uncontacted': '180',
@@ -72,6 +76,8 @@ EDITABLE = (
     ('discovery_enabled', 'Discovery sources switched on (manual, osm, openai)'),
     ('discovery_limit_default', 'How many agencies to look for in one run'),
     ('web_search_model', 'Model used for AI web search'),
+    ('osm_overpass_url', 'Overpass servers to try, comma separated (blank = the built-in list)'),
+    ('osm_nominatim_url', 'Nominatim server (blank = the public one)'),
     ('kill_switch_all', 'Stop everything (on/off)'),
     ('kill_switch_outreach', 'Stop outreach only (on/off)'),
     ('retention_days_uncontacted', 'Delete contact details of never-contacted prospects after (days)'),
