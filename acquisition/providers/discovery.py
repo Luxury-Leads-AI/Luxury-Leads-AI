@@ -16,10 +16,8 @@ import json
 import re
 from dataclasses import dataclass, field
 
-import httpx
-
 from .. import settings
-from ..services import ai
+from ..services import ai, fetch
 
 OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 # The public OpenStreetMap services, which are free and volunteer-run. If we
@@ -57,6 +55,29 @@ class Found:
 def user_agent():
     contact = settings.get('operator_email') or CONTACT
     return f"LuxuryLeadsAI/1.0 (+{CONTACT}; contact: {contact})"
+
+
+OSM_HINT = ("Open Jobs -> Check the connection to see which addresses this "
+            "server can reach. You can also point the engine at a different "
+            "OpenStreetMap server in Settings.")
+
+
+def connection_problem(e, service, hint=''):
+    """A failed connection, in words that say what actually happened.
+
+    httpx reports only the last address it tried, so "Network is
+    unreachable" on its own cannot tell you whether one address family
+    worked and the other did not. fetch keeps all of them; this puts them
+    in the message.
+    """
+    if isinstance(e, fetch.Unreachable):
+        detail = '; '.join(f"{address} said {problem}" for address, problem in e.tried)
+        text = f"this server could not reach {service} at {e.host} - {detail}"
+    elif isinstance(e, fetch.Blocked):
+        text = f"this server will not open {service}: {e}"
+    else:
+        text = f"{type(e).__name__}: {e}"
+    return f"{text}. {hint}".strip() if hint else text
 
 
 def parse_json_loosely(text):
@@ -103,8 +124,8 @@ class OpenAIWebSearchDiscovery:
 
     Called over plain HTTP rather than through the installed `openai`
     package: the pinned version (1.54.4) predates this endpoint, and
-    upgrading it would touch the live chatbot. httpx is already a
-    dependency, so this costs nothing.
+    upgrading it would touch the live chatbot. The request goes through
+    fetch, so it gets the same address handling as everything else.
 
     The model may still invent an agency, so every website it returns is
     checked by the discover job before it becomes a prospect.
@@ -117,7 +138,7 @@ class OpenAIWebSearchDiscovery:
         import os
         # None means "take it from the environment"; '' means "there isn't one".
         self.api_key = os.getenv('OPENAI_API_KEY', '') if api_key is None else api_key
-        self.http = http or httpx
+        self.http = http or fetch.http
 
     def prompt(self, market, limit):
         focus = 'luxury or high-end ' if market.luxury_focus else ''
@@ -134,7 +155,7 @@ class OpenAIWebSearchDiscovery:
             '"phone": "...", "address": "..."}]}'
         )
 
-    def _post(self, payload, timeout=90):
+    def _post(self, payload, timeout=25):
         return self.http.post(
             OPENAI_RESPONSES_URL, timeout=timeout,
             headers={'Authorization': f'Bearer {self.api_key}',
@@ -178,7 +199,8 @@ class OpenAIWebSearchDiscovery:
             try:
                 response = self._post(payload)
             except Exception as e:                      # noqa: BLE001
-                return Found(source=self.name, error=f"{type(e).__name__}: {e}")
+                return Found(source=self.name,
+                             error=connection_problem(e, 'OpenAI'))
 
             if response.status_code == 400 and tool_type != attempts[-1]:
                 last_error = (response.text or '')[:300]
@@ -251,7 +273,7 @@ class OSMDiscovery:
     AGENT_TAGS = (('office', 'estate_agent'), ('shop', 'estate_agent'))
 
     def __init__(self, http=None):
-        self.http = http or httpx
+        self.http = http or fetch.http
 
     @property
     def nominatim_url(self):
@@ -272,7 +294,7 @@ class OSMDiscovery:
             except ValueError:
                 pass
         response = self.http.get(
-            self.nominatim_url, timeout=30,
+            self.nominatim_url, timeout=10, budget=12,
             params={'city': market.city, 'country': market.country,
                     'format': 'json', 'limit': 1},
             headers={'User-Agent': user_agent()})
@@ -295,14 +317,22 @@ class OSMDiscovery:
     def search(self, market, limit=40, **kwargs):
         try:
             bbox = self.bbox_for(market)
+        except (fetch.Unreachable, fetch.Blocked) as e:
+            return Found(source=self.name,
+                         error=connection_problem(e, 'Nominatim (OpenStreetMap)',
+                                                  OSM_HINT))
         except Exception as e:                           # noqa: BLE001
             return Found(source=self.name, error=f"{type(e).__name__}: {e}")
 
         try:
             response = self.http.post(
-                self.overpass_url, timeout=90,
+                self.overpass_url, timeout=15, budget=15,
                 data={'data': self.query_for(bbox, limit)},
                 headers={'User-Agent': user_agent()})
+        except (fetch.Unreachable, fetch.Blocked) as e:
+            return Found(source=self.name,
+                         error=connection_problem(e, 'Overpass (OpenStreetMap)',
+                                                  OSM_HINT))
         except Exception as e:                           # noqa: BLE001
             return Found(source=self.name, error=f"{type(e).__name__}: {e}")
 

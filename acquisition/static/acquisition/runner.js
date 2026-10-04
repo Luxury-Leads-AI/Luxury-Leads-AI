@@ -25,10 +25,10 @@
     if (statusLine) statusLine.textContent = text;
   }
 
-  function note(text, ok) {
+  function note(text, ok, kind) {
     if (!log) return;
     const line = document.createElement('div');
-    line.className = 'run-line' + (ok === false ? ' bad' : '');
+    line.className = 'run-line' + (kind ? ' ' + kind : ok === false ? ' bad' : '');
     line.textContent = text;
     log.prepend(line);
     while (log.children.length > 40) log.removeChild(log.lastChild);
@@ -55,9 +55,15 @@
           depth.textContent = outcome.queue;
         }
         (outcome.results || []).forEach((item) => {
-          note(item.ok
-            ? `✔ ${item.type} #${item.job_id} (${item.duration_ms} ms)`
-            : `✖ ${item.type} #${item.job_id}: ${item.error}`, item.ok);
+          if (item.problem) {
+            // It ran, it just came back with bad news. Saying nothing here is
+            // how "Network is unreachable" hides behind a green tick.
+            note(`⚠ ${item.type} #${item.job_id}: ${item.error}`, false, 'warn');
+          } else {
+            note(item.ok
+              ? `✔ ${item.type} #${item.job_id} (${item.duration_ms} ms)`
+              : `✖ ${item.type} #${item.job_id}: ${item.error}`, item.ok);
+          }
         });
         if (!outcome.ran) {
           say(outcome.reason === 'stopped'

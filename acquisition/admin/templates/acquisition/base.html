@@ -78,6 +78,11 @@
       background: var(--bg-elev); border: 1px solid var(--brand-line); color: var(--text);
       white-space: nowrap;
     }
+    .button-link {
+      display: inline-block; padding: 9px 16px; border-radius: 8px; font-size: 14px;
+      border: 1px solid var(--brand-line); background: var(--bg-elev);
+      color: var(--text); text-decoration: none; vertical-align: middle;
+    }
     .tag.good { border-color: #34d399; color: #34d399; }
     .tag.warn { border-color: #fbbf24; color: #fbbf24; }
     .tag.bad { border-color: #ef4444; color: #fecaca; }
@@ -92,6 +97,7 @@
     .budget-bar.over span { background: #dc2626; }
     .run-line { font-family: "Courier New", monospace; font-size: 12.5px; color: var(--text-dim); padding: 2px 0; }
     .run-line.bad { color: #fecaca; }
+    .run-line.warn { color: #fbbf24; }
     @media (max-width: 640px) {
       .container { margin: 16px auto; }
       .box { padding: 16px; }

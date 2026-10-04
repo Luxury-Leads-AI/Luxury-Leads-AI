@@ -113,10 +113,22 @@ def claim_one(now=None):
     return job
 
 
+def problem_in(result):
+    """A handler that returns {'error': ...} did its work and found a
+    problem - a service that would not answer, a cap that is used up. That
+    is not a crash, so it is not retried, but it must not look like
+    success either: a green tick over "Network is unreachable" is how a
+    broken engine goes unnoticed for a week."""
+    if isinstance(result, dict):
+        return str(result.get('error') or '').strip()
+    return ''
+
+
 def _finish(job, result, started):
-    job.status = 'done'
+    problem = problem_in(result)
+    job.status = 'problem' if problem else 'done'
     job.result = json.dumps(result if result is not None else {})
-    job.last_error = None
+    job.last_error = problem[:2000] or None
     job.locked_until = None
     job.finished_at = datetime.utcnow()
     job.duration_ms = int((time.monotonic() - started) * 1000)
@@ -172,7 +184,9 @@ def run_next(now=None):
                 'queue': queue_depth()}
 
     _finish(job, result, started)
-    return {'ran': True, 'job_id': job.id, 'type': job.type, 'ok': True,
+    problem = job.status == 'problem'
+    return {'ran': True, 'job_id': job.id, 'type': job.type, 'ok': not problem,
+            'problem': problem, 'error': job.last_error,
             'result': result, 'duration_ms': job.duration_ms,
             'queue': queue_depth()}
 

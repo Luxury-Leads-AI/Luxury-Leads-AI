@@ -90,8 +90,8 @@ A site that answers but blocks robots, or shows a human check, is kept and
 flagged `needs_human` rather than worked around. Paid sources are refused
 twice over: `web_search_cap_month` counts `acq_cost.units` for
 `purpose='discovery_search'`, and `ai.can_spend()` checks the budget before
-the call. The OpenAI provider posts to `/v1/responses` over httpx (the pinned
-SDK predates that endpoint) and, with `web_search_tool_type = auto`, tries
+the call. The OpenAI provider posts to `/v1/responses` through
+`fetch.request()` (the pinned SDK predates that endpoint) and, with `web_search_tool_type = auto`, tries
 both tool spellings and remembers the one the API accepted - a rename at
 OpenAI costs a setting, not a deploy. The OSM provider resolves a city to a
 bounding box via Nominatim (cached in `acq_setting` as `osm_bbox:<market>`)
@@ -99,14 +99,38 @@ then queries Overpass for `office=estate_agent`; both carry a User-Agent that
 says who we are, and `osm_nominatim_url` / `osm_overpass_url` point at a
 self-hosted copy if we ever need one.
 
-**`services/fetch.py` is the only code that opens a URL somebody else chose.**
-It resolves the name first and refuses every address that is not public
-(private, loopback, link-local, multicast, reserved, and 169.254.169.254 by
-name), then connects to the address it checked with the `Host` header set and
-`sni_hostname` for TLS, so DNS rebinding does not get a second answer. http
-and https only, at most 3 redirects each re-checked, 10s timeout, 2 MB cap,
-HTML only, no cookies, no JavaScript, robots.txt obeyed, one request per
-second per host. A CAPTCHA or bot wall is reported, never solved.
+**`services/fetch.py` is the only code that opens a connection to another
+machine.** It resolves the name first and refuses every address that is not
+public (private, loopback, link-local, multicast, reserved, and
+169.254.169.254 by name), then connects to the address it checked with the
+`Host` header set and `sni_hostname` for TLS, so DNS rebinding does not get a
+second answer. `get()` is for strangers' websites: http and https only, at
+most 3 redirects each re-checked, 10s timeout, 2 MB cap, HTML only, no
+cookies, no JavaScript, robots.txt obeyed, one request per second per host. A
+CAPTCHA or bot wall is reported, never solved. `request()` is for services we
+chose (OpenStreetMap, OpenAI): same address handling, no robots check.
+
+**Every address is tried, IPv4 first** (`order_addresses`). A name usually has
+several addresses and a container does not necessarily have a route to all of
+them; `socket.create_connection` reports only the *last* error, which is how
+the first live search came back as nothing but "ConnectError: [Errno 101]
+Network is unreachable". `send()` tries up to `MAX_ADDRESS_ATTEMPTS` (3)
+addresses inside `REQUEST_BUDGET_SECONDS` (20) and raises `Unreachable`
+carrying every address and what it said, so the message distinguishes "IPv6
+has no route" from "nothing gets out". Trying more addresses costs time, so
+every caller is bounded: `site_answers` gets 18s for both schemes, the OSM
+provider 12s for Nominatim and 15s for Overpass - a search cannot outlast
+gunicorn's 30-second limit, and `tests/acquisition/test_connection.py` fails
+if those add up to more than 27.
+
+**A job that returns `{'error': ...}` is marked `problem`, not `done`**
+(`runner.problem_in`). It ran and reported bad news: no retry, amber in the
+queue, `last_error` filled, and "Try again" offered. A green tick over
+"Network is unreachable" is how a dead engine goes unnoticed for a week.
+`/owner/acquisition/connection` ("Check the connection" on Jobs) opens each
+address of each configured service on its own and reports one of four
+verdicts - reachable, answers-but-blocked, no-route, name-not-found - inside
+a 20-second budget.
 
 **The gate.** `compliance.can_contact()` checks the kill switch, the
 prospect's do-not-contact flag, the market's legal status (only `verified`
@@ -116,7 +140,7 @@ foreign key: an opt-out outlives the prospect row it came from.
 **Screens.** `/owner/acquisition/` (Today, with the Run button and the budget),
 `markets` (the registry, where a legal status is changed and logged),
 `prospects` (paste websites, or queue a search; the canonical domain is the identity),
-`jobs`, `costs`, `settings`, `audit`. All are behind `session['super_admin']`,
+`jobs`, `connection`, `costs`, `settings`, `audit`. All are behind `session['super_admin']`,
 and every form carries a CSRF token checked in the blueprint's
 `before_request`; session cookies are `SameSite=Lax` (and `Secure` on Render).
 

@@ -1,0 +1,100 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'jobs' %}
+{% block title %}Connection check{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>Can this server get out?</h3>
+  <p class="muted">A job can only tell you what its last attempt said, and
+     "Network is unreachable" reads the same whether the service is down,
+     whether this server has no route to that kind of address, or whether
+     nothing at all gets out of here. This opens each address on its own and
+     shows every answer.</p>
+  <form method="POST" action="{{ url_for('acquisition.connection') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Check now</button>
+  </form>
+  <p class="muted" style="margin-top:12px;">It takes a few seconds. Nothing is
+     saved and nothing is spent: these are connections, not searches.</p>
+</div>
+
+{% for check in checks %}
+<div class="box">
+  <h3>{{ check.label }}
+    {% if check.report is none %}
+      <span class="tag">not checked</span>
+    {% elif check.report.ok %}
+      <span class="tag good">reachable</span>
+    {% elif check.report.verdict == 'blocked' %}
+      <span class="tag warn">answers, but blocked</span>
+    {% elif check.report.verdict == 'dns' %}
+      <span class="tag bad">name not found</span>
+    {% else %}
+      <span class="tag bad">no route from here</span>
+    {% endif %}
+  </h3>
+  <p class="dim">{{ check.url }}</p>
+
+  {% if check.report is none %}
+    <p class="muted">The check ran out of time before reaching this one. Press
+       Check now again to test it on its own.</p>
+  {% else %}
+    {% if check.report.addresses %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Address</th><th>Kind</th><th>Answered</th><th>Took</th><th>What it said</th></tr></thead>
+      <tbody>
+      {% for row in check.report.addresses %}
+        <tr>
+          <td>{{ row.address }}</td>
+          <td class="dim">{{ row.family }}</td>
+          <td><span class="tag {{ 'good' if row.ok else 'bad' }}">{{ 'yes' if row.ok else 'no' }}</span></td>
+          <td class="dim">{{ row.ms }} ms</td>
+          <td class="dim">{{ row.detail }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% if check.report.extra_addresses %}
+    <p class="muted">{{ check.report.extra_addresses }} more address(es) not
+       tried, to keep this page quick.</p>
+    {% endif %}
+    {% endif %}
+
+    {% if check.report.ok %}
+      <p>{{ check.report.summary }}</p>
+    {% else %}
+      <p class="notice bad">{{ check.report.summary }}</p>
+      {% if check.report.error and check.report.error != check.report.summary %}
+      <p class="muted">{{ check.report.error }}</p>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if checks %}
+<div class="box">
+  <h3>How to read this</h3>
+  <ul>
+    <li><strong>IPv4 yes, IPv6 no</strong> — normal on most hosting. The engine
+        always tries IPv4 first, so nothing is wrong and nothing needs changing.</li>
+    <li><strong>Everything no, including "the internet in general"</strong> — this
+        server has no way out at all. That is a hosting setting, not an engine
+        problem.</li>
+    <li><strong>One service no, the rest yes</strong> — that service is down or is
+        turning this server away. For OpenStreetMap you can put a different
+        server's address into Settings and try again.</li>
+    <li><strong>Answers, but blocked</strong> — the address accepts a connection
+        and the request still does not get through. Something in between is
+        refusing it: a proxy, a firewall, or the service turning this server
+        away.</li>
+    <li><strong>It answered, but with a number like 400 or 401</strong> — that still
+        counts as reachable: the service replied, which is all this page tests.</li>
+  </ul>
+  <p class="muted">After fixing something, go back to
+     <a href="{{ url_for('acquisition.job_list') }}">Jobs</a> and press Try again
+     on the job that reported the problem.</p>
+</div>
+{% endif %}
+
+{% endblock %}

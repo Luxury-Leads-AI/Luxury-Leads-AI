@@ -12,6 +12,7 @@ phases and hang off these same pages.
 import json
 import os
 import secrets
+import time
 from datetime import datetime
 
 from flask import (Blueprint, jsonify, redirect, render_template, request,
@@ -20,7 +21,7 @@ from flask import (Blueprint, jsonify, redirect, render_template, request,
 from .. import compliance, models, settings
 from ..jobs import registry, runner
 from ..providers import discovery
-from ..services import ai, prospects
+from ..services import ai, fetch, prospects
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(os.path.dirname(HERE), 'static', 'acquisition')
@@ -150,8 +151,9 @@ def build_blueprint(db):
                                                models.Market.city).all()
         unverified = [m for m in markets if m.legal_status != 'verified']
         recent_jobs = (models.Job.query.order_by(models.Job.id.desc()).limit(10).all())
-        searches = (models.Job.query.filter(models.Job.type == 'discover',
-                                            models.Job.status == 'done')
+        searches = (models.Job.query
+                    .filter(models.Job.type == 'discover',
+                            models.Job.status.in_(('done', 'problem')))
                     .order_by(models.Job.id.desc()).limit(5).all())
         return render_template('acquisition/today.html',
                                searches=[(job, json.loads(job.result or '{}'))
@@ -406,6 +408,54 @@ def build_blueprint(db):
         db.session.commit()
         record('job_retried', 'job', job.id)
         return back('job_list', notice=f"Job #{job.id} is queued again.")
+
+    # ── Can this server get out? ──
+
+    # Short enough that the page always answers inside gunicorn's 30 seconds,
+    # even when several addresses have to time out.
+    CHECK_TIME_BUDGET = 20
+
+    def connection_targets():
+        """What the engine needs to reach, as it is configured right now -
+        so a URL changed in Settings is the one that gets tested.
+
+        The plain internet goes first on purpose: it is the cheapest check
+        and the one that tells you most, because "even this failed" and
+        "only OpenStreetMap failed" are different problems."""
+        targets = [
+            ('The internet in general', 'https://example.com/'),
+            ('OpenStreetMap: Nominatim (finds the city)',
+             settings.get('osm_nominatim_url') or discovery.DEFAULT_NOMINATIM_URL),
+            ('OpenStreetMap: Overpass (lists the agencies)',
+             settings.get('osm_overpass_url') or discovery.DEFAULT_OVERPASS_URL),
+        ]
+        if os.getenv('OPENAI_API_KEY'):
+            targets.append(('OpenAI (AI search, drafting)',
+                            'https://api.openai.com/v1/models'))
+        return targets
+
+    @bp.route('/connection', methods=['GET', 'POST'])
+    def connection():
+        """Which of the outside services this server can actually open.
+
+        A job can only report what its last attempt said, and "Network is
+        unreachable" is the same sentence whether the service is down, the
+        address family has no route, or nothing at all gets out of here.
+        This tries each address on its own and shows all of it.
+        """
+        checks = []
+        if request.method == 'POST':
+            deadline = time.monotonic() + CHECK_TIME_BUDGET
+            for label, url in connection_targets():
+                if time.monotonic() >= deadline:
+                    checks.append({'label': label, 'url': url, 'report': None})
+                    continue
+                checks.append({'label': label, 'url': url,
+                               'report': fetch.connection_report(url, deadline=deadline)})
+            record('connection_checked')
+        return render_template('acquisition/connection.html', checks=checks,
+                               notice=request.args.get('notice'),
+                               error=request.args.get('error'))
 
     # ── Costs, settings, audit ──
 

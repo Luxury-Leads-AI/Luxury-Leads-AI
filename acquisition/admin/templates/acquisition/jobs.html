@@ -12,11 +12,14 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="secondary" type="submit">Queue a test job</button>
   </form>
+  <a class="button-link" href="{{ url_for('acquisition.connection') }}">Check the connection</a>
   <div id="run-log" style="margin-top:14px;"></div>
   <p class="muted" style="margin-top:14px;">Jobs the engine knows how to do today: {{ known_types }}.
      Each one is written to finish in a couple of seconds, well inside the
      server's 30-second limit. A job that fails is tried again three times,
-     waiting longer each time.</p>
+     waiting longer each time. A job marked <span class="tag warn">problem</span>
+     ran properly but came back with bad news - the message is in the last
+     column, and "Try again" re-queues it once the cause is fixed.</p>
 </div>
 
 <div class="box">
@@ -29,12 +32,12 @@
       <tr>
         <td class="dim">{{ job.id }}</td>
         <td>{{ job.type }}{% if job.prospect_id %}<br><span class="muted">prospect {{ job.prospect_id }}</span>{% endif %}</td>
-        <td><span class="tag {{ 'good' if job.status == 'done' else 'bad' if job.status == 'failed' else '' }}">{{ job.status }}</span></td>
+        <td><span class="tag {{ 'good' if job.status == 'done' else 'warn' if job.status == 'problem' else 'bad' if job.status == 'failed' else '' }}">{{ job.status }}</span></td>
         <td class="dim">{{ job.attempts }}</td>
         <td class="dim">{{ job.duration_ms or '—' }}</td>
         <td class="dim">{{ (job.last_error or job.result or '—')[:160] }}</td>
         <td>
-          {% if job.status == 'failed' %}
+          {% if job.status in ('failed', 'problem') %}
           <form method="POST" action="{{ url_for('acquisition.retry_job', job_id=job.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="small secondary" type="submit">Try again</button>

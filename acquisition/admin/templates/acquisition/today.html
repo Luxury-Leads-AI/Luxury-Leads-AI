@@ -107,7 +107,7 @@
       <tr>
         <td class="dim">{{ job.id }}</td>
         <td>{{ job.type }}</td>
-        <td><span class="tag {{ 'good' if job.status == 'done' else 'bad' if job.status == 'failed' else '' }}">{{ job.status }}</span></td>
+        <td><span class="tag {{ 'good' if job.status == 'done' else 'warn' if job.status == 'problem' else 'bad' if job.status == 'failed' else '' }}">{{ job.status }}</span></td>
         <td class="dim">{{ job.duration_ms or '—' }}{% if job.duration_ms %} ms{% endif %}</td>
         <td class="dim">{{ job.last_error or '—' }}</td>
       </tr>
