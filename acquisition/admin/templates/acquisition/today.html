@@ -71,6 +71,32 @@
 </div>
 {% endif %}
 
+{% if searches %}
+<div class="box">
+  <h3>Last searches</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>City</th><th>Source</th><th>Found</th><th>New</th><th>Already had</th><th>Cost</th></tr></thead>
+    <tbody>
+    {% for job, result in searches %}
+      <tr>
+        <td>{{ result.get('market', '—') }}</td>
+        <td class="dim">{{ result.get('source', '—') }}</td>
+        <td class="dim">{{ result.get('found', 0) }}</td>
+        <td>{{ result.get('queued', 0) }}</td>
+        <td class="dim">{{ result.get('already_had', 0) }}</td>
+        <td class="dim">{% if result.get('usd') %}${{ '%.3f'|format(result.get('usd')) }}{% else %}free{% endif %}</td>
+      </tr>
+      {% if result.get('note') or result.get('error') %}
+      <tr><td colspan="6" class="dim">{{ result.get('error') or result.get('note') }}</td></tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="muted">Each agency found is opened once to check it exists. Anything
+     that did not answer is thrown away rather than added.</p>
+</div>
+{% endif %}
+
 <div class="box">
   <h3>Last jobs</h3>
   {% if recent_jobs %}

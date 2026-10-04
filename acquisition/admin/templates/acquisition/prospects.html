@@ -4,7 +4,39 @@
 {% block body %}
 
 <div class="box">
-  <h3>Add prospects</h3>
+  <h3>Find agencies automatically</h3>
+  <p>Pick a city and a source, and the engine goes looking. Every website it
+     finds is opened once to check the agency is real before it lands here, so
+     a search that invents a name produces nothing.</p>
+  <form method="POST" action="{{ url_for('acquisition.discover_prospects') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row">
+      <select name="market_id" required>
+        <option value="">Which city?</option>
+        {% for market in markets %}
+        <option value="{{ market.id }}">{{ market.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="source">
+        {% for name, label, costs in sources %}
+          {% if name in enabled_sources and name != 'manual' %}
+          <option value="{{ name }}">{{ label }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+      <input type="number" name="limit" value="{{ default_limit }}" min="1" max="60">
+    </div>
+    <button type="submit">Queue the search</button>
+  </form>
+  <p class="muted" style="margin-top:12px;">
+    OpenStreetMap is free and finds agencies that volunteers have mapped.
+    The paid search costs about $0.011 a run and finds agencies with a web
+    presence. Switch sources on or off in Settings. After queueing, press
+    <strong>Run the queue</strong> on Today.</p>
+</div>
+
+<div class="box">
+  <h3>Add prospects by hand</h3>
   <p>One website per line. You can put a name after a comma:
      <span class="muted">rivieraestates.fr, Riviera Estates</span>.
      The same company is never added twice — the website address is its identity.</p>
@@ -44,7 +76,7 @@
 
   {% if prospects %}
   <div class="table-wrap"><table>
-    <thead><tr><th>Agency</th><th>Market</th><th>Stage</th><th>Fit</th><th>Added</th></tr></thead>
+    <thead><tr><th>Agency</th><th>Market</th><th>Stage</th><th>Found by</th><th>Fit</th><th>Added</th></tr></thead>
     <tbody>
     {% for prospect in prospects %}
       <tr>
@@ -55,6 +87,8 @@
         </td>
         <td class="dim">{{ prospect.market.name if prospect.market else '—' }}</td>
         <td><span class="tag">{{ stage_labels.get(prospect.stage, prospect.stage) }}</span></td>
+        <td class="dim">{{ prospect.source or 'manual' }}
+            {% if prospect.needs_human %}<br><span class="tag warn">needs a look</span>{% endif %}</td>
         <td class="dim">{{ prospect.fit_score if prospect.fit_score is not none else '—' }}</td>
         <td class="dim">{{ prospect.created_at.strftime('%Y-%m-%d') if prospect.created_at else '—' }}</td>
       </tr>

@@ -38,7 +38,14 @@ DEFAULTS = {
     'pilot_cap': '5',
     'pilot_days': '30',
     'daily_send_cap': '10',
-    'discovery_enabled': 'manual',    # manual / openai / osm  (comma separated)
+    'discovery_enabled': 'manual,osm',   # manual / openai / osm  (comma separated)
+    'discovery_limit_default': '25',
+    'web_search_model': 'gpt-4o-mini',
+    # 'auto' tries the current tool name first and remembers which one the
+    # API accepted, so a rename at OpenAI costs a setting, not a deploy.
+    'web_search_tool_type': 'auto',
+    'osm_nominatim_url': '',          # blank = the public OpenStreetMap service
+    'osm_overpass_url': '',           # blank = the public Overpass service
     'kill_switch_all': 'off',
     'kill_switch_outreach': 'off',
     'retention_days_uncontacted': '180',
@@ -62,7 +69,9 @@ EDITABLE = (
     ('pilot_cap', 'Most pilots running at once'),
     ('pilot_days', 'Pilot length (days)'),
     ('daily_send_cap', 'Most emails to send in a day'),
-    ('discovery_enabled', 'Discovery sources switched on'),
+    ('discovery_enabled', 'Discovery sources switched on (manual, osm, openai)'),
+    ('discovery_limit_default', 'How many agencies to look for in one run'),
+    ('web_search_model', 'Model used for AI web search'),
     ('kill_switch_all', 'Stop everything (on/off)'),
     ('kill_switch_outreach', 'Stop outreach only (on/off)'),
     ('retention_days_uncontacted', 'Delete contact details of never-contacted prospects after (days)'),

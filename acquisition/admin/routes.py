@@ -19,6 +19,7 @@ from flask import (Blueprint, jsonify, redirect, render_template, request,
 
 from .. import compliance, models, settings
 from ..jobs import registry, runner
+from ..providers import discovery
 from ..services import ai, prospects
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -149,7 +150,12 @@ def build_blueprint(db):
                                                models.Market.city).all()
         unverified = [m for m in markets if m.legal_status != 'verified']
         recent_jobs = (models.Job.query.order_by(models.Job.id.desc()).limit(10).all())
+        searches = (models.Job.query.filter(models.Job.type == 'discover',
+                                            models.Job.status == 'done')
+                    .order_by(models.Job.id.desc()).limit(5).all())
         return render_template('acquisition/today.html',
+                               searches=[(job, json.loads(job.result or '{}'))
+                                         for job in searches],
                                stage_counts=stage_counts,
                                total_prospects=sum(stage_counts.values()),
                                needs_review=needs_review,
@@ -258,6 +264,9 @@ def build_blueprint(db):
         return render_template('acquisition/prospects.html', prospects=rows,
                                markets=models.Market.query.order_by(
                                    models.Market.country, models.Market.city).all(),
+                               sources=discovery.choices(),
+                               enabled_sources=discovery.enabled_names(),
+                               default_limit=settings.get_int('discovery_limit_default', 25),
                                stage=stage, market_id=market_id,
                                notice=request.args.get('notice'),
                                error=request.args.get('error'))
@@ -280,6 +289,33 @@ def build_blueprint(db):
             parts.append(f"{len(problems)} not usable: "
                          + "; ".join(f"{text} ({why})" for text, why in problems[:3]))
         return back('prospect_list', notice=". ".join(parts) + ".")
+
+    @bp.route('/prospects/discover', methods=['POST'])
+    def discover_prospects():
+        """Queue a search for one city. The queue does the work when you
+        press Run, so a slow search never holds up the page."""
+        market_id = request.form.get('market_id', type=int)
+        market = db.session.get(models.Market, market_id) if market_id else None
+        if market is None:
+            return back('prospect_list', error="Pick a city first.")
+
+        source = request.form.get('source') or 'osm'
+        if discovery.get(source) is None:
+            return back('prospect_list', error="That source does not exist.")
+        if source not in discovery.enabled_names():
+            return back('prospect_list',
+                        error=f"The {source} source is switched off in Settings.")
+
+        limit = request.form.get('limit', type=int) or settings.get_int(
+            'discovery_limit_default', 25)
+        job = runner.enqueue('discover', payload={'market_id': market.id,
+                                                  'source': source,
+                                                  'limit': limit})
+        record('discovery_queued', 'market', market.id,
+               after={'source': source, 'limit': limit, 'job': job.id})
+        return back('prospect_list',
+                    notice=f"Looking for up to {limit} agencies in {market.name} "
+                           f"using {source}. Press Run the queue on Today.")
 
     @bp.route('/prospects/<int:prospect_id>')
     def prospect_detail(prospect_id):

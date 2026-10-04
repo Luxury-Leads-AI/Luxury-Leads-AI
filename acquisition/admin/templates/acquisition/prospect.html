@@ -11,6 +11,12 @@
     {% if prospect.market %}· {{ prospect.market.name }}{% endif %}
     {% if prospect.do_not_contact %}· <span class="tag bad">do not contact</span>{% endif %}
   </p>
+  {% if prospect.needs_human and prospect.needs_human_reason %}
+  <p class="notice">Needs a look: {{ prospect.needs_human_reason }}</p>
+  {% endif %}
+  {% if prospect.source and prospect.source != 'manual' %}
+  <p class="muted">Found by {{ prospect.source }}{% if prospect.source_ref %} ({{ prospect.source_ref }}){% endif %}</p>
+  {% endif %}
   <p class="{{ 'notice' if decision.allowed else 'notice bad' }}">
     {% if decision.allowed %}Outreach is allowed for this prospect.
     {% else %}No outreach: {{ decision.reason }}{% endif %}

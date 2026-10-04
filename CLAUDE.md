@@ -60,7 +60,8 @@ acquisition/
 ├── settings.py      mode, budgets, caps, kill switches (acq_setting)
 ├── compliance.py    can_contact(): the one gate before anything is sent
 ├── jobs/            runner.py (claim one, run it, record it), registry, handlers/, worker.py
-├── services/        ai.py (every OpenAI call + cost + budget), prospects.py (one row per company)
+├── providers/       discovery.py: manual, OpenAI web search, OpenStreetMap (Places later)
+├── services/        ai.py (every OpenAI call + cost + budget), fetch.py (the only code that opens a stranger's site), prospects.py (one row per company)
 ├── admin/routes.py  the /owner/acquisition screens, behind the super admin session
 └── static/acquisition/runner.js   the browser-driven queue loop
 ```
@@ -81,6 +82,32 @@ live in settings (not in code), and `can_spend()` refuses *before* a call once
 the monthly budget is gone. Outside text is always passed as untrusted data,
 the model gets no tools, and answers are parsed as JSON or thrown away.
 
+**Discovery (Phase 2).** Two jobs, deliberately split. `discover` asks one
+source for candidates in one market; `confirm_candidate` opens each
+candidate's website and only then creates a prospect - an AI search can
+produce a convincing agency that does not exist, and one request settles it.
+A site that answers but blocks robots, or shows a human check, is kept and
+flagged `needs_human` rather than worked around. Paid sources are refused
+twice over: `web_search_cap_month` counts `acq_cost.units` for
+`purpose='discovery_search'`, and `ai.can_spend()` checks the budget before
+the call. The OpenAI provider posts to `/v1/responses` over httpx (the pinned
+SDK predates that endpoint) and, with `web_search_tool_type = auto`, tries
+both tool spellings and remembers the one the API accepted - a rename at
+OpenAI costs a setting, not a deploy. The OSM provider resolves a city to a
+bounding box via Nominatim (cached in `acq_setting` as `osm_bbox:<market>`)
+then queries Overpass for `office=estate_agent`; both carry a User-Agent that
+says who we are, and `osm_nominatim_url` / `osm_overpass_url` point at a
+self-hosted copy if we ever need one.
+
+**`services/fetch.py` is the only code that opens a URL somebody else chose.**
+It resolves the name first and refuses every address that is not public
+(private, loopback, link-local, multicast, reserved, and 169.254.169.254 by
+name), then connects to the address it checked with the `Host` header set and
+`sni_hostname` for TLS, so DNS rebinding does not get a second answer. http
+and https only, at most 3 redirects each re-checked, 10s timeout, 2 MB cap,
+HTML only, no cookies, no JavaScript, robots.txt obeyed, one request per
+second per host. A CAPTCHA or bot wall is reported, never solved.
+
 **The gate.** `compliance.can_contact()` checks the kill switch, the
 prospect's do-not-contact flag, the market's legal status (only `verified`
 allows email) and the suppression list. `acq_suppression` deliberately has no
@@ -88,7 +115,7 @@ foreign key: an opt-out outlives the prospect row it came from.
 
 **Screens.** `/owner/acquisition/` (Today, with the Run button and the budget),
 `markets` (the registry, where a legal status is changed and logged),
-`prospects` (paste websites; the canonical domain is the identity),
+`prospects` (paste websites, or queue a search; the canonical domain is the identity),
 `jobs`, `costs`, `settings`, `audit`. All are behind `session['super_admin']`,
 and every form carries a CSRF token checked in the blueprint's
 `before_request`; session cookies are `SameSite=Lax` (and `Secure` on Render).

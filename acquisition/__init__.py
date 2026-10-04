@@ -28,10 +28,12 @@ from typing import Any, Callable, Optional
 
 from . import compliance, models, settings          # noqa: F401
 from .jobs import registry, runner                  # noqa: F401
-from .services import ai, prospects                 # noqa: F401
+from .providers import discovery                    # noqa: F401
+from .services import ai, fetch, prospects          # noqa: F401
 
 __all__ = ['SaaSServices', 'init_app', 'models', 'settings', 'compliance',
-           'runner', 'registry', 'ai', 'prospects', 'services']
+           'runner', 'registry', 'ai', 'fetch', 'prospects', 'discovery',
+           'services']
 
 
 @dataclass
