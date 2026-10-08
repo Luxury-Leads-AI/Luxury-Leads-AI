@@ -40,6 +40,7 @@ Services we chose ourselves - OpenStreetMap, OpenAI - go through request()
 instead of get(). Same address handling, no robots check, because a
 documented API we are a client of is not a stranger's website.
 """
+import os
 import socket
 import ssl
 import time
@@ -52,7 +53,20 @@ import httpx
 
 from .. import settings
 
-USER_AGENT = ('LuxuryLeadsAI/1.0 (+https://luxury-leads-ai.onrender.com/about-bot; '
+def _public_base_url():
+    """Where this engine lives, from the environment.
+
+    Read here rather than taken from app.py: the package never imports the
+    app. It is the same PUBLIC_BASE_URL the SaaS reads, so moving to a real
+    domain moves the bot's calling card with it.
+    """
+    value = (os.getenv('PUBLIC_BASE_URL') or '').strip().rstrip('/')
+    if value and not value.startswith(('http://', 'https://')):
+        value = 'https://' + value
+    return value or 'https://luxury-leads-ai.onrender.com'
+
+
+USER_AGENT = (f'LuxuryLeadsAI/1.0 (+{_public_base_url()}/about-bot; '
               'research for a business introduction; email to stop)')
 TIMEOUT_SECONDS = 10
 MAX_BYTES = 2 * 1024 * 1024

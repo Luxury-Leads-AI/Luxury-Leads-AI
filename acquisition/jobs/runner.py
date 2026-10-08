@@ -27,6 +27,16 @@ LOCK_SECONDS = 90
 # request always answers well inside gunicorn's 30-second limit.
 BUDGET_SECONDS = 20
 RETRY_BACKOFF_SECONDS = (30, 300, 1800)
+# A service that said "too many requests" means it. Coming back in thirty
+# seconds is not a retry, it is the same mistake again - and it is how a
+# free service stops answering us at all.
+RATE_LIMIT_BACKOFF_SECONDS = (900, 1800, 3600)
+RATE_LIMIT_SIGNS = ('429', 'too many requests', 'rate limit', 'bandwidth limit')
+
+
+def was_rate_limited(error):
+    lowered = str(error or '').lower()
+    return any(sign in lowered for sign in RATE_LIMIT_SIGNS)
 
 _db = None
 
@@ -141,7 +151,9 @@ def _fail(job, error, started):
     job.locked_until = None
     job.duration_ms = int((time.monotonic() - started) * 1000)
     if attempts < (job.max_attempts or 3):
-        wait = RETRY_BACKOFF_SECONDS[min(attempts - 1, len(RETRY_BACKOFF_SECONDS) - 1)]
+        waits = (RATE_LIMIT_BACKOFF_SECONDS if was_rate_limited(error)
+                 else RETRY_BACKOFF_SECONDS)
+        wait = waits[min(attempts - 1, len(waits) - 1)]
         job.status = 'queued'
         job.run_after = datetime.utcnow() + timedelta(seconds=wait)
     else:

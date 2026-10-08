@@ -204,7 +204,21 @@ client = OpenAI(api_key=api_key)
 # -------------------------
 # EMAIL CONFIG
 # -------------------------
+# SMTP_EMAIL is the address mail is sent FROM (Brevo must have it verified).
+# SUPPORT_EMAIL is the address shown to the public on the home, privacy and
+# terms pages - the same one in practice, kept separate so a support address
+# can change without touching the sender. REPLY_TO_EMAIL is where a client's
+# reply lands when they press Reply, which is the whole of the feedback
+# mechanism until an in-app form exists.
+# The last resort keeps the Contact link on the public pages from rendering
+# an empty mailto: when neither variable is set.
+DEFAULT_SUPPORT_EMAIL = "support@ailuxuryleads.com"
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SUPPORT_EMAIL = (os.getenv("SUPPORT_EMAIL") or SMTP_EMAIL
+                 or DEFAULT_SUPPORT_EMAIL).strip()
+REPLY_TO_EMAIL = (os.getenv("REPLY_TO_EMAIL") or SUPPORT_EMAIL).strip()
+EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "Luxury Leads AI").strip()
+app.jinja_env.globals['support_email'] = SUPPORT_EMAIL
 
 # -------------------------
 # APPOINTMENT CONFIG
@@ -452,8 +466,12 @@ def send_email_brevo(to_email, subject, body):
                 "Content-Type": "application/json"
             },
             json={
-                "sender": {"name": "Luxury Leads AI", "email": SMTP_EMAIL},
+                "sender": {"name": EMAIL_FROM_NAME, "email": SMTP_EMAIL},
                 "to": [{"email": to_email}],
+                # Without this, a client who presses Reply is writing to
+                # whatever the sending service chose. With it, they are
+                # writing to a mailbox somebody reads.
+                **({"replyTo": {"email": REPLY_TO_EMAIL}} if REPLY_TO_EMAIL else {}),
                 "subject": subject,
                 "textContent": body
             },
@@ -5663,6 +5681,17 @@ def export_leads(agency_id):
             headers={"Content-Disposition": f"attachment; filename=leads_agency_{agency_id}.xlsx"})
     except Exception as e:
         return jsonify({"error": "Export failed"}), 500
+
+
+@app.route("/about-bot")
+def about_bot():
+    """Who the acquisition engine's fetcher is, and how to make it stop.
+
+    The engine's User-Agent points here when it opens a stranger's website.
+    A bot that names a page which does not exist is a bot nobody can hold to
+    account, so the page exists.
+    """
+    return render_template("about_bot.html")
 
 
 @app.route("/terms")

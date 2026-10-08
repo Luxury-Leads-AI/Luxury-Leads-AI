@@ -16,6 +16,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 from .. import settings
 from ..services import ai, fetch
@@ -43,7 +44,7 @@ DEFAULT_POI_QUERY = 'estate agent'
 # What separates "that server said no to us" from "that server was busy".
 TEMPORARY_SIGNS = ('timeout', 'timed out', 'temporarily', 'too many requests',
                    '429', 'connectionreset', 'remoteprotocolerror')
-CONTACT = 'https://luxury-leads-ai.onrender.com'
+CONTACT = fetch._public_base_url()
 
 
 @dataclass
@@ -89,6 +90,28 @@ CLOUD_BLOCK_HINT = (
     "Azure ranges in October 2025 after being abused from them, and Render is "
     "cloud hosting. Settings -> Overpass servers to try takes a list, or use "
     "AI web search for this city instead.")
+
+
+# How long to leave Nominatim's search alone after it says "too many
+# requests". Its usage policy is one request a second and no bulk use; this
+# is us taking that seriously rather than hammering through a 429.
+POI_PAUSE_MINUTES = 60
+
+
+def pause_poi_search(minutes=POI_PAUSE_MINUTES):
+    until = datetime.utcnow() + timedelta(minutes=minutes)
+    settings.set('osm_poi_pause_until', until.isoformat(timespec='seconds'))
+    return until
+
+
+def poi_search_paused():
+    raw = (settings.get('osm_poi_pause_until') or '').strip()
+    if not raw:
+        return False
+    try:
+        return datetime.fromisoformat(raw) > datetime.utcnow()
+    except ValueError:
+        return False
 
 
 def is_temporary(text):
@@ -470,6 +493,14 @@ class OSMDiscovery:
                     'extratags': 1, 'addressdetails': 1, 'bounded': 1,
                     'viewbox': f"{west},{north},{east},{south}"},
             headers={'User-Agent': user_agent()})
+        if response.status_code == 429:
+            # It asked us to stop. Stopping means not asking again in thirty
+            # seconds - a free service that keeps being pushed stops
+            # answering at all, and it would be right to.
+            pause_poi_search(POI_PAUSE_MINUTES)
+            raise RuntimeError(f"Nominatim answered 429 (too many requests), so "
+                               f"its search is left alone for "
+                               f"{POI_PAUSE_MINUTES} minutes")
         if response.status_code >= 400:
             raise RuntimeError(f"Nominatim answered {response.status_code}")
         rows = response.json() or []
@@ -549,7 +580,11 @@ class OSMDiscovery:
         tried = ' | '.join(f"{where}: {why}" for where, why, _temp in problems)
         temporary = any(temp for _where, _why, temp in problems)
 
-        if settings.get_bool('osm_nominatim_fallback') and seconds_left() > 6:
+        if poi_search_paused():
+            tried += (" | Nominatim search: resting until "
+                      f"{settings.get('osm_poi_pause_until')} (it asked us to "
+                      f"slow down)")
+        elif settings.get_bool('osm_nominatim_fallback') and seconds_left() > 6:
             try:
                 candidates, without_site = self.nominatim_candidates(
                     bbox, limit, timeout=max(5, min(10, int(seconds_left()) - 2)))

@@ -26,12 +26,16 @@ Plus the screen that answers the question directly: Jobs -> Check the
 connection, which opens each address on its own and shows every answer.
 """
 import json
+import os
 import socket
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import httpx
 import pytest
+
+from datetime import datetime
 
 import app as app_module
 from acquisition import models, settings
@@ -929,3 +933,165 @@ def test_a_city_lookup_that_was_refused_is_not(market):
 
     found = discovery.OSMDiscovery(http=Shut()).search(market, limit=5)
     assert found.retryable is False
+
+
+# ─────────────────────────────────────────────────────
+# "Too many requests" means stop, not "ask again shortly"
+# ─────────────────────────────────────────────────────
+
+def test_a_rate_limit_waits_much_longer_than_an_ordinary_failure():
+    """Thirty seconds after a 429 is the same mistake again, and it is how a
+    free service stops answering us at all."""
+    assert runner.was_rate_limited('Nominatim answered 429 (too many requests)')
+    assert runner.was_rate_limited('Bandwidth limit exceeded')
+    assert not runner.was_rate_limited('Connection refused')
+    assert runner.RATE_LIMIT_BACKOFF_SECONDS[0] >= 600
+
+
+def test_a_job_that_was_rate_limited_is_held_back(market):
+    def too_many(job, payload):
+        raise RuntimeError('Nominatim answered 429 (too many requests)')
+
+    registry.register('test_429', too_many)
+    try:
+        job = runner.enqueue('test_429')
+        runner.run_next()
+        row = db.session.get(models.Job, job.id)
+        waited = (row.run_after - datetime.utcnow()).total_seconds()
+        assert row.status == 'queued'
+        assert waited > 600, f"it comes back in {waited:.0f}s"
+    finally:
+        registry._HANDLERS.pop('test_429', None)
+
+
+def test_the_search_is_left_alone_after_it_is_told_to_slow_down(market):
+    """Pushing through a 429 is how you lose a free service for good."""
+    class RateLimited:
+        def __init__(self):
+            self.poi_calls = 0
+
+        def get(self, url, params=None, **kwargs):
+            if 'q' in (params or {}):
+                self.poi_calls += 1
+                return Servers.Response({'error': 'too many'}, status=429)
+            return Servers.Response(NOMINATIM_ROWS)
+
+        def post(self, url, **kwargs):
+            raise fetch.Unreachable(url.split('/')[2], [
+                ('162.55.144.139', 'ConnectError: [Errno 111] Connection refused')])
+
+    http = RateLimited()
+    first = discovery.OSMDiscovery(http=http).search(market, limit=10)
+    assert '429' in first.error
+    assert discovery.poi_search_paused() is True
+
+    second = discovery.OSMDiscovery(http=http).search(market, limit=10)
+    assert http.poi_calls == 1, 'it asked again while it was told to wait'
+    assert 'resting until' in second.error
+
+
+def test_the_rest_ends_by_itself(market):
+    discovery.pause_poi_search(minutes=-1)
+    assert discovery.poi_search_paused() is False
+
+
+def test_ai_web_search_is_offered_out_of_the_box():
+    """A free source that cannot answer is not a source. The paid one that
+    works has to at least be in the list."""
+    assert 'openai' in settings.DEFAULTS['discovery_enabled']
+
+
+# ─────────────────────────────────────────────────────
+# The same query, run from a computer that is not cloud hosting
+# ─────────────────────────────────────────────────────
+
+def local_tool():
+    """tools/osm_agencies.py, loaded for its parsing functions."""
+    import importlib.util
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    spec = importlib.util.spec_from_file_location(
+        'osm_agencies', os.path.join(root, 'tools', 'osm_agencies.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_local_tool_prints_lines_the_paste_box_understands():
+    tool = local_tool()
+    lines, _skipped = tool.lines_from([
+        {'tags': {'name': 'Riviera Estates', 'website': 'https://www.riviera-estates.fr/about'}},
+        {'tags': {'name': 'Azur Prestige', 'contact:website': 'azur-prestige.fr'}},
+    ])
+    assert lines == ['https://riviera-estates.fr, Riviera Estates',
+                     'https://azur-prestige.fr, Azur Prestige']
+
+
+def test_the_local_tool_throws_away_what_the_engine_would(market):
+    """Same rules as the engine: a company is its own domain."""
+    tool = local_tool()
+    lines, skipped = tool.lines_from([
+        {'tags': {'name': 'No Site', 'phone': '+33 1 00 00 00 00'}},
+        {'tags': {'name': 'Facebook Only', 'website': 'https://facebook.com/agency'}},
+        {'tags': {'name': 'Portal Page', 'website': 'https://www.seloger.com/agency/12'}},
+        {'tags': {'name': 'Twice A', 'website': 'https://same.fr'}},
+        {'tags': {'name': 'Twice B', 'website': 'http://www.same.fr/contact'}},
+    ])
+    assert lines == ['https://same.fr, Twice A']
+    assert skipped['no website recorded'] == 1
+    assert skipped["a page on someone else's site"] == 2
+    assert skipped['already in this list'] == 1
+
+
+def test_a_name_with_a_comma_cannot_break_the_paste_format():
+    tool = local_tool()
+    lines, _ = tool.lines_from([
+        {'tags': {'name': 'Dupont, Fils et Cie', 'website': 'https://dupont.fr'}}])
+    assert lines == ['https://dupont.fr, Dupont  Fils et Cie']
+    assert lines[0].count(',') == 1
+
+
+def test_the_local_tool_really_runs_against_a_server():
+    """End to end as a subprocess, the way he will run it, against a
+    stand-in for the two OpenStreetMap services."""
+    import subprocess
+
+    class Stand(BaseHTTPRequestHandler):
+        def _send(self, payload):
+            body = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):                                # noqa: N802
+            self._send([{'boundingbox': ['48.8', '48.9', '2.2', '2.4']}])
+
+        def do_POST(self):                               # noqa: N802
+            self.rfile.read(int(self.headers.get('Content-Length') or 0))
+            self._send({'elements': [
+                {'type': 'node', 'id': 1, 'tags': {
+                    'name': 'Craunot Rive Gauche', 'website': 'https://craunot.fr'}},
+                {'type': 'node', 'id': 2, 'tags': {'name': 'No Website'}}]})
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(('127.0.0.1', 0), Stand)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        done = subprocess.run(
+            [sys.executable, os.path.join(root, 'tools', 'osm_agencies.py'),
+             'Paris, France', '--nominatim', base + '/search',
+             '--overpass', base + '/api/interpreter', '--limit', '5'],
+            capture_output=True, text=True, timeout=120,
+            env=dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1'))
+    finally:
+        server.shutdown()
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == 'https://craunot.fr, Craunot Rive Gauche'
+    assert '1 agencies with their own website' in done.stderr
+    assert 'Add prospects by hand' in done.stderr

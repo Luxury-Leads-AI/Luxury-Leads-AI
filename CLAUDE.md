@@ -41,7 +41,30 @@ SHOW_TIER_3=           # Optional; "true" to re-show the Corporation tier on /pr
 PUBLIC_BASE_URL=       # Optional; the public address used in every emailed link and in the embed code (default https://luxury-leads-ai.onrender.com)
 SUPER_ADMIN_PASSWORD_HASH=  # Preferred over SUPER_ADMIN_PASSWORD; make one with `python tools/make_admin_hash.py`
 SMOKE_TEST_TOKEN=      # Optional; with header `X-Smoke-Test: <token>`, /chat answers from a fixed string instead of calling OpenAI
+SUPPORT_EMAIL=         # Optional; the address shown on the home, privacy and terms pages (falls back to SMTP_EMAIL, then DEFAULT_SUPPORT_EMAIL)
+REPLY_TO_EMAIL=        # Optional; where a client's reply lands (falls back to SUPPORT_EMAIL)
+EMAIL_FROM_NAME=       # Optional; the name beside the From address (default "Luxury Leads AI")
 ```
+
+**Live configuration (from 2026-10-05):** `PUBLIC_BASE_URL=https://app.ailuxuryleads.com`,
+`SMTP_EMAIL=SUPPORT_EMAIL=REPLY_TO_EMAIL=support@ailuxuryleads.com`. The
+`onrender.com` address still resolves and is still the fallback, and
+`static/widget.js` works out its own origin from its `src`, so client embeds
+made before the move keep working. The step-by-step setup (Hostinger DNS,
+Render custom domain, Brevo domain authentication, security settings) is the
+Claude Doc "Domain and email setup - ailuxuryleads.com".
+
+**Addresses are settings, not literals.** The support address used to be typed
+into `index.html`, `privacy.html` and `terms.html`; it is now the
+`support_email` Jinja global, and `tests/test_domain_and_email.py` walks the
+repository and fails if the owner's personal address reappears anywhere.
+`send_email_brevo()` sets `replyTo` from `REPLY_TO_EMAIL` on every send - the
+whole of the client-feedback mechanism until an in-app form exists. `/about-bot`
+is the page the acquisition fetcher's User-Agent names: public, no login, says
+how to stop the bot by email or `robots.txt`; a test resolves the URL out of
+`fetch.USER_AGENT` and fails if it 404s. `fetch._public_base_url()` reads
+`PUBLIC_BASE_URL` from the environment (never from `app.py` - the package does
+not import it), so the bot's calling card follows the domain.
 
 ## The acquisition engine
 
@@ -123,7 +146,23 @@ and the job goes amber straight away.
 asks Nominatim's own POI search (`q=estate agent`, `bounded=1` on the city's
 viewbox, `extratags=1` for the website) and uses that. It finds fewer and caps
 at 40, but Nominatim answers from Render and Overpass does not. Off with
-`osm_nominatim_fallback=off`; the phrase is `osm_poi_query`. `osm_overpass_url` and `osm_nominatim_url` are on the Settings screen,
+`osm_nominatim_fallback=off`; the phrase is `osm_poi_query`.
+
+**A 429 is obeyed, not pushed through.** Nominatim's search answered 429 from
+Render within a few jobs (its policy is one request a second, no bulk).
+`discovery.pause_poi_search()` sets `osm_poi_pause_until` an hour ahead and
+`poi_search_paused()` skips the fallback until then, and
+`runner.RATE_LIMIT_BACKOFF_SECONDS` (15min, 30min, 1h) replaces the ordinary
+backoff whenever `was_rate_limited()` matches the error. Hammering through a
+rate limit is how a free service stops answering at all.
+
+**`tools/osm_agencies.py`** runs the same Overpass query from a machine that
+is not cloud hosting - standard library only, one city per run, 1 req/s, a
+User-Agent that says it is run by hand - and prints `https://domain, Name`
+lines for the Prospects paste box. It applies the same shared-host and
+duplicate rules as `services/prospects.py`. This is the free route that
+actually works; `discovery_enabled` now ships with `openai` in it because a
+source that cannot answer is not a source. `osm_overpass_url` and `osm_nominatim_url` are on the Settings screen,
 because the error message tells the operator to change them there.
 
 **`services/fetch.py` is the only code that opens a connection to another

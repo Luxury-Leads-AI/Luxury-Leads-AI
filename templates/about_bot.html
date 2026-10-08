@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About our bot - Luxury Leads AI</title>
+    <link rel="stylesheet" href="/static/theme.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            line-height: 1.8;
+            color: var(--text);
+            background: var(--grad-hero);
+            min-height: 100vh;
+            padding: 48px 20px;
+        }
+        .container {
+            max-width: 840px;
+            margin: 0 auto;
+            padding: 52px 44px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: var(--glow);
+        }
+        @media (max-width: 640px) {
+            body { padding: 18px 14px; }
+            .container { padding: 32px 22px; border-radius: 14px; }
+        }
+        h1 { font-size: 36px; margin-bottom: 10px; color: var(--text); }
+        .lead { color: var(--text-dim); margin-bottom: 40px; }
+        h2 { font-size: 24px; margin-top: 40px; margin-bottom: 20px; color: var(--text); }
+        p, li { margin-bottom: 15px; color: var(--text-dim); }
+        ul { margin-left: 20px; }
+        a { color: var(--brand-2); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        code {
+            background: var(--bg-elev); border: 1px solid var(--border);
+            border-radius: 6px; padding: 2px 6px; font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>About our bot</h1>
+        <p class="lead">You are probably here because you saw
+            <code>LuxuryLeadsAI</code> in your web server's logs.</p>
+
+        <h2>What it is</h2>
+        <p>Luxury Leads AI builds a chat assistant for estate agencies. Before we
+            introduce ourselves to an agency, we open their website once to check
+            it exists and to understand what they do, so that anything we send is
+            about them rather than a form letter.</p>
+
+        <h2>What it does, and does not do</h2>
+        <ul>
+            <li>It reads a small number of pages, no more than one request per
+                second, and never more than a couple of megabytes.</li>
+            <li>It obeys <code>robots.txt</code>. If your site asks robots not to
+                read a page, we do not read it.</li>
+            <li>It does not fill in forms, create accounts, or sign up for
+                anything.</li>
+            <li>It never works around a CAPTCHA or a human check. If it meets one,
+                it stops and the site is left for a person to look at.</li>
+            <li>It collects business contact details that are published on the
+                site - the kind of thing printed on a business card. It does not
+                try to collect anything about private individuals.</li>
+        </ul>
+
+        <h2>How to make it stop</h2>
+        <p>Either of these works, and we would rather you used the first:</p>
+        <ul>
+            <li>Email us at <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+                with your domain and we will add it to our do-not-contact list.
+                That is permanent and covers email as well as the fetcher.</li>
+            <li>Or add this to your <code>robots.txt</code>:<br>
+                <code>User-agent: LuxuryLeadsAI</code><br>
+                <code>Disallow: /</code></li>
+        </ul>
+
+        <h2>Data we hold</h2>
+        <p>If you would like to know what we hold about your business, or want it
+            deleted, write to <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+            and we will answer. Our <a href="/privacy-policy">privacy policy</a>
+            has the detail.</p>
+    </div>
+</body>
+</html>

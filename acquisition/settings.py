@@ -38,7 +38,10 @@ DEFAULTS = {
     'pilot_cap': '5',
     'pilot_days': '30',
     'daily_send_cap': '10',
-    'discovery_enabled': 'manual,osm',   # manual / openai / osm  (comma separated)
+    # manual / openai / osm (comma separated). AI web search is on by default
+    # because the free OpenStreetMap servers turn cloud hosting away, and a
+    # source that cannot answer is not a source.
+    'discovery_enabled': 'manual,osm,openai',
     'discovery_limit_default': '25',
     'web_search_model': 'gpt-4o-mini',
     # 'auto' tries the current tool name first and remembers which one the
@@ -54,6 +57,7 @@ DEFAULTS = {
     # instead. It finds fewer, but it answers from places Overpass does not.
     'osm_nominatim_fallback': 'on',
     'osm_poi_query': '',              # blank = 'estate agent'
+    'osm_poi_pause_until': '',        # set when Nominatim asks us to slow down
     'kill_switch_all': 'off',
     'kill_switch_outreach': 'off',
     'retention_days_uncontacted': '180',
