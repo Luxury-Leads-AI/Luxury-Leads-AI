@@ -34,6 +34,8 @@ DEFAULTS = {
     'ai_budget_usd_month': '5',
     'ai_budget_action': 'pause',      # pause non-essential jobs at 100%
     'research_cost_cap_usd': '0.02',  # per prospect
+    'research_pages': '5',            # home page plus a few worth opening
+    'research_ai': 'on',              # the rules are free; this is the paid part
     'web_search_cap_month': '50',
     'pilot_cap': '5',
     'pilot_days': '30',
@@ -77,6 +79,8 @@ EDITABLE = (
     ('mode', 'Mode'),
     ('ai_budget_usd_month', 'AI budget for this month (USD)'),
     ('research_cost_cap_usd', 'Most AI spend per prospect (USD)'),
+    ('research_pages', 'Pages to read per agency when researching'),
+    ('research_ai', 'Let AI read the pages after the free checks (on/off)'),
     ('web_search_cap_month', 'Most web searches per month'),
     ('pilot_cap', 'Most pilots running at once'),
     ('pilot_days', 'Pilot length (days)'),

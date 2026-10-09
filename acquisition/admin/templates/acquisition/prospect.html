@@ -44,6 +44,7 @@
     <textarea name="notes" placeholder="Notes">{{ prospect.notes or '' }}</textarea>
     <p><label><input type="checkbox" name="needs_human" {{ 'checked' if prospect.needs_human }}> Needs me to look at it</label></p>
     <button type="submit">Save</button>
+    <button class="secondary" type="submit" name="action" value="research">Research this agency</button>
     <button class="secondary" type="submit" name="action" value="queue_normalize">Queue a tidy-up job</button>
   </form>
 </div>
@@ -56,29 +57,45 @@
     <tbody>
     {% for fact in prospect.facts %}
       <tr>
-        <td class="dim">{{ fact.field }}</td>
+        <td class="dim">{{ fact_labels.get(fact.field, fact.field) }}</td>
         <td>{{ fact.value }}</td>
-        <td><span class="tag {{ 'good' if fact.confidence == 'verified' else 'warn' }}">{{ fact.confidence }}</span></td>
+        <td><span class="tag {{ 'good' if fact.confidence == 'verified' else 'warn' }}">{{ fact.confidence }}</span>
+            <span class="muted">{{ fact.extractor }}</span></td>
         <td class="dim">{% if fact.source_url %}<a href="{{ fact.source_url }}" target="_blank" rel="noopener noreferrer">page</a>{% else %}—{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table></div>
   {% else %}
-  <p class="muted">Nothing researched yet. Research arrives in Phase 3; every fact will
-     carry the page it came from, and a draft may only use facts marked verified.</p>
+  <p class="muted">Nothing researched yet. Press <strong>Research this agency</strong>
+     above, then Run the queue on Today. Every fact carries the page it came
+     from, and a draft may only use facts marked <span class="tag good">verified</span>.</p>
   {% endif %}
+  <p class="muted" style="margin-top:12px;"><span class="tag good">verified</span>
+     means we saw it in the page's own markup — a mailto link, a tel link, a chat
+     widget's script. <span class="tag warn">inferred</span> means a model read the
+     text and concluded it. Only the first kind is safe to quote back at someone.</p>
 </div>
 
 <div class="box">
   <h3>Contacts</h3>
   {% if prospect.contacts %}
-  <ul>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Kind</th><th>Checked</th><th>Found on</th></tr></thead>
+    <tbody>
     {% for contact in prospect.contacts %}
-    <li>{{ contact.email }} {% if contact.name %}({{ contact.name }}){% endif %}
-        <span class="muted">{{ contact.email_check or 'not checked' }}</span></li>
+      <tr>
+        <td>{{ contact.email }}{% if contact.name %} <span class="muted">({{ contact.name }})</span>{% endif %}</td>
+        <td class="dim">{{ 'company inbox' if contact.is_generic else 'a person' }}</td>
+        <td class="dim">{{ contact.email_check or 'not checked' }}</td>
+        <td class="dim">{% if contact.source_url %}<a href="{{ contact.source_url }}" target="_blank" rel="noopener noreferrer">page</a>{% else %}—{% endif %}</td>
+      </tr>
     {% endfor %}
-  </ul>
+    </tbody>
+  </table></div>
+  <p class="muted">Only company inboxes are collected — info@, contact@ and the
+     like. Addresses belonging to named people are personal data with a duty of
+     care attached, so the engine ignores them.</p>
   {% else %}
   <p class="muted">None yet.</p>
   {% endif %}

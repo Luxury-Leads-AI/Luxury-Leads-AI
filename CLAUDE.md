@@ -200,6 +200,31 @@ inside a 20-second budget, and it tests every Overpass server in the list. A
 refusal is told apart from silence on purpose: it means the service is up and
 turning this server away.
 
+**Research (Phase 3).** One `research` job per prospect, queued from the
+prospect screen or "Research the new ones" on Prospects. `read_site()` opens
+the home page then up to `research_pages` (5) more chosen by
+`services/research.py:page_links()` - contact, about, listings, services, one
+per kind, same domain only. `facts_from_markup()` then learns for free what
+the markup states: generic emails (own domain only), `tel:` numbers, wa.me
+links, a chat widget by its own script (`WIDGETS`), a contact form, a booking
+link, `lang`/`hreflang`. Those are written `verified`. One `ai.ask_json()` pass
+over the already-fetched text adds the judgement calls - luxury, price band,
+property types, offices, one line - written `inferred` with the model as
+`extractor`. **The markup wins**: an AI language list is only stored when the
+rules found none.
+
+Every fact carries `source_url`, and `record_fact()` deletes the prior row for
+that field first, so researching twice updates rather than piles up.
+**Only generic inboxes are collected** (`research.is_generic`) - a named
+person's address is personal data with a duty of care, and the engine does not
+take it at all; what it does keep gets `personal_data_expires_at` from
+`retention_days_uncontacted`. Money: `research_cost_cap_usd` per prospect
+(checked against `acq_cost` rows with `purpose like 'research%'`) on top of the
+monthly budget, and `research_ai=off` turns the paid half off entirely.
+`RESEARCH_BUDGET_SECONDS` (22) bounds the whole job; a site that times out
+raises so the queue retries it, a site whose robots.txt says no is marked
+`needs_human` and not retried.
+
 **The gate.** `compliance.can_contact()` checks the kill switch, the
 prospect's do-not-contact flag, the market's legal status (only `verified`
 allows email) and the suppression list. `acq_suppression` deliberately has no

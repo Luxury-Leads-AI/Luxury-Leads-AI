@@ -57,6 +57,15 @@
 
 <div class="box">
   <h3>{{ prospects|length }} prospect{{ '' if prospects|length == 1 else 's' }}</h3>
+  <form method="POST" action="{{ url_for('acquisition.research_all') }}" style="margin-bottom:14px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="limit" value="25">
+    <button type="submit">Research the new ones</button>
+    <span class="muted">Reads each agency's own site - up to five pages - and
+      writes down what it finds, with the page each fact came from. The free
+      checks always run; the AI read costs about a penny an agency and can be
+      switched off in Settings.</span>
+  </form>
   <form method="GET">
     <div class="row">
       <select name="stage" onchange="this.form.submit()">

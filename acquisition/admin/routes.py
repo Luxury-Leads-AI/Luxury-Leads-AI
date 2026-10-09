@@ -292,6 +292,32 @@ def build_blueprint(db):
                          + "; ".join(f"{text} ({why})" for text, why in problems[:3]))
         return back('prospect_list', notice=". ".join(parts) + ".")
 
+    @bp.route('/prospects/research-all', methods=['POST'])
+    def research_all():
+        """Queue research for every prospect that has not had any.
+
+        One job each rather than one big job: each has to finish inside
+        gunicorn's 30 seconds, and a site that hangs must not take the rest
+        of the batch down with it.
+        """
+        limit = request.form.get('limit', type=int) or 25
+        rows = (models.Prospect.query
+                .filter(models.Prospect.stage == 'new',
+                        models.Prospect.do_not_contact.isnot(True))
+                .order_by(models.Prospect.id).limit(limit).all())
+        for prospect in rows:
+            runner.enqueue('research', prospect_id=prospect.id,
+                           idempotency_key=f"research:{prospect.id}")
+        record('research_queued_bulk', 'prospect', None,
+               after={'queued': len(rows)})
+        if not rows:
+            return back('prospect_list',
+                        notice="Nothing new to research - every prospect has "
+                               "been read already.")
+        return back('prospect_list',
+                    notice=f"Queued research for {len(rows)} agencies. Press "
+                           f"Run the queue on Today.")
+
     @bp.route('/prospects/discover', methods=['POST'])
     def discover_prospects():
         """Queue a search for one city. The queue does the work when you
@@ -325,8 +351,9 @@ def build_blueprint(db):
         if prospect is None:
             return back('prospect_list', error="That prospect is gone.")
         decision = compliance.can_contact(prospect)
+        from ..jobs.handlers import FACT_LABELS
         return render_template('acquisition/prospect.html', prospect=prospect,
-                               decision=decision,
+                               decision=decision, fact_labels=FACT_LABELS,
                                markets=models.Market.query.order_by(
                                    models.Market.country, models.Market.city).all(),
                                stages=models.PROSPECT_STAGES,
@@ -355,6 +382,13 @@ def build_blueprint(db):
                    after={'reason': prospect.do_not_contact_reason})
             return back('prospect_detail', prospect_id=prospect.id,
                         notice="Marked do not contact, and the domain is suppressed.")
+
+        if action == 'research':
+            runner.enqueue('research', prospect_id=prospect.id,
+                           idempotency_key=f"research:{prospect.id}")
+            record('research_queued', 'prospect', prospect.id)
+            return back('prospect_detail', prospect_id=prospect.id,
+                        notice="Queued. Press Run the queue on Today.")
 
         if action == 'queue_normalize':
             runner.enqueue('normalize_prospect', prospect_id=prospect.id,
