@@ -3,6 +3,10 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign Up - Agency - Luxury Leads AI</title>
+{% set page_title = "Sign Up - Agency - Luxury Leads AI" %}
+{% set page_description = "Create your agency account: up to 10 agents, team dashboards and automatic lead assignment for $497/month after a 14-day free trial." %}
+{% set page_path = "/signup/agency" %}
+{% include "_seo_head.html" %}
   <link rel="stylesheet" href="/static/theme.css">
   <style>
     body {
@@ -10,12 +14,18 @@
       background: var(--bg);
       color: white;
       display: flex;
-      justify-content: center;
+      /* A column, not a row. As a row, anything after the card - the
+         shared footer - became a second item beside it. */
+      flex-direction: column;
       align-items: center;
       min-height: 100vh;
       padding: 20px;
     }
     .box {
+      /* 100% width plus 40px of padding is 80px wider than the phone.
+         Pre-existing, and the reason the form overflowed at 390px. */
+      box-sizing: border-box;
+      margin-block: auto;
       background: var(--surface);
       padding: 40px;
       border-radius: 12px;
@@ -123,6 +133,14 @@
       font-size: 12px;
       color: var(--text-faint);
       line-height: 1.5;
+    }
+
+    /* Narrow screens: the card's own 40px padding leaves only ~270px of
+       form on a 390px phone. Trim it so the fields stay readable. */
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      .box { padding: 24px 20px; border-radius: 10px; }
+      h2 { font-size: 22px; }
     }
   </style>
 </head>

@@ -1,0 +1,68 @@
+{# Everything a search engine, a social preview and an AI answer engine
+   look for, written once.
+
+   Each page sets page_title, page_description and page_path before
+   including this. The description is the sentence that appears under the
+   link in results, so it says what the product does and who for, in the
+   words somebody would actually type.
+
+   GEO (getting quoted by AI answer engines) wants the same things SEO
+   does plus one more: machine-readable facts. That is what the JSON-LD
+   below is - the product, the price, and the company, stated plainly
+   enough to be lifted into an answer. #}
+<meta name="description" content="{{ page_description }}">
+<link rel="canonical" href="{{ public_base_url }}{{ page_path }}">
+<meta name="robots" content="{{ page_robots | default('index, follow') }}">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{{ business_name }}">
+<meta property="og:title" content="{{ page_title }}">
+<meta property="og:description" content="{{ page_description }}">
+<meta property="og:url" content="{{ public_base_url }}{{ page_path }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ page_title }}">
+<meta name="twitter:description" content="{{ page_description }}">
+
+{% if page_path == '/' %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "{{ public_base_url }}/#organization",
+      "name": "{{ business_name }}",
+      "url": "{{ public_base_url }}/",
+      "email": "{{ support_email }}",
+      "description": "AI chat assistant for real estate agencies that qualifies website visitors into booked viewings."
+    },
+    {
+      "@type": "WebSite",
+      "@id": "{{ public_base_url }}/#website",
+      "url": "{{ public_base_url }}/",
+      "name": "{{ business_name }}",
+      "publisher": { "@id": "{{ public_base_url }}/#organization" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "{{ business_name }}",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web browser",
+      "description": "An AI assistant that answers your website visitors day and night, qualifies them, captures the lead and books the viewing.",
+      "offers": [
+        {% for key, plan in offer_tiers() %}
+        {
+          "@type": "Offer",
+          "name": "{{ plan.label }}",
+          "price": "{{ plan.price }}",
+          "priceCurrency": "USD",
+          "category": "SubscriptionPlan",
+          "url": "{{ public_base_url }}/pricing"
+        }{{ "," if not loop.last }}
+        {% endfor %}
+      ]
+    }
+  ]
+}
+</script>
+{% endif %}

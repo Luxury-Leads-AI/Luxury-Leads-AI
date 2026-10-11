@@ -90,6 +90,46 @@ how to stop the bot by email or `robots.txt`; a test resolves the URL out of
 `PUBLIC_BASE_URL` from the environment (never from `app.py` - the package does
 not import it), so the bot's calling card follows the domain.
 
+**One date, in one place.** The three policy pages each carried a hand-typed
+"Last updated" line and all three had gone stale. The date is now
+`POLICY_UPDATED` in `app.py`, exposed as the `policy_updated` Jinja global;
+`test_the_date_is_not_written_into_the_templates_any_more` fails if a literal
+date comes back. Changing the date alone proves nothing, so
+`test_a_policy_cannot_change_without_somebody_noticing_the_date` fingerprints
+each policy and compares it with a hash recorded in the test. **Edit a policy's
+wording and that test fails on purpose** - move `POLICY_UPDATED` forward and
+paste the new hash the failure prints. The fingerprint hashes only the
+`<body>`, with `{% ... %}` statements stripped, so adding a shared partial or
+changing the head is not mistaken for a change to the policy itself.
+
+**The footer has to be told to take its own line.** `signup.html`,
+`signup_solo.html` and `signup_agency.html` centre their card with
+`body { display: flex }`. Including the shared footer put a second flex item in
+that row, so the footer rendered *beside* the card. The fix is
+`flex-direction: column` on those three bodies plus `margin-block: auto` on
+`.box` to keep the vertical centring `align-items` used to give, and
+`width: 100% / align-self: stretch / box-sizing: border-box` on `.site-footer`.
+`.box` also gained `box-sizing: border-box`: `width: 100%` with `padding: 40px`
+measured 416px on a 390px phone, which was a sideways scrollbar on every signup
+page since long before the footer existed. The tier pages had no narrow
+breakpoint at all; they now trim padding under 480px. Five tests in
+`test_public_pages.py` hold all of this, and the check that actually proved it
+was Chromium at 1366 and 390 asserting `scrollWidth <= clientWidth` and the
+footer's top below the card's bottom.
+
+**SEO and GEO live in one partial.** `templates/_seo_head.html` is included by
+all eight public pages and writes the description, canonical URL, robots
+directive, Open Graph and Twitter cards, and - on every page - a JSON-LD
+`@graph` of Organization, WebSite and SoftwareApplication with an `Offers`
+entry per visible tier. The offers are generated from `visible_tiers()` (the
+`offer_tiers` Jinja global), so a structured price cannot drift from a sellable
+one; `test_the_structured_prices_are_prices_somebody_can_buy` compares the two
+sets. Canonical URLs are built from `PUBLIC_BASE_URL`. `/robots.txt` and
+`/sitemap.xml` are generated from `INDEXABLE_PAGES`; the legal pages carry
+`noindex` and stay out of the sitemap, and a test walks the sitemap asking the
+app for each URL so it can never list a dead page. Descriptions must be unique
+across pages (`test_no_two_pages_claim_the_same_description`).
+
 ## The acquisition engine
 
 `acquisition/` is a separate package in this repository that finds and wins

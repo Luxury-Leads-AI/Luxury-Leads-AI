@@ -244,6 +244,12 @@ button[type="submit"], .cta-button:not(.secondary), .btn-primary,
    of step with another. Class names are prefixed site-footer- because
    several pages already define their own .footer-links. */
 .site-footer {
+  /* Full width and on its own line even when the page centres its card
+     with flex: without this the footer lines up BESIDE the card. */
+  width: 100%;
+  align-self: stretch;
+  flex: 0 0 auto;
+  box-sizing: border-box;
   margin-top: 64px;
   padding: 36px 20px 44px;
   border-top: 1px solid var(--border);

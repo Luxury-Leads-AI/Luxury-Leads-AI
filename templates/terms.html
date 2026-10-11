@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Terms of Service - Luxury Leads AI</title>
+{% set page_title = "Terms of Service - Luxury Leads AI" %}
+{% set page_description = "The terms of service for Luxury Leads AI, including subscription, billing through Paddle as Merchant of Record, the 14-day free trial and cancellation." %}
+{% set page_path = "/terms" %}
+{% set page_robots = "noindex, follow" %}
+{% include "_seo_head.html" %}
   <link rel="stylesheet" href="/static/theme.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -62,7 +67,7 @@
 <body>
     <div class="container">
         <h1>Terms of Service</h1>
-        <p class="last-updated">Last updated: May 3, 2026</p>
+        <p class="last-updated">Last updated: {{ policy_updated }}</p>
 
         <h2>1. Agreement to Terms</h2>
         <p>By accessing or using Luxury Leads AI ("Service"), you agree to be bound by these Terms of Service. If you disagree with any part of these terms, you may not access the Service.</p>

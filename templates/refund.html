@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Refund Policy - Luxury Leads AI</title>
+{% set page_title = "Refund Policy - Luxury Leads AI" %}
+{% set page_description = "Our refund and cancellation policy: a full 14-day free trial instead of charging first, how to cancel, and when an exception applies." %}
+{% set page_path = "/refund-policy" %}
+{% set page_robots = "noindex, follow" %}
+{% include "_seo_head.html" %}
   <link rel="stylesheet" href="/static/theme.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -97,7 +102,7 @@
 
 <div class="container">
     <h1>💳 Refund Policy</h1>
-    <p class="last-updated">Last updated: July 2026</p>
+    <p class="last-updated">Last updated: {{ policy_updated }}</p>
 
     <div class="highlight-box">
         <p>🎁 Every Luxury Leads AI plan includes a <strong>14-day free trial with full access</strong> — no payment required. This trial is your opportunity to fully evaluate the service before any charge is made.</p>

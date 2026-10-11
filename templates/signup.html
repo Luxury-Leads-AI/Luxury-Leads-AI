@@ -3,6 +3,10 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign Up - Luxury Leads AI</title>
+{% set page_title = "Sign Up - Luxury Leads AI" %}
+{% set page_description = "Start your 14-day free trial of Luxury Leads AI. Choose the solo agent or agency plan and have your AI assistant live on your website in 15 minutes." %}
+{% set page_path = "/signup" %}
+{% include "_seo_head.html" %}
   <link rel="stylesheet" href="/static/theme.css">
   <style>
     body {
@@ -10,12 +14,18 @@
       background: var(--bg);
       color: white;
       display: flex;
-      justify-content: center;
+      /* A column, not a row. As a row, anything after the card - the
+         shared footer - became a second item beside it. */
+      flex-direction: column;
       align-items: center;
       min-height: 100vh;
       padding: 20px;
     }
     .box {
+      /* 100% width plus 40px of padding is 80px wider than the phone.
+         Pre-existing, and the reason the form overflowed at 390px. */
+      box-sizing: border-box;
+      margin-block: auto;
       width: 100%;
       max-width: 640px;
     }

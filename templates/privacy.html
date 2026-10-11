@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy - Luxury Leads AI</title>
+{% set page_title = "Privacy Policy - Luxury Leads AI" %}
+{% set page_description = "How Luxury Leads AI collects, uses and protects your data and your website visitors' data, who we share it with, and the rights you have over it." %}
+{% set page_path = "/privacy-policy" %}
+{% set page_robots = "noindex, follow" %}
+{% include "_seo_head.html" %}
   <link rel="stylesheet" href="/static/theme.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -62,7 +67,7 @@
 <body>
     <div class="container">
         <h1>Privacy Policy</h1>
-        <p class="last-updated">Last updated: May 3, 2026</p>
+        <p class="last-updated">Last updated: {{ policy_updated }}</p>
 
         <h2>1. Introduction</h2>
         <p>Luxury Leads AI ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our Service.</p>

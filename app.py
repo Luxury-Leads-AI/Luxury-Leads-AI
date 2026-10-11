@@ -228,6 +228,25 @@ BUSINESS_ADDRESS = (os.getenv("BUSINESS_ADDRESS") or "").strip()
 app.jinja_env.globals['business_name'] = BUSINESS_NAME
 app.jinja_env.globals['business_address'] = BUSINESS_ADDRESS
 
+# The date on Terms, Privacy and the Refund Policy. One constant rather
+# than three hard-coded strings, because three strings is three chances to
+# change the wording and forget the date - which is exactly what happened.
+# Change this line in the same commit that changes any policy's text;
+# tests/test_public_pages.py fails if a policy file is newer than it.
+POLICY_UPDATED = "11 October 2026"
+app.jinja_env.globals['policy_updated'] = POLICY_UPDATED
+
+
+def visible_tiers():
+    """The plans a visitor can actually buy, for the pricing page's
+    structured data. A price in JSON-LD that nobody can purchase is the
+    kind of thing that gets a rich result withdrawn."""
+    return [(key, plan) for key, plan in TIER_LIMITS.items()
+            if key != 'corporation' or SHOW_TIER_3]
+
+
+app.jinja_env.globals['offer_tiers'] = visible_tiers
+
 # -------------------------
 # APPOINTMENT CONFIG
 # -------------------------
@@ -5689,6 +5708,54 @@ def export_leads(agency_id):
             headers={"Content-Disposition": f"attachment; filename=leads_agency_{agency_id}.xlsx"})
     except Exception as e:
         return jsonify({"error": "Export failed"}), 500
+
+
+# Pages worth indexing. The legal documents are useful to a person who
+# goes looking but are not search targets, so they carry noindex instead.
+INDEXABLE_PAGES = (
+    ("/", "1.0", "weekly"),
+    ("/pricing", "0.9", "weekly"),
+    ("/signup", "0.7", "monthly"),
+    ("/signup/solo", "0.6", "monthly"),
+    ("/signup/agency", "0.6", "monthly"),
+)
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    """What a crawler reads first. The owner, agent and API areas are
+    private - no value in them being crawled, and some of them cost money
+    to answer."""
+    lines = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /owner",
+        "Disallow: /agent",
+        "Disallow: /dashboard",
+        "Disallow: /analytics",
+        "Disallow: /chat",
+        "Disallow: /super-admin",
+        "Disallow: /reset-password",
+        "Disallow: /change-owner-password",
+        "Disallow: /change-agent-password",
+        "",
+        f"Sitemap: {PUBLIC_BASE_URL}/sitemap.xml",
+        "",
+    ]
+    return Response("\n".join(lines), mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    entries = "".join(
+        f"<url><loc>{PUBLIC_BASE_URL}{path}</loc>"
+        f"<changefreq>{frequency}</changefreq>"
+        f"<priority>{priority}</priority></url>"
+        for path, priority, frequency in INDEXABLE_PAGES)
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           f'{entries}</urlset>')
+    return Response(xml, mimetype="application/xml")
 
 
 @app.route("/about-bot")
