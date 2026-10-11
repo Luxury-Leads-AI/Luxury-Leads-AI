@@ -23,8 +23,12 @@ import app as app_module
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Every page a visitor - or a reviewer - can reach without signing in.
-PUBLIC_PAGES = ('/', '/pricing', '/terms', '/privacy-policy', '/refund-policy',
-                '/signup', '/signup/solo', '/signup/agency')
+# The feature pages are generated from app.FEATURES rather than listed, so
+# a new feature is covered by every test below the moment it is added.
+FEATURE_PATHS = tuple(f"/features/{item['slug']}" for item in app_module.FEATURES)
+PUBLIC_PAGES = ('/', '/pricing', '/features', '/terms', '/privacy-policy',
+                '/refund-policy', '/signup', '/signup/solo',
+                '/signup/agency') + FEATURE_PATHS
 
 LEGAL_LINKS = ('/terms', '/privacy-policy', '/refund-policy')
 
@@ -173,12 +177,20 @@ def test_no_template_anywhere_still_names_sendgrid():
 # ── 5. the footer is written once ──
 
 def test_the_footer_exists_in_one_place_only():
-    """Six copies of a legal footer is six chances to fix five of them."""
+    """Six copies of a legal footer is six chances to fix five of them.
+    Counting templates stopped working once thirteen feature pages began
+    sharing one template, so this asks the pages themselves."""
     shared = os.path.join(ROOT, 'templates', '_public_footer.html')
     assert os.path.exists(shared)
-    including = [name for name, body in templates()
-                 if '_public_footer.html' in body]
-    assert len(including) == len(PUBLIC_PAGES), including
+    hand_written = [name for name, body in templates()
+                    if 'site-footer-legal' in body and not name.startswith('_')]
+    assert hand_written == [], f"these pages hand-roll the footer: {hand_written}"
+
+
+@pytest.mark.parametrize('path', PUBLIC_PAGES)
+def test_every_public_page_renders_that_one_footer(client, path):
+    body = page(client, path)
+    assert body.count('class="site-footer"') == 1, f"{path} has the wrong number of footers"
 
 
 def test_the_business_address_is_only_shown_when_there_is_one(client):
@@ -331,9 +343,17 @@ def test_the_sitemap_lists_pages_that_actually_exist(client):
 
 
 def test_the_sitemap_does_not_offer_up_the_private_areas(client):
+    """Matched on the path, not as a substring - /features/agent-logins is
+    a public marketing page and must not be mistaken for /agent."""
     body = client.get('/sitemap.xml').get_data(as_text=True)
-    for private in ('/owner', '/agent', '/super-admin', '/dashboard'):
-        assert private not in body
+    paths = [loc.split('</loc>')[0] for loc in body.split('<loc>')[1:]]
+    paths = ['/' + url.split('/', 3)[3] if url.count('/') > 2 else '/'
+             for url in paths]
+    for listed in paths:
+        for private in ('/owner', '/agent', '/super-admin', '/dashboard',
+                        '/analytics', '/chat'):
+            assert not listed.startswith(private), \
+                f"the sitemap lists a private area: {listed}"
 
 
 def test_the_home_page_states_the_facts_an_answer_engine_would_quote(client):
@@ -439,3 +459,261 @@ def test_every_public_page_scales_to_the_device_it_is_read_on(client, path):
     body = page(client, path)
     assert 'name="viewport"' in body, f"{path} is not mobile-scaled"
     assert 'width=device-width' in body, f"{path} fixes its own width"
+
+
+# ── 6. the spacing and wrapping bugs he found on a real phone ──
+
+def test_the_plan_chooser_does_not_press_its_cards_against_its_border():
+    """theme.css draws a border round .box. signup.html set no padding,
+    so the two plan cards sat flush against it on every screen."""
+    markup = template_source('signup.html')
+    box = ' '.join(re.findall(r'\.box\s*\{([^}]*)\}', markup))
+    assert 'padding' in box, 'the plan chooser has no padding inside its border'
+    biggest = max(int(value) for value in re.findall(r'padding:\s*(\d+)', box))
+    assert biggest >= 20, f"only {biggest}px between the cards and the border"
+
+
+@pytest.mark.parametrize('name', CENTRED_PAGES)
+def test_a_phone_still_gets_a_margin_outside_the_card(name):
+    """Trimming the card's padding on a narrow screen is right; trimming
+    the page's padding to nothing is not - the card then touches glass."""
+    rules = body_rules(template_source(name))
+    narrow = re.findall(r'@media[^{]*max-width[^{]*\{(.*?\bbody\s*\{[^}]*\}.*?)',
+                        template_source(name), re.S)
+    for chunk in narrow:
+        for value in re.findall(r'body\s*\{[^}]*padding:\s*(\d+)px', chunk):
+            assert int(value) >= 8, f"{name} leaves only {value}px outside the card"
+    assert 'padding' in rules
+
+
+def test_a_pill_that_has_to_wrap_is_a_box_not_a_lozenge():
+    """An inline element with a border gets that border drawn round EVERY
+    line fragment when the text wraps. On a phone the pricing page's two
+    notes wrapped to three lines each and the outlines cut through the
+    words - the 'messy lines in header' in the screenshot."""
+    markup = template_source('pricing.html')
+    pill = ' '.join(re.findall(r'\.trial-note span\s*\{([^}]*)\}', markup))
+    assert pill, 'pricing.html no longer has the trial note pill'
+    assert 'inline-block' in pill or 'display: block' in pill, \
+        'the trial note pill is still inline and will fracture when it wraps'
+
+
+# The templates behind the public pages. An admin screen can use a pill
+# for a fixed-width backup code; a marketing page cannot, because its
+# text wraps on a phone.
+PUBLIC_TEMPLATES = ('index.html', 'pricing.html', 'features.html',
+                    'feature.html', 'terms.html', 'privacy.html',
+                    'refund.html', 'signup.html', 'signup_solo.html',
+                    'signup_agency.html', 'about_bot.html')
+
+
+def test_no_bordered_pill_on_a_public_page_is_left_inline():
+    """The same shape appears on several pages. Any element given both a
+    border and a border-radius has to be a block of some kind, or its
+    border is redrawn round every line the text wraps onto."""
+    offenders = []
+    for name in PUBLIC_TEMPLATES:
+        markup = template_source(name)
+        for selector, rule in re.findall(r'([^{}]+)\{([^}]*)\}', markup):
+            if 'border-radius' not in rule or 'border:' not in rule:
+                continue
+            if 'display' in rule or 'span' not in selector:
+                continue
+            offenders.append(f"{name}: {selector.strip()}")
+    assert offenders == [], f"inline pills that will fracture when they wrap: {offenders}"
+
+
+# ── 7. one address for the marketing pages, a different one for the app ──
+
+def test_the_canonical_address_is_not_the_app_address_by_accident(client):
+    """PUBLIC_BASE_URL is where the app lives - the widget's script URL
+    points at it and must never move. But a marketing page served on the
+    plain domain that names a different host as canonical asks Google to
+    drop it. SITE_BASE_URL is the separate setting for that."""
+    assert hasattr(app_module, 'SITE_BASE_URL')
+    body = page(client, '/')
+    canonical = re.search(r'<link rel="canonical" href="([^"]+)"', body).group(1)
+    assert canonical == app_module.SITE_BASE_URL + '/'
+
+
+@pytest.mark.parametrize('path', PUBLIC_PAGES)
+def test_every_canonical_names_the_marketing_host(client, path):
+    body = page(client, path)
+    canonical = re.search(r'<link rel="canonical" href="([^"]+)"', body).group(1)
+    assert canonical.startswith(app_module.SITE_BASE_URL), \
+        f"{path} is canonical to {canonical}"
+
+
+def test_the_sitemap_and_robots_agree_on_which_host_this_is(client):
+    robots = client.get('/robots.txt').get_data(as_text=True)
+    sitemap = client.get('/sitemap.xml').get_data(as_text=True)
+    assert f"Sitemap: {app_module.SITE_BASE_URL}/sitemap.xml" in robots
+    for url in re.findall(r'<loc>([^<]+)</loc>', sitemap):
+        assert url.startswith(app_module.SITE_BASE_URL), \
+            f"the sitemap lists a URL on another host: {url}"
+
+
+def test_site_base_url_falls_back_rather_than_breaking():
+    """Unset, it has to be PUBLIC_BASE_URL - otherwise a deploy that has
+    not been told about the new setting starts publishing nonsense."""
+    source = inspect.getsource(app_module)
+    assert "os.getenv('SITE_BASE_URL') or PUBLIC_BASE_URL" in source
+
+
+# ── 8. the feature pages ──
+
+def test_every_feature_has_everything_a_page_needs():
+    for item in app_module.FEATURES:
+        for field in ('slug', 'icon', 'name', 'card', 'description',
+                      'summary', 'points', 'answers', 'plans'):
+            assert item.get(field), f"{item.get('slug')} is missing {field}"
+        assert item['plans'] in ('both', 'agency'), item['slug']
+        assert len(item['points']) >= 2, f"{item['slug']} has too little to say"
+        assert len(item['answers']) >= 2, f"{item['slug']} answers no questions"
+        assert re.fullmatch(r'[a-z0-9-]+', item['slug']), item['slug']
+
+
+def test_no_two_features_share_a_slug_or_a_name():
+    slugs = [item['slug'] for item in app_module.FEATURES]
+    names = [item['name'] for item in app_module.FEATURES]
+    assert len(set(slugs)) == len(slugs)
+    assert len(set(names)) == len(names)
+
+
+@pytest.mark.parametrize('path', FEATURE_PATHS)
+def test_every_feature_page_answers(client, path):
+    assert client.get(path).status_code == 200
+
+
+def test_a_feature_that_does_not_exist_is_a_404(client):
+    assert client.get('/features/does-not-exist').status_code == 404
+
+
+def test_the_home_page_tiles_lead_somewhere(client):
+    """Item 5: they were six divs. A visitor clicked them and nothing
+    happened."""
+    body = page(client, '/')
+    links = re.findall(r'<a class="feature" href="(/features/[^"]+)"', body)
+    assert len(links) == len(app_module.FEATURES), \
+        f"{len(links)} clickable tiles for {len(app_module.FEATURES)} features"
+    for link in links:
+        assert client.get(link).status_code == 200, f"dead tile: {link}"
+
+
+def test_the_features_index_lists_all_of_them(client):
+    body = page(client, '/features')
+    for item in app_module.FEATURES:
+        assert f'/features/{item["slug"]}' in body, f"{item['slug']} is not listed"
+
+
+def test_the_feature_index_and_the_home_tiles_cannot_drift(client):
+    """Both are rendered from app.FEATURES. This fails if somebody
+    hand-writes a tile back into either page."""
+    home = set(re.findall(r'href="(/features/[^"]+)"', page(client, '/')))
+    index = set(re.findall(r'href="(/features/[^"]+)"', page(client, '/features')))
+    assert home == index
+
+
+@pytest.mark.parametrize('path', FEATURE_PATHS)
+def test_every_feature_page_publishes_its_questions_as_data(client, path):
+    """GEO: the same words a reader sees, in the form an answer engine
+    can lift. If the two ever disagree, that is cloaking."""
+    import html
+    import json
+    body = page(client, path)
+    blocks = re.findall(r'<script type="application/ld\+json">(.*?)</script>',
+                        body, re.S)
+    faq = [json.loads(block) for block in blocks]
+    faq = [block for block in faq if block.get('@type') == 'FAQPage']
+    assert faq, f"{path} publishes no FAQ data"
+    # The page escapes an apostrophe to &#39;; the JSON block does not.
+    readable = html.unescape(body)
+    for entry in faq[0]['mainEntity']:
+        assert entry['name'] in readable, f"{path} hides a question from readers"
+        assert entry['acceptedAnswer']['text'] in readable, \
+            f"{path} tells a machine something it does not tell a reader"
+
+
+@pytest.mark.parametrize('path', FEATURE_PATHS)
+def test_every_feature_page_offers_a_way_back_and_a_way_on(client, path):
+    body = page(client, path)
+    assert 'href="/features"' in body, f"{path} is a dead end"
+    assert 'href="/pricing"' in body, f"{path} never asks for the sale"
+
+
+def test_the_sitemap_carries_every_feature_page(client):
+    body = client.get('/sitemap.xml').get_data(as_text=True)
+    for path in FEATURE_PATHS:
+        assert f'{app_module.SITE_BASE_URL}{path}</loc>' in body, path
+
+
+# ── 9. numbers nobody measured ──
+
+def test_the_unproven_figures_are_off_until_somebody_sets_them(client):
+    """He asked for them kept, not deleted. Off is the default; a figure
+    appears only when BOTH the switch is on and the number is set."""
+    body = page(client, '/')
+    if not app_module.visible_stats():
+        assert 'class="stats-grid"' not in body, \
+            'the home page is rendering a stats tile with nothing in it'
+        assert '<section class="stats">' not in body
+
+
+def test_an_empty_figure_never_renders_as_a_blank_tile(monkeypatch):
+    monkeypatch.setattr(app_module, 'SHOW_STATS', True)
+    monkeypatch.setattr(app_module, 'HOME_STATS', (
+        {'value': '', 'label': 'Nothing yet'},
+        {'value': '41%', 'label': 'Measured'},
+    ))
+    shown = app_module.visible_stats()
+    assert [item['value'] for item in shown] == ['41%']
+
+
+def test_no_public_page_claims_a_result_it_cannot_show_its_working_for(client):
+    """87%, 3x and '50+ qualified leads per month' were on the home page
+    before there was a customer to measure. Anything like them has to come
+    from the switched-off figures, not from the markup."""
+    if app_module.visible_stats():
+        pytest.skip('real figures are configured')
+    for path in PUBLIC_PAGES:
+        body = page(client, path).lower()
+        for claim in ('87%', '3x your', '3x more', '50+ qualified'):
+            assert claim not in body, f"{path} still claims {claim}"
+
+
+def test_every_page_agrees_on_how_many_languages_we_speak():
+    """The pricing page sold 10 languages; widget.js carries 9. The same
+    shape of bug as the 7-day trial in the Terms - four pages agreeing
+    and one quietly not. The widget is the source of truth, because it
+    is the thing the visitor actually meets."""
+    with open(os.path.join(ROOT, 'static', 'widget.js'), encoding='utf-8') as handle:
+        widget = handle.read()
+    block = widget.split('const DISCLOSURES = {')[1].split('};')[0]
+    spoken = len(re.findall(r'"[a-z]{2}(?:-[a-z]{2})?"\s*:\s*\{', block))
+    assert spoken >= 5, 'could not read the language list out of widget.js'
+    for name, markup in templates():
+        for claimed in re.findall(r'\((\d+)\s+languages\)', markup):
+            assert int(claimed) == spoken, \
+                f"{name} sells {claimed} languages; the widget speaks {spoken}"
+        for claimed in re.findall(r'(\w+)\s+languages', markup):
+            words = {'nine': 9, 'ten': 10, 'eight': 8, 'seven': 7, 'Nine': 9}
+            if claimed in words:
+                assert words[claimed] == spoken, \
+                    f"{name} says {claimed} languages; the widget speaks {spoken}"
+
+
+@pytest.mark.parametrize('path', PUBLIC_PAGES)
+def test_the_rendered_page_agrees_too(client, path):
+    """The templates check above cannot see a claim that lives in the
+    feature data in app.py. This one reads the finished page."""
+    with open(os.path.join(ROOT, 'static', 'widget.js'), encoding='utf-8') as handle:
+        block = handle.read().split('const DISCLOSURES = {')[1].split('};')[0]
+    spoken = len(re.findall(r'"[a-z]{2}(?:-[a-z]{2})?"\s*:\s*\{', block))
+    words = {'nine': 9, 'ten': 10, 'eight': 8, 'seven': 7, 'eleven': 11}
+    body = page(client, path)
+    for claimed in re.findall(r'(\w+)\s+languages', body):
+        if claimed.isdigit():
+            assert int(claimed) == spoken, f"{path} claims {claimed} languages"
+        elif claimed.lower() in words:
+            assert words[claimed.lower()] == spoken, \
+                f"{path} claims {claimed} languages; the widget speaks {spoken}"

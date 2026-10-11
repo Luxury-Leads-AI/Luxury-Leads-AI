@@ -40,10 +40,22 @@
             margin-bottom: 40px;
         }
         .trial-note span {
+            /* inline-block, NOT inline. An inline element with a border
+               gets that border drawn round every line fragment when the
+               text wraps, which on a phone looks like pill outlines
+               slicing through the words. */
+            display: inline-block;
+            max-width: 100%;
             background: var(--brand-soft);
             border: 1px solid var(--brand-line);
-            padding: 6px 16px;
+            padding: 8px 18px;
             border-radius: 20px;
+            line-height: 1.6;
+        }
+        @media (max-width: 560px) {
+            /* A pill that has to wrap is a rounded box, not a lozenge. */
+            .trial-note { font-size: 14px; margin-bottom: 28px; }
+            .trial-note span { border-radius: 14px; padding: 10px 16px; }
         }
         .pricing-grid {
             display: grid;
@@ -189,7 +201,7 @@
                 <li>24/7 automatic lead qualification</li>
                 <li>Smart appointment booking with real dates</li>
                 <li>Property listings + AI recommendations</li>
-                <li>Multilingual support (10 languages)</li>
+                <li>Multilingual support (9 languages)</li>
                 <li>Lead dashboard with CRM pipeline</li>
                 <li>Email notifications & auto follow-ups</li>
                 <li>Analytics dashboard</li>

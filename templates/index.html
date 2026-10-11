@@ -132,6 +132,36 @@
             color: var(--text-dim);
             font-size: 15.5px;
         }
+        /* The tiles are links now. Keep them looking like cards, but give
+           them the affordance of something you can click. */
+        a.feature {
+            display: block;
+            text-decoration: none;
+            color: inherit;
+            cursor: pointer;
+        }
+        a.feature:hover { border-color: var(--brand-2); }
+        .feature-more {
+            display: inline-block;
+            margin-top: 16px;
+            color: var(--brand-2);
+            font-size: 14px;
+            font-weight: bold;
+        }
+        a.feature:focus-visible {
+            outline: 2px solid var(--brand-2);
+            outline-offset: 3px;
+        }
+        .features-all {
+            text-align: center;
+            margin-top: 40px;
+        }
+        .features-all a {
+            color: var(--brand-2);
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 16px;
+        }
 
         /* ── Stats ── */
         .stats {
@@ -241,65 +271,38 @@
     <section class="features">
         <h2>Why Real Estate Agencies Choose Us</h2>
         <div class="feature-grid">
-            <div class="feature">
-                <div class="feature-icon">🤖</div>
-                <h3>AI-Powered Conversations</h3>
-                <p>Natural conversations that qualify leads while you sleep. Captures name, email, budget, and timeline automatically.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">⚡</div>
-                <h3>Instant Notifications</h3>
-                <p>Get email alerts the moment a qualified lead is captured. Never miss a hot prospect again.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">📊</div>
-                <h3>Quality Scoring</h3>
-                <p>Every lead is scored 1-5 stars based on qualification level. Focus on the hottest prospects first.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">🎯</div>
-                <h3>No Setup Required</h3>
-                <p>Add one line of code to your website. We handle everything else. Live in 15 minutes.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">💰</div>
-                <h3>Unlimited Conversations</h3>
-                <p>No per-lead fees. Fixed monthly pricing. Talk to 10 or 10,000 visitors - same price.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">🔒</div>
-                <h3>Secure & Compliant</h3>
-                <p>Enterprise-grade security. GDPR compliant. Your data stays safe and private.</p>
-            </div>
+            {% for item in site_features %}
+            <a class="feature" href="/features/{{ item.slug }}">
+                <div class="feature-icon">{{ item.icon }}</div>
+                <h3>{{ item.name }}</h3>
+                <p>{{ item.card }}</p>
+                <span class="feature-more">Read more &rarr;</span>
+            </a>
+            {% endfor %}
         </div>
+        <p class="features-all"><a href="/features">See all features</a></p>
     </section>
 
-    <!-- Stats Section -->
+    <!-- Stats Section - hidden until SHOW_STATS is on AND the figures
+         are set, so the page never publishes a number nobody measured. -->
+    {% set stats = home_stats() %}
+    {% if stats %}
     <section class="stats">
         <div class="stats-grid">
+            {% for stat in stats %}
             <div class="stat">
-                <h3>87%</h3>
-                <p>Of visitors captured</p>
+                <h3>{{ stat.value }}</h3>
+                <p>{{ stat.label }}</p>
             </div>
-            <div class="stat">
-                <h3>24/7</h3>
-                <p>Always working</p>
-            </div>
-            <div class="stat">
-                <h3>3x</h3>
-                <p>More qualified leads</p>
-            </div>
-            <div class="stat">
-                <h3>15min</h3>
-                <p>Setup time</p>
-            </div>
+            {% endfor %}
         </div>
     </section>
+    {% endif %}
 
     <!-- CTA Section -->
     <section class="cta-section">
-        <h2>Ready to 3x Your Qualified Leads?</h2>
-        <p>Join agencies generating 50+ qualified leads per month</p>
+        <h2>Stop losing the enquiries that arrive at midnight</h2>
+        <p>14-day free trial. No card required, and one line of code to install.</p>
         <a href="/pricing" class="cta-secondary">View Pricing & Start Free Trial</a>
     </section>
 

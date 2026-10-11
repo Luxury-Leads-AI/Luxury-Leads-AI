@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, Response, redirect, session
+from flask import Flask, request, jsonify, render_template, Response, redirect, session, abort
 from flask_sqlalchemy import SQLAlchemy
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -58,6 +58,17 @@ def normalize_base_url(value):
 
 PUBLIC_BASE_URL = normalize_base_url(os.getenv('PUBLIC_BASE_URL'))
 app.jinja_env.globals['public_base_url'] = PUBLIC_BASE_URL
+
+# The address the PUBLIC pages claim as their own, which is not the same
+# thing. PUBLIC_BASE_URL is where the app lives - the widget's script URL
+# and every login link point at it, so it must never move. But visitors
+# and Google arrive on the plain domain, and a page served there that
+# declares itself canonical somewhere else asks to be dropped from the
+# index in favour of a host nobody was sent to. SITE_BASE_URL is the one
+# address the marketing pages, the sitemap and robots.txt use. Unset, it
+# falls back to PUBLIC_BASE_URL, so nothing changes until you set it.
+SITE_BASE_URL = normalize_base_url(os.getenv('SITE_BASE_URL') or PUBLIC_BASE_URL)
+app.jinja_env.globals['site_base_url'] = SITE_BASE_URL
 
 import re as _re
 app.jinja_env.filters['regex_replace'] = lambda s, find, replace: _re.sub(find, replace, s)
@@ -133,6 +144,41 @@ if _ON_RENDER and not SUPER_ADMIN_PASSWORD_HASH:
 # this only controls whether a new visitor can see/pick it. Flip to "true"
 # on Render (no code change needed) to bring it back when it's ready.
 SHOW_TIER_3 = os.getenv('SHOW_TIER_3', 'false').strip().lower() == 'true'
+
+# The four numbers across the home page - "87% of visitors captured",
+# "3x more qualified leads" - were written before there was anybody to
+# measure. A performance figure you cannot produce the workings for is
+# the same problem as a trial length that disagrees with the Terms:
+# somebody eventually asks. The tiles are kept, switched off, with the
+# figures as settings. When pilots give you real numbers, set them and
+# flip SHOW_STATS to "true" on Render - no code change, nothing to
+# rewrite. Leave any figure blank and its tile stays hidden.
+SHOW_STATS = os.getenv('SHOW_STATS', 'false').strip().lower() == 'true'
+
+
+def _stat(env_value, env_label, fallback_label):
+    value = (os.getenv(env_value) or '').strip()
+    return {'value': value,
+            'label': (os.getenv(env_label) or fallback_label).strip()}
+
+
+HOME_STATS = (
+    _stat('STAT_1_VALUE', 'STAT_1_LABEL', 'Of visitors captured'),
+    _stat('STAT_2_VALUE', 'STAT_2_LABEL', 'Always working'),
+    _stat('STAT_3_VALUE', 'STAT_3_LABEL', 'More qualified leads'),
+    _stat('STAT_4_VALUE', 'STAT_4_LABEL', 'Setup time'),
+)
+
+
+def visible_stats():
+    """Nothing is published unless the switch is on AND the figure is
+    set. An empty tile is worse than no tile."""
+    if not SHOW_STATS:
+        return []
+    return [item for item in HOME_STATS if item['value']]
+
+
+app.jinja_env.globals['home_stats'] = visible_stats
 
 db = SQLAlchemy(app)
 
@@ -5710,15 +5756,481 @@ def export_leads(agency_id):
         return jsonify({"error": "Export failed"}), 500
 
 
+# -------------------------
+# THE FEATURE PAGES
+# -------------------------
+# One list, three readers: the tiles on the home page, the /features
+# index, and a page of its own per feature. Defining them once is what
+# stops the home page advertising something the detail page never
+# mentions - the same drift that put a 7-day trial in the Terms and a
+# 14-day trial on the pricing page.
+#
+# Every claim below has to be true of the code as it stands. If a
+# feature is removed, delete its entry; do not leave the page up.
+#   slug     the URL: /features/<slug>
+#   card     the one line on the home-page tile
+#   summary  the opening paragraph of its own page
+#   points   (heading, paragraph) - how it actually works
+#   answers  (question, answer) - published as FAQ structured data, which
+#            is what an AI answer engine quotes when somebody asks it
+#   plans    'both' or 'agency' - shown as a small note on the page
+FEATURES = (
+    {
+        'slug': 'ai-chat-assistant',
+        'icon': '🤖',
+        'name': 'AI chat assistant',
+        'card': 'An assistant with your own name on it, answering visitors '
+                'in plain language at any hour.',
+        'description': 'An AI chat assistant for estate agents that answers '
+                       'website visitors 24/7 in your agency\'s own voice.',
+        'summary': 'The assistant sits in the corner of your website and talks '
+                   'to whoever turns up, at two in the morning as readily as at '
+                   'two in the afternoon. You choose its name and how it should '
+                   'speak, and it answers questions about your agency and your '
+                   'properties instead of reciting a script.',
+        'points': (
+            ('It uses your name, not ours',
+             'You set the assistant\'s name at signup - Sophia, Alex, whatever '
+             'suits your brand - and you can rewrite how it introduces itself '
+             'and what it should emphasise from your dashboard at any time.'),
+            ('It remembers the conversation',
+             'The assistant keeps the thread of a conversation for 30 minutes, '
+             'so a visitor who asks three questions in a row is not starting '
+             'again each time.'),
+            ('It tells people it is an AI',
+             'A label in the header and a first line in every chat say so, in '
+             'the visitor\'s own language. That is the EU AI Act, Article 50, '
+             'and it has been in force since August 2026.'),
+        ),
+        'answers': (
+            ('Does the chat assistant work outside office hours?',
+             'Yes. It answers every visitor at any hour, including weekends '
+             'and holidays, and captures the lead while you are asleep.'),
+            ('Can I change what the assistant says?',
+             'Yes. Its name, its greeting and the instructions it follows are '
+             'all editable from your dashboard, and changes take effect on the '
+             'next conversation.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'lead-qualification',
+        'icon': '🎯',
+        'name': 'Automatic lead qualification',
+        'card': 'It works out budget, location and timeline from the '
+                'conversation, without a form.',
+        'description': 'Qualify real estate leads automatically from a chat '
+                       'conversation - budget, location, property type and timeline.',
+        'summary': 'A contact form asks eight questions and most visitors answer '
+                   'none of them. The assistant gets the same information by '
+                   'talking, and reads the answers out of what the visitor '
+                   'actually wrote.',
+        'points': (
+            ('What it collects',
+             'Name, email, phone or WhatsApp number, budget, the area they are '
+             'looking in, the kind of property, and how soon they want to move.'),
+            ('When it becomes a lead',
+             'Only once there is enough to act on - an email, a name and a '
+             'budget, after a real back-and-forth rather than a single hello. '
+             'Half a conversation does not land in your inbox as a lead.'),
+            ('No duplicates',
+             'If the same email comes back next week it is matched to the '
+             'existing lead rather than filed again.'),
+        ),
+        'answers': (
+            ('How does the assistant qualify a lead without a form?',
+             'It reads the conversation. Budget, location, property type and '
+             'timeline are pulled out of what the visitor wrote, so they never '
+             'see a form at all.'),
+            ('What counts as a qualified lead?',
+             'A name, a contact address and a budget, gathered over a real '
+             'conversation rather than a single message.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'lead-scoring',
+        'icon': '⭐',
+        'name': 'Lead quality scoring',
+        'card': 'Every lead arrives scored out of five, with a two-line '
+                'summary of what they want.',
+        'description': 'Every captured lead is scored one to five stars and '
+                       'summarised, so you know which to call first.',
+        'summary': 'Twenty leads in a week is good news until you have to decide '
+                   'who to ring first. Each one arrives with a score and a short '
+                   'summary, so that decision takes a few seconds.',
+        'points': (
+            ('A score out of five',
+             'Based on how complete the picture is and how urgent they sound - '
+             'a named buyer with a budget and a date beats an anonymous browser.'),
+            ('A summary in two or three sentences',
+             'Written from the conversation, so you walk into the call knowing '
+             'what they asked about without reading the transcript.'),
+            ('The full conversation is still there',
+             'The score is a shortcut, not a replacement. Every lead keeps its '
+             'whole transcript for when you want the detail.'),
+        ),
+        'answers': (
+            ('How are leads scored?',
+             'One to five stars, from how complete the information is and how '
+             'urgent the visitor sounds.'),
+            ('Can I see the original conversation?',
+             'Yes. Every lead keeps its full transcript alongside the score and '
+             'the summary.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'instant-alerts',
+        'icon': '⚡',
+        'name': 'Instant lead alerts',
+        'card': 'An email the moment a lead qualifies, with everything you '
+                'need to call them back.',
+        'description': 'Get an email the moment a qualified real estate lead is '
+                       'captured, with their budget, timeline and a click-to-chat link.',
+        'summary': 'A lead that sits unread for a day is usually a lead that has '
+                   'already called somebody else. The email goes out as the '
+                   'conversation ends.',
+        'points': (
+            ('Everything in the email itself',
+             'Name, email, budget, area, timeline, the score and the summary - '
+             'enough to return the call without logging in first.'),
+            ('A click-to-chat link',
+             'If they gave a WhatsApp number, the email carries a link that '
+             'opens the conversation on your phone.'),
+            ('Replies come back to you',
+             'Alerts are sent with your own support address as the reply-to, so '
+             'answering one goes where you expect.'),
+        ),
+        'answers': (
+            ('How quickly am I told about a new lead?',
+             'Immediately. The email is sent the moment the conversation '
+             'produces a qualified lead.'),
+            ('Do I have to log in to see the lead?',
+             'No. The alert email carries the name, contact details, budget, '
+             'timeline, score and summary.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'appointment-booking',
+        'icon': '📅',
+        'name': 'Viewing appointments',
+        'card': 'The assistant books the viewing inside the conversation, '
+                'and it lands in your calendar.',
+        'description': 'Let website visitors book a property viewing inside the '
+                       'chat, with the appointment going straight to your calendar.',
+        'summary': 'The point of a lead is a viewing. Rather than handing the '
+                   'visitor a phone number and hoping, the assistant offers a '
+                   'time and books it there and then.',
+        'points': (
+            ('Booked in the conversation',
+             'A visitor who is ready to see a property picks a date and a time '
+             'without leaving the chat.'),
+            ('A calendar you can work from',
+             'Every appointment has a status you move as it happens, and can be '
+             'reassigned to a different agent in two clicks.'),
+            ('What happened afterwards',
+             'Each viewing can be marked with its outcome, and the customer can '
+             'be sent a short feedback link once it is done.'),
+        ),
+        'answers': (
+            ('Can visitors book a viewing themselves?',
+             'Yes. The assistant takes the booking inside the chat and it '
+             'appears in your appointments calendar.'),
+            ('Can I move an appointment to another agent?',
+             'Yes. Any appointment can be reassigned from the calendar, and the '
+             'agent who receives it is emailed.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'team-and-routing',
+        'icon': '👥',
+        'name': 'Team and lead routing',
+        'card': 'New leads go to the right agent automatically, and you can '
+                'see where every one of them stands.',
+        'description': 'Distribute real estate leads across your team '
+                       'automatically and track each one through its stages.',
+        'summary': 'One inbox for a team of eight is how leads go cold. Each new '
+                   'lead is handed to an agent as it arrives, and you keep the '
+                   'view across all of them.',
+        'points': (
+            ('Assigned on arrival',
+             'A new lead is given to an agent without anybody having to '
+             'distribute the morning post.'),
+            ('Stages you can see',
+             'Every lead moves through stages as your team works it, so '
+             '"what happened to the Tuesday enquiry" is a glance, not a meeting.'),
+            ('Activity you did not have to ask for',
+             'Notes, status changes and outcomes are recorded against the lead '
+             'as they happen.'),
+        ),
+        'answers': (
+            ('How are leads shared out between agents?',
+             'Each new lead is assigned to an agent automatically as it is '
+             'captured, and the owner can reassign it.'),
+            ('Can the owner see every agent\'s leads?',
+             'Yes. The owner dashboard shows every lead and every agent; each '
+             'agent sees only their own.'),
+        ),
+        'plans': 'agency',
+    },
+    {
+        'slug': 'agent-logins',
+        'icon': '🔑',
+        'name': 'A login for every agent',
+        'card': 'Each agent gets their own dashboard with their own leads '
+                'and their own calendar.',
+        'description': 'Give every agent their own login, their own leads and '
+                       'their own viewing calendar, separate from the rest of the team.',
+        'summary': 'Agents should see their own work and nobody else\'s. Each one '
+                   'gets a login of their own, and the owner keeps the view across '
+                   'everybody.',
+        'points': (
+            ('Their own leads, their own calendar',
+             'An agent signing in sees the leads assigned to them and the '
+             'viewings they are taking, and nothing from the rest of the team.'),
+            ('They can work the lead where it is',
+             'Status changes, notes and appointment outcomes are all done from '
+             'the agent dashboard.'),
+            ('Added and removed by you',
+             'The owner adds an agent, who is emailed their login; turning an '
+             'agent off takes one click and their leads stay with the agency.'),
+        ),
+        'answers': (
+            ('Does each agent get their own account?',
+             'Yes. Every agent has their own login and sees only the leads and '
+             'viewings assigned to them.'),
+            ('What happens to an agent\'s leads if they leave?',
+             'The leads stay with the agency. Turning the agent off removes '
+             'their access without touching the records.'),
+        ),
+        'plans': 'agency',
+    },
+    {
+        'slug': 'property-listings',
+        'icon': '🏠',
+        'name': 'Your properties, in the conversation',
+        'card': 'Upload your listings and the assistant can talk about them '
+                'by name, price and area.',
+        'description': 'Upload your property listings so the AI assistant can '
+                       'answer questions about real properties, prices and areas.',
+        'summary': 'An assistant that cannot name a single property is a '
+                   'switchboard. Give it your listings and it can answer "what '
+                   'have you got in that area under 400?" properly.',
+        'points': (
+            ('Added one at a time or in bulk',
+             'Type a property in, or upload a spreadsheet of them.'),
+            ('Switched on and off',
+             'A property that has gone under offer is turned off and the '
+             'assistant stops offering it, without deleting the record.'),
+            ('Sellers can offer you property',
+             'A visitor with something to sell can submit it through the chat. '
+             'Nothing they type reaches a buyer until you have approved it.'),
+        ),
+        'answers': (
+            ('Can the assistant talk about my actual properties?',
+             'Yes, once your listings are uploaded. It answers on price, area '
+             'and property type from your own list.'),
+            ('What happens when a visitor wants to sell?',
+             'They can submit the property through the chat. It stays pending '
+             'and invisible to buyers until you approve it.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'analytics',
+        'icon': '📊',
+        'name': 'Analytics',
+        'card': 'How many leads, from where, at what quality, over time.',
+        'description': 'See how many leads your website produced, where they '
+                       'came from and how good they were.',
+        'summary': 'Whether the assistant is earning its keep should be a number '
+                   'you can look at, not a feeling.',
+        'points': (
+            ('Leads over time',
+             'How many you captured and when, so a quiet week is visible '
+             'rather than suspected.'),
+            ('Quality, not just volume',
+             'The spread of scores tells you whether more traffic is bringing '
+             'better enquiries or just more of them.'),
+            ('Exportable',
+             'Your leads can be exported to a spreadsheet whenever you want '
+             'them somewhere else.'),
+        ),
+        'answers': (
+            ('Can I see how many leads the chatbot produced?',
+             'Yes. The analytics page shows lead volume over time and the '
+             'spread of lead quality scores.'),
+            ('Can I export my leads?',
+             'Yes, to a spreadsheet, at any time.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'nine-languages',
+        'icon': '🌍',
+        'name': 'Nine languages',
+        'card': 'Visitors are greeted in their own language, and the '
+                'assistant answers in it.',
+        'description': 'The AI assistant greets and answers website visitors in '
+                       'nine languages, including Arabic, French, Spanish and German.',
+        'summary': 'International buyers are a large part of luxury property, and '
+                   'a visitor who opens a chat in their own language is more '
+                   'likely to finish the conversation.',
+        'points': (
+            ('Which languages',
+             'English, French, Spanish, Portuguese (Portugal and Brazil), '
+             'German, Italian, Dutch and Arabic.'),
+            ('Chosen from the browser, not a dropdown',
+             'The assistant reads the visitor\'s browser language and uses it. '
+             'Nobody has to find a flag icon.'),
+            ('The AI disclosure too',
+             'The "you are talking to an AI" line is translated as well, which '
+             'is what the EU AI Act requires it to be.'),
+        ),
+        'answers': (
+            ('What languages does the assistant speak?',
+             'English, French, Spanish, Portuguese, Brazilian Portuguese, '
+             'German, Italian, Dutch and Arabic.'),
+            ('Does the visitor have to choose a language?',
+             'No. It is taken from their browser automatically.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'one-line-install',
+        'icon': '🔌',
+        'name': 'One line to install',
+        'card': 'Paste one line into your website. No plugin, no developer, '
+                'no migration.',
+        'description': 'Install the AI chat assistant on any website by pasting '
+                       'a single line of code. No plugin and no developer needed.',
+        'summary': 'The assistant works on whatever your website is built with - '
+                   'WordPress, Wix, Squarespace, a bespoke site - because all it '
+                   'needs is one script tag.',
+        'points': (
+            ('Copy and paste',
+             'Your dashboard shows the exact line, already carrying your '
+             'agency\'s identifier. Paste it before the closing body tag.'),
+            ('It finds its own way home',
+             'The widget works out which server to talk to from where it was '
+             'loaded, so nothing breaks if the address changes later.'),
+            ('Nothing else to run',
+             'No plugin to keep updated, no server of your own, no build step.'),
+        ),
+        'answers': (
+            ('How do I add the chatbot to my website?',
+             'Paste one line of code before the closing body tag. Your '
+             'dashboard shows the exact line for your agency.'),
+            ('Does it work with WordPress or Wix?',
+             'Yes. It is a single script tag, so it works on any website that '
+             'lets you add one.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'objection-handling',
+        'icon': '💬',
+        'name': 'Objection handling',
+        'card': 'When a visitor hesitates, the assistant has something useful '
+                'to say rather than repeating itself.',
+        'description': 'The AI assistant recognises common hesitations from '
+                       'website visitors and answers them instead of repeating itself.',
+        'summary': '"I am just looking", "that is more than I wanted to spend", '
+                   '"I need to talk to my wife" - the moments where a conversation '
+                   'usually ends are the ones worth handling well.',
+        'points': (
+            ('It notices the hesitation',
+             'Common objections are recognised as they are written, in the '
+             'visitor\'s own words.'),
+            ('It suggests, it does not recite',
+             'A relevant answer is offered to the assistant, which decides '
+             'whether to use it. You do not get a canned line bolted onto an '
+             'unrelated reply.'),
+            ('The conversation keeps going',
+             'The aim is one more exchange, not a hard close - which is usually '
+             'all a hesitant visitor needs.'),
+        ),
+        'answers': (
+            ('What happens when a visitor says they are just browsing?',
+             'The assistant recognises the hesitation and offers something '
+             'useful rather than repeating its last question.'),
+            ('Does it use scripted replies?',
+             'No. A suggested answer is offered to the AI, which decides '
+             'whether it fits the conversation.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'privacy-and-ai-act',
+        'icon': '🔒',
+        'name': 'GDPR and the EU AI Act',
+        'card': 'Visitors are told they are talking to an AI, and their data '
+                'is handled properly.',
+        'description': 'Built for GDPR and EU AI Act Article 50: visitors are '
+                       'told they are talking to an AI, in their own language.',
+        'summary': 'Selling property to European buyers means two sets of rules. '
+                   'Both are handled in the product rather than left to you.',
+        'points': (
+            ('The AI disclosure',
+             'Article 50 of the EU AI Act, in force since 2 August 2026, '
+             'requires that people are told when they are talking to a machine. '
+             'The assistant says so in its header and in its first message, in '
+             'the visitor\'s language.'),
+            ('Your data is yours',
+             'Leads belong to your agency and are visible to nobody else. You '
+             'can export them or have them deleted.'),
+            ('Sensible defaults',
+             'Passwords are stored hashed, the admin panel can require a code '
+             'from your phone, and administrative actions are logged.'),
+        ),
+        'answers': (
+            ('Does the chatbot tell visitors it is an AI?',
+             'Yes - in the chat header and as the first line of every '
+             'conversation, translated into the visitor\'s language, as EU AI '
+             'Act Article 50 requires.'),
+            ('Who can see my leads?',
+             'Only your agency. Leads are scoped to your account and are not '
+             'shared with anybody else.'),
+        ),
+        'plans': 'both',
+    },
+)
+
+FEATURES_BY_SLUG = {item['slug']: item for item in FEATURES}
+app.jinja_env.globals['site_features'] = FEATURES
+
+
 # Pages worth indexing. The legal documents are useful to a person who
 # goes looking but are not search targets, so they carry noindex instead.
+# Each feature page is its own entry: a page that can be found for its
+# own question is the whole point of splitting them up.
 INDEXABLE_PAGES = (
     ("/", "1.0", "weekly"),
     ("/pricing", "0.9", "weekly"),
+    ("/features", "0.9", "weekly"),
     ("/signup", "0.7", "monthly"),
     ("/signup/solo", "0.6", "monthly"),
     ("/signup/agency", "0.6", "monthly"),
+) + tuple(
+    (f"/features/{item['slug']}", "0.8", "monthly") for item in FEATURES
 )
+
+
+@app.route("/features")
+def features_index():
+    return render_template("features.html", features=FEATURES)
+
+
+@app.route("/features/<slug>")
+def feature_page(slug):
+    item = FEATURES_BY_SLUG.get(slug)
+    if not item:
+        abort(404)
+    others = [other for other in FEATURES if other['slug'] != slug][:3]
+    return render_template("feature.html", feature=item, others=others)
 
 
 @app.route("/robots.txt")
@@ -5739,7 +6251,7 @@ def robots_txt():
         "Disallow: /change-owner-password",
         "Disallow: /change-agent-password",
         "",
-        f"Sitemap: {PUBLIC_BASE_URL}/sitemap.xml",
+        f"Sitemap: {SITE_BASE_URL}/sitemap.xml",
         "",
     ]
     return Response("\n".join(lines), mimetype="text/plain")
@@ -5748,7 +6260,7 @@ def robots_txt():
 @app.route("/sitemap.xml")
 def sitemap_xml():
     entries = "".join(
-        f"<url><loc>{PUBLIC_BASE_URL}{path}</loc>"
+        f"<url><loc>{SITE_BASE_URL}{path}</loc>"
         f"<changefreq>{frequency}</changefreq>"
         f"<priority>{priority}</priority></url>"
         for path, priority, frequency in INDEXABLE_PAGES)

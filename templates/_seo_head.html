@@ -11,14 +11,14 @@
    below is - the product, the price, and the company, stated plainly
    enough to be lifted into an answer. #}
 <meta name="description" content="{{ page_description }}">
-<link rel="canonical" href="{{ public_base_url }}{{ page_path }}">
+<link rel="canonical" href="{{ site_base_url }}{{ page_path }}">
 <meta name="robots" content="{{ page_robots | default('index, follow') }}">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{ business_name }}">
 <meta property="og:title" content="{{ page_title }}">
 <meta property="og:description" content="{{ page_description }}">
-<meta property="og:url" content="{{ public_base_url }}{{ page_path }}">
+<meta property="og:url" content="{{ site_base_url }}{{ page_path }}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ page_title }}">
 <meta name="twitter:description" content="{{ page_description }}">
@@ -30,18 +30,18 @@
   "@graph": [
     {
       "@type": "Organization",
-      "@id": "{{ public_base_url }}/#organization",
+      "@id": "{{ site_base_url }}/#organization",
       "name": "{{ business_name }}",
-      "url": "{{ public_base_url }}/",
+      "url": "{{ site_base_url }}/",
       "email": "{{ support_email }}",
       "description": "AI chat assistant for real estate agencies that qualifies website visitors into booked viewings."
     },
     {
       "@type": "WebSite",
-      "@id": "{{ public_base_url }}/#website",
-      "url": "{{ public_base_url }}/",
+      "@id": "{{ site_base_url }}/#website",
+      "url": "{{ site_base_url }}/",
       "name": "{{ business_name }}",
-      "publisher": { "@id": "{{ public_base_url }}/#organization" }
+      "publisher": { "@id": "{{ site_base_url }}/#organization" }
     },
     {
       "@type": "SoftwareApplication",
@@ -57,7 +57,7 @@
           "price": "{{ plan.price }}",
           "priceCurrency": "USD",
           "category": "SubscriptionPlan",
-          "url": "{{ public_base_url }}/pricing"
+          "url": "{{ site_base_url }}/pricing"
         }{{ "," if not loop.last }}
         {% endfor %}
       ]

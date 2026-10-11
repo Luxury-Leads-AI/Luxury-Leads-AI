@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ feature.name }} - Luxury Leads AI</title>
+{% set page_title = feature.name ~ " - Luxury Leads AI" %}
+{% set page_description = feature.description %}
+{% set page_path = "/features/" ~ feature.slug %}
+{% include "_seo_head.html" %}
+{# The questions and answers below are published as FAQ structured data
+   as well as read on the page. A search engine can show them under the
+   result; an AI answer engine can quote them. Same words either way -
+   there is no hidden copy written for machines. #}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {% for question, answer in feature.answers %}
+    {
+      "@type": "Question",
+      "name": {{ question | tojson }},
+      "acceptedAnswer": { "@type": "Answer", "text": {{ answer | tojson }} }
+    }{{ "," if not loop.last }}
+    {% endfor %}
+  ]
+}
+</script>
+  <link rel="stylesheet" href="/static/theme.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--grad-hero);
+            min-height: 100vh;
+            padding: 48px 20px;
+        }
+        .container { max-width: 760px; margin: 0 auto; }
+        .crumb { font-size: 14px; margin-bottom: 28px; }
+        .crumb a { color: var(--text-faint); text-decoration: none; }
+        .crumb a:hover { color: var(--brand-2); }
+        .hero-icon { font-size: 52px; margin-bottom: 14px; }
+        h1 { font-size: 36px; color: #fff; margin-bottom: 8px; line-height: 1.2; }
+        .plan-tag {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: bold;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--brand-2);
+            border: 1px solid var(--brand-line);
+            border-radius: 10px;
+            padding: 3px 9px;
+            margin-bottom: 18px;
+        }
+        .summary {
+            color: var(--text-dim);
+            font-size: 17.5px;
+            line-height: 1.7;
+            margin-bottom: 44px;
+        }
+        .point {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px 26px;
+            margin-bottom: 18px;
+        }
+        .point h2 { font-size: 18px; color: #fff; margin-bottom: 8px; }
+        .point p { color: var(--text-dim); font-size: 15px; line-height: 1.65; }
+        .faq { margin-top: 52px; }
+        .faq > h2 { color: #fff; font-size: 22px; margin-bottom: 20px; }
+        .qa { border-top: 1px solid var(--border); padding: 20px 0; }
+        .qa h3 { color: #fff; font-size: 16px; margin-bottom: 8px; }
+        .qa p { color: var(--text-dim); font-size: 15px; line-height: 1.65; }
+        .next { margin-top: 56px; }
+        .next > h2 { color: #fff; font-size: 20px; margin-bottom: 18px; }
+        .next-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+        a.next-item {
+            display: block;
+            text-decoration: none;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px 20px;
+            transition: border-color 0.18s ease;
+        }
+        a.next-item:hover { border-color: var(--brand-2); }
+        a.next-item:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 3px; }
+        .next-item span { font-size: 24px; display: block; margin-bottom: 8px; }
+        .next-item strong { color: #fff; font-size: 15px; font-weight: 600; }
+        .closing { text-align: center; margin-top: 60px; }
+        .closing h2 { color: #fff; font-size: 24px; margin-bottom: 10px; }
+        .closing p { color: var(--text-dim); margin-bottom: 22px; }
+        .cta-button {
+            display: inline-block;
+            background: var(--grad-brand);
+            color: #fff;
+            text-decoration: none;
+            font-weight: bold;
+            padding: 15px 36px;
+            border-radius: 30px;
+        }
+        @media (max-width: 560px) {
+            body { padding: 32px 14px; }
+            h1 { font-size: 27px; }
+            .summary { font-size: 16px; margin-bottom: 32px; }
+            .point { padding: 20px 18px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <p class="crumb"><a href="/features">&larr; All features</a></p>
+
+    <div class="hero-icon">{{ feature.icon }}</div>
+    <h1>{{ feature.name }}</h1>
+    {% if feature.plans == 'agency' %}<span class="plan-tag">Agency plan</span>{% endif %}
+    <p class="summary">{{ feature.summary }}</p>
+
+    {% for heading, body in feature.points %}
+    <div class="point">
+        <h2>{{ heading }}</h2>
+        <p>{{ body }}</p>
+    </div>
+    {% endfor %}
+
+    <div class="faq">
+        <h2>Questions people ask</h2>
+        {% for question, answer in feature.answers %}
+        <div class="qa">
+            <h3>{{ question }}</h3>
+            <p>{{ answer }}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="next">
+        <h2>Also worth a look</h2>
+        <div class="next-grid">
+            {% for other in others %}
+            <a class="next-item" href="/features/{{ other.slug }}">
+                <span>{{ other.icon }}</span>
+                <strong>{{ other.name }}</strong>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="closing">
+        <h2>Try it on your own website</h2>
+        <p>14-day free trial. No card required.</p>
+        <a href="/pricing" class="cta-button">View pricing</a>
+    </div>
+</div>
+{% include "_public_footer.html" %}
+</body>
+</html>

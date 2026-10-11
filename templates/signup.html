@@ -22,12 +22,15 @@
       padding: 20px;
     }
     .box {
-      /* 100% width plus 40px of padding is 80px wider than the phone.
-         Pre-existing, and the reason the form overflowed at 390px. */
+      /* theme.css draws a border round .box. This page never set any
+         padding, so the two plan cards sat flush against that border. */
       box-sizing: border-box;
       margin-block: auto;
       width: 100%;
       max-width: 640px;
+      padding: 36px 32px;
+      background: var(--surface);
+      border-radius: 14px;
     }
     h2 {
       margin-top: 0;
@@ -48,6 +51,14 @@
     }
     @media (max-width: 560px) {
       .choice-grid { grid-template-columns: 1fr; }
+    }
+    /* Narrow screens: keep a visible gap between the cards and the edge
+       of the screen, but stop the padding eating the card itself. */
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      .box { padding: 24px 18px; }
+      .choice-card { padding: 24px 18px; }
+      h2 { font-size: 22px; }
     }
     .choice-card {
       display: block;

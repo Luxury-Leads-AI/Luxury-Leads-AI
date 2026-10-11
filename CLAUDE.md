@@ -44,6 +44,17 @@ SMOKE_TEST_TOKEN=      # Optional; with header `X-Smoke-Test: <token>`, /chat an
 SUPPORT_EMAIL=         # Optional; the address shown on the home, privacy and terms pages (falls back to SMTP_EMAIL, then DEFAULT_SUPPORT_EMAIL)
 REPLY_TO_EMAIL=        # Optional; where a client's reply lands (falls back to SUPPORT_EMAIL)
 EMAIL_FROM_NAME=       # Optional; the name beside the From address (default "Luxury Leads AI")
+SITE_BASE_URL=         # Optional; the address the PUBLIC pages claim as canonical, and the one in robots.txt and the sitemap. Falls back to PUBLIC_BASE_URL. Set it to the plain domain visitors arrive on (https://ailuxuryleads.com) - PUBLIC_BASE_URL stays on the app subdomain because the widget's script URL must never move
+BUSINESS_ADDRESS=      # Optional; the registered address in the public footer. Nothing is shown until it is set
+SHOW_STATS=            # Optional; "true" to show the four figures across the home page. Off by default - a tile renders only when its STAT_n_VALUE is also set
+STAT_1_VALUE=          # e.g. 87% - leave blank and that tile stays hidden
+STAT_1_LABEL=          # default "Of visitors captured"
+STAT_2_VALUE=          # default label "Always working"
+STAT_2_LABEL=
+STAT_3_VALUE=          # default label "More qualified leads"
+STAT_3_LABEL=
+STAT_4_VALUE=          # default label "Setup time"
+STAT_4_LABEL=
 ```
 
 **Live configuration (from 2026-10-05):** `PUBLIC_BASE_URL=https://app.ailuxuryleads.com`,
@@ -129,6 +140,57 @@ sets. Canonical URLs are built from `PUBLIC_BASE_URL`. `/robots.txt` and
 `noindex` and stay out of the sitemap, and a test walks the sitemap asking the
 app for each URL so it can never list a dead page. Descriptions must be unique
 across pages (`test_no_two_pages_claim_the_same_description`).
+
+**Two addresses, two jobs.** `PUBLIC_BASE_URL` is where the app lives: every
+widget `src`, login link and email URL points at it, so it must never move -
+it is `https://app.ailuxuryleads.com`. `SITE_BASE_URL` is the address the
+marketing pages *claim*, and it is the plain domain visitors actually arrive
+on. They were the same value for one deploy, which meant `robots.txt`
+advertised a sitemap on the app subdomain and every canonical pointed away
+from the host Google had just crawled - an invitation to drop the marketing
+pages. `SITE_BASE_URL` falls back to `PUBLIC_BASE_URL` when unset, so an
+untold deploy keeps working; `test_site_base_url_falls_back_rather_than_breaking`
+holds that fallback in place. Canonicals, Open Graph URLs, the JSON-LD `@id`s,
+`robots.txt` and `sitemap.xml` all use `SITE_BASE_URL`; nothing else does.
+
+**The feature pages come from one list.** `FEATURES` in `app.py` is the only
+place a feature is described. The home-page tiles, `/features`, and each
+`/features/<slug>` page are all rendered from it, and every entry is added to
+the sitemap automatically. That is deliberate: six hand-written tiles on the
+home page is how the site ends up advertising something no page explains.
+`test_the_feature_index_and_the_home_tiles_cannot_drift` compares the two sets
+of links, and `test_every_feature_has_everything_a_page_needs` fails on an
+entry missing any field. Each feature's `answers` are published twice - read
+on the page, and as `FAQPage` JSON-LD - and
+`test_every_feature_page_publishes_its_questions_as_data` asserts the two say
+the same thing, because markup that tells a machine something it does not tell
+a reader is cloaking.
+
+**An inline element with a border fractures when it wraps.** `.trial-note span`
+on the pricing page was `inline` with a border and a `border-radius`. One line
+wide it looks like a pill; wrapped to three lines on a phone the browser draws
+that border round *each line fragment*, and the outlines cut through the words.
+Anything with both a border and a radius needs a `display`.
+`test_no_bordered_pill_on_a_public_page_is_left_inline` sweeps the public
+templates for the same mistake (admin screens are exempt - a fixed-width backup
+code cannot wrap).
+
+**`theme.css` draws a border round `.box`; the page has to supply the padding.**
+`signup.html` set none, so the two plan cards pressed against that border on
+every screen size. The tier pages had `padding: 40px` from their own style
+blocks and looked fine, which is why it went unnoticed.
+
+**Claims have to be checkable.** "87% of visitors captured", "3x more qualified
+leads" and "Join agencies generating 50+ qualified leads per month" were on the
+home page before there was a customer to measure. The tiles are kept but
+switched off: `SHOW_STATS` plus `STAT_<n>_VALUE`/`STAT_<n>_LABEL`, and
+`visible_stats()` renders a tile only when the switch is on *and* that figure is
+set. `test_no_public_page_claims_a_result_it_cannot_show_its_working_for` fails
+if any of those phrases comes back. The pricing page separately sold "10
+languages" while `widget.js` carries 9;
+`test_every_page_agrees_on_how_many_languages_we_speak` reads the count out of
+the widget and checks every template and every rendered page against it - the
+same agreement test as the trial length, for the same reason.
 
 ## The acquisition engine
 
