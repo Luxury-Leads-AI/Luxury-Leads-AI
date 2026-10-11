@@ -30,7 +30,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES = os.path.join(ROOT, 'templates')
 THEME = os.path.join(ROOT, 'static', 'theme.css')
 
-PAGES = sorted(glob.glob(os.path.join(TEMPLATES, '*.html')))
+PAGES = sorted(path for path in glob.glob(os.path.join(TEMPLATES, '*.html'))
+               if not os.path.basename(path).startswith('_'))   # not partials
 
 # Palettes the three old looks were built from. Any of these surviving
 # means a rule was missed and that page is off-theme.

@@ -31,7 +31,11 @@ def _style_of(src):
 
 
 def _all_templates():
-    return sorted(glob.glob(os.path.join(TEMPLATES, '*.html')))
+    # Underscore-prefixed files are partials (a fragment included into a
+    # page, not a page): they have no <head> of their own, so the viewport
+    # and stylesheet rules belong to whoever includes them.
+    return sorted(path for path in glob.glob(os.path.join(TEMPLATES, '*.html'))
+                  if not os.path.basename(path).startswith('_'))
 
 
 # ── Horizontal scrolling lives in the box, never the page ────────────

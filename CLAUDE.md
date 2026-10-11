@@ -54,6 +54,30 @@ made before the move keep working. The step-by-step setup (Hostinger DNS,
 Render custom domain, Brevo domain authentication, security settings) is the
 Claude Doc "Domain and email setup - ailuxuryleads.com".
 
+**The public pages are what a payment processor reads.** All eight
+(`/`, `/pricing`, `/terms`, `/privacy-policy`, `/refund-policy`, `/signup`,
+`/signup/solo`, `/signup/agency`) include `templates/_public_footer.html` -
+one copy of the legal links, the support address **as readable text** (a bare
+`mailto:` does nothing for a reviewer with no mail client, which is how this
+was found), and Paddle named as Merchant of Record. Styles live in
+`static/theme.css` under `.site-footer*`; `BUSINESS_NAME`/`BUSINESS_ADDRESS`
+render only when set, so nothing invented is published. Underscore-prefixed
+templates are partials: `test_mobile_layout`, `test_theme` and the viewport
+check in `test_agent_routing_and_stages` skip them, since a fragment has no
+`<head>`.
+
+`tests/test_public_pages.py` is the guard, and it checks **agreement rather
+than wording**: every page links to all three policies and the links resolve;
+every page shows the support address outside an href; every page and each
+policy's own text names the Merchant of Record; the prices shown match
+`TIER_LIMITS`; and - the one that caught the original bug -
+`test_every_page_promises_the_same_trial_length` scans every template for a
+"N-day trial" claim and fails unless they all agree with
+`provision_agency(trial_days=...)`. Terms said 7 while the code and four other
+pages said 14. Terms also promised an automatic charge the code cannot make
+(no card is taken at signup) and the privacy policy named SendGrid, which was
+replaced by Brevo; both are now asserted against.
+
 **Addresses are settings, not literals.** The support address used to be typed
 into `index.html`, `privacy.html` and `terms.html`; it is now the
 `support_email` Jinja global, and `tests/test_domain_and_email.py` walks the

@@ -1,0 +1,30 @@
+{# The footer every public page shares.
+
+   Three things Paddle checks live here, so they are written once:
+     - working links to Terms, Privacy and the Refund/Cancellation policy;
+     - the support address as readable text, not only a mailto: link (a
+       reviewer with no mail client gets nothing from a bare mailto, which
+       is exactly how this was first noticed);
+     - Paddle named as Merchant of Record.
+   BUSINESS_NAME and BUSINESS_ADDRESS appear only when they are set in the
+   environment, so nothing invented is ever published. #}
+<footer class="site-footer">
+  <div class="site-footer-links">
+    <a href="/">Home</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/terms">Terms of Service</a>
+    <a href="/privacy-policy">Privacy Policy</a>
+    <a href="/refund-policy">Refund &amp; Cancellation Policy</a>
+    <a href="/signup">Sign Up</a>
+  </div>
+  <p>Contact us: <a href="mailto:{{ support_email }}">{{ support_email }}</a></p>
+  <p class="site-footer-legal">
+    Billing is handled by <strong>Paddle</strong>, our Merchant of Record.
+    Paddle.com Market Ltd is the authorised reseller of Luxury Leads AI, and
+    is the name that appears on your invoice and your card statement.
+  </p>
+  {% if business_address %}
+  <p class="site-footer-legal">{{ business_name }} · {{ business_address }}</p>
+  {% endif %}
+  <p class="site-footer-copy">&copy; 2026 {{ business_name }}. All rights reserved.</p>
+</footer>

@@ -367,6 +367,8 @@ def test_every_rendered_page_declares_a_mobile_viewport(client):
     for path in sorted(glob.glob(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'templates', '*.html'))):
+        if os.path.basename(path).startswith('_'):
+            continue                      # a partial has no <head> of its own
         with open(path, encoding='utf-8') as fh:
             if 'name="viewport"' not in fh.read():
                 missing.append(os.path.basename(path))

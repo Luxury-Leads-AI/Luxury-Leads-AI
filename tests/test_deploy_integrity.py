@@ -28,7 +28,7 @@ import app as app_module
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES = os.path.join(ROOT, 'templates')
-PAGES = sorted(glob.glob(os.path.join(TEMPLATES, '*.html')))
+PAGES = sorted(glob.glob(os.path.join(TEMPLATES, '*.html')))   # partials included: they use globals too
 
 # Jinja's own builtins and the filters/tests it ships with - a template
 # calling these needs nothing from app.py.

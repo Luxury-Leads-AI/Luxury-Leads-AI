@@ -49,8 +49,12 @@ def test_the_contact_link_is_never_empty():
     assert '@' in app_module.SUPPORT_EMAIL
 
 
-@pytest.mark.parametrize('page', ['index.html', 'privacy.html', 'terms.html'])
+@pytest.mark.parametrize('page', ['_public_footer.html', 'privacy.html',
+                                  'terms.html', 'refund.html'])
 def test_the_public_pages_read_the_setting(page):
+    """The home and pricing pages get the address from the shared footer
+    partial rather than printing it themselves - tests/test_public_pages.py
+    checks it reaches every rendered page."""
     body = read('templates', page)
     assert '{{ support_email }}' in body
 

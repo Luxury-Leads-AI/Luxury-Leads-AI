@@ -235,3 +235,41 @@ button[type="submit"], .cta-button:not(.secondary), .btn-primary,
   background-color: #dc2626 !important;
   color: #fff !important;
 }
+
+/* ── The one public footer ──────────────────────────────────────────
+   Every public page includes templates/_public_footer.html. Paddle wants
+   the Terms, Privacy and Refund links reachable from anywhere on the site,
+   the support address readable as text rather than hidden behind a mailto,
+   and the Merchant of Record named. One copy of all that cannot drift out
+   of step with another. Class names are prefixed site-footer- because
+   several pages already define their own .footer-links. */
+.site-footer {
+  margin-top: 64px;
+  padding: 36px 20px 44px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text-dim);
+}
+.site-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 22px;
+  margin-bottom: 18px;
+}
+.site-footer-links a {
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.site-footer-links a:hover { text-decoration: underline; }
+.site-footer p { margin: 8px auto; max-width: 720px; }
+.site-footer a { color: var(--brand-2); }
+.site-footer-legal { font-size: 13px; color: var(--text-faint, var(--text-dim)); }
+.site-footer-copy { font-size: 13px; color: var(--text-faint, var(--text-dim)); }
+@media (max-width: 640px) {
+  .site-footer { padding: 28px 16px 36px; }
+  .site-footer-links { gap: 8px 16px; }
+}

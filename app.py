@@ -220,6 +220,14 @@ REPLY_TO_EMAIL = (os.getenv("REPLY_TO_EMAIL") or SUPPORT_EMAIL).strip()
 EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "Luxury Leads AI").strip()
 app.jinja_env.globals['support_email'] = SUPPORT_EMAIL
 
+# Shown in the public footer. The address is optional and appears only when
+# it is set, because a payment processor checking the site would rather see
+# nothing than something invented.
+BUSINESS_NAME = os.getenv("BUSINESS_NAME", "Luxury Leads AI").strip()
+BUSINESS_ADDRESS = (os.getenv("BUSINESS_ADDRESS") or "").strip()
+app.jinja_env.globals['business_name'] = BUSINESS_NAME
+app.jinja_env.globals['business_address'] = BUSINESS_ADDRESS
+
 # -------------------------
 # APPOINTMENT CONFIG
 # -------------------------
