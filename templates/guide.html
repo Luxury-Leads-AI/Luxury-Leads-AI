@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User guide and FAQs - Luxury Leads AI</title>
+{% set page_title = "User guide and FAQs - Luxury Leads AI" %}
+{% set page_description = "How to use Luxury Leads AI: a guide for solo agents, agency owners and agents, plus answers to the questions people ask before and after signing up." %}
+{% set page_path = "/guide" %}
+{% include "_seo_head.html" %}
+{# The same answers a reader sees, in the form a search engine can show
+   under the result and an answer engine can quote. #}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {% for question, answer in faqs %}
+    {
+      "@type": "Question",
+      "name": {{ question | tojson }},
+      "acceptedAnswer": { "@type": "Answer", "text": {{ answer | tojson }} }
+    }{{ "," if not loop.last }}
+    {% endfor %}
+  ]
+}
+</script>
+  <link rel="stylesheet" href="/static/theme.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--grad-hero);
+            min-height: 100vh;
+            padding: 56px 20px;
+        }
+        .container { max-width: 860px; margin: 0 auto; }
+        .lede { text-align: center; margin-bottom: 52px; }
+        .lede h1 { font-size: 38px; color: #fff; margin-bottom: 14px; }
+        .lede p { color: var(--text-dim); font-size: 17px; max-width: 620px; margin: 0 auto; }
+        h2.part { color: #fff; font-size: 24px; margin: 52px 0 18px; }
+        .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+        a.role {
+            display: block; text-decoration: none; color: inherit;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 14px; padding: 26px 24px;
+            transition: transform 0.18s ease, border-color 0.18s ease;
+        }
+        a.role:hover { transform: translateY(-3px); border-color: var(--brand-2); }
+        a.role:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 3px; }
+        .role h3 { color: #fff; font-size: 18px; margin-bottom: 9px; }
+        .role p { color: var(--text-dim); font-size: 14.5px; line-height: 1.6; }
+        .role span { display: inline-block; margin-top: 14px; color: var(--brand-2); font-size: 14px; font-weight: bold; }
+        .inapp {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 14px; padding: 26px 26px; margin-top: 18px;
+        }
+        .inapp p { color: var(--text-dim); line-height: 1.7; }
+        .qa { border-top: 1px solid var(--border); padding: 20px 0; }
+        .qa h3 { color: #fff; font-size: 16.5px; margin-bottom: 8px; }
+        .qa p { color: var(--text-dim); font-size: 15px; line-height: 1.65; }
+        .closing { text-align: center; margin-top: 60px; }
+        .closing h2 { color: #fff; font-size: 24px; margin-bottom: 10px; }
+        .closing p { color: var(--text-dim); margin-bottom: 22px; }
+        .cta-button {
+            display: inline-block; background: var(--grad-brand); color: #fff;
+            text-decoration: none; font-weight: bold;
+            padding: 15px 36px; border-radius: 30px;
+        }
+        @media (max-width: 560px) {
+            body { padding: 36px 14px; }
+            .lede h1 { font-size: 28px; }
+            h2.part { font-size: 21px; margin-top: 40px; }
+            a.role, .inapp { padding: 22px 18px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="lede">
+        <h1>User guide</h1>
+        <p>Three guides, one for each kind of account, and the questions
+           people ask most. Every screen in the product also explains itself
+           from the inside.</p>
+    </div>
+
+    <h2 class="part">Pick your guide</h2>
+    <div class="roles">
+        {% for key, plan in roles.items() %}
+        <a class="role" href="/guide/{{ key }}">
+            <h3>{{ plan.title }}</h3>
+            <p>{{ plan.who }}</p>
+            <span>Read it &rarr;</span>
+        </a>
+        {% endfor %}
+    </div>
+
+    <h2 class="part">Help inside the product</h2>
+    <div class="inapp">
+        <p>Every screen you can reach once you are signed in has a
+           <strong>?</strong> button in its bottom corner. It opens a panel
+           written for that exact screen: what the screen is for, the usual
+           job in order, and what every single button does and what changes
+           when you press it. You never have to leave the page you are stuck
+           on to find out how it works.</p>
+    </div>
+
+    <h2 class="part">Questions people ask</h2>
+    {% for question, answer in faqs %}
+    <div class="qa">
+        <h3>{{ question }}</h3>
+        <p>{{ answer }}</p>
+    </div>
+    {% endfor %}
+
+    <div class="closing">
+        <h2>Still stuck?</h2>
+        <p>Email <a href="mailto:{{ support_email }}" style="color:var(--brand-2)">{{ support_email }}</a> and a person will answer.</p>
+        <a href="/pricing" class="cta-button">View pricing</a>
+    </div>
+</div>
+{% include "_public_footer.html" %}
+</body>
+</html>

@@ -5756,6 +5756,10 @@ def export_leads(agency_id):
         return jsonify({"error": "Export failed"}), 500
 
 
+# The user-guide content. A data module - no Flask, no database, no
+# logic - so app.py is still the only backend file. See guides.py.
+from guides import GUIDES, ROLE_GUIDES, FAQS
+
 # -------------------------
 # THE FEATURE PAGES
 # -------------------------
@@ -6211,12 +6215,61 @@ INDEXABLE_PAGES = (
     ("/", "1.0", "weekly"),
     ("/pricing", "0.9", "weekly"),
     ("/features", "0.9", "weekly"),
+    ("/guide", "0.8", "monthly"),
     ("/signup", "0.7", "monthly"),
     ("/signup/solo", "0.6", "monthly"),
     ("/signup/agency", "0.6", "monthly"),
 ) + tuple(
     (f"/features/{item['slug']}", "0.8", "monthly") for item in FEATURES
+) + tuple(
+    (f"/guide/{role}", "0.7", "monthly") for role in ROLE_GUIDES
 )
+
+
+# -------------------------
+# THE USER GUIDES
+# -------------------------
+# Content lives in guides.py; the plumbing is here. A context processor
+# looks up the guide for whatever endpoint is rendering, so including
+# _help_panel.html in a template is the whole of the work - no route has
+# to remember to pass a guide in, and a screen with no entry simply shows
+# no ? button rather than an empty panel.
+ROLE_LABELS = {'owner': 'Agency owner', 'agency': 'Agency plan',
+               'agent': 'Agent', 'anyone': 'Everyone'}
+
+
+@app.context_processor
+def inject_screen_guide():
+    endpoint = (request.endpoint or '') if request else ''
+    guide = GUIDES.get(endpoint)
+    return {'screen_guide': guide, 'screen_guide_key': endpoint,
+            'role_labels': ROLE_LABELS}
+
+
+def guide_for(key):
+    """One screen's guide, or None. Used by the printable role pages."""
+    return GUIDES.get(key)
+
+
+app.jinja_env.globals['guide_for'] = guide_for
+
+
+@app.route("/guide")
+def guide_index():
+    """The public master guide. Readable without an account, which is the
+    point - somebody deciding whether to buy can see what they would be
+    operating, and it is a page that can be found in a search."""
+    return render_template("guide.html", roles=ROLE_GUIDES, faqs=FAQS)
+
+
+@app.route("/guide/<role>")
+def guide_role(role):
+    plan = ROLE_GUIDES.get(role)
+    if not plan:
+        abort(404)
+    screens = [(key, GUIDES[key]) for key in plan['screens'] if key in GUIDES]
+    return render_template("guide_role.html", role=role, plan=plan,
+                           screens=screens)
 
 
 @app.route("/features")

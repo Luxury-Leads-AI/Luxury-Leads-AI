@@ -192,6 +192,57 @@ languages" while `widget.js` carries 9;
 the widget and checks every template and every rendered page against it - the
 same agreement test as the trial length, for the same reason.
 
+**`guides.py` is content, not a second backend.** It imports nothing, holds no
+logic and touches no database - every route, model and AI call is still in
+`app.py`. It exists only because 13 screen guides, 3 role walkthroughs and 20
+FAQs are about 700 lines of prose, and `app.py` is already 320 KB. Three
+things come out of it: `GUIDES`, keyed by **Flask endpoint name**;
+`ROLE_GUIDES`; and `FAQS`.
+
+The endpoint key is the whole trick. `inject_screen_guide()` is a context
+processor that looks up `request.endpoint`, so a template gets its guide by
+including `_help_panel.html` and nothing else - no route has to remember to
+pass one in. A screen with no entry renders **no button at all** rather than an
+empty panel (`test_a_screen_with_no_guide_shows_no_button`).
+
+**The guide tests are agreement tests.** A wrong guide is worse than no guide:
+it sends a customer hunting for a control that is not there, and they conclude
+the product is broken. `test_every_control_a_guide_names_is_on_that_screen`
+takes all 96 named controls and looks for their words in the template that
+renders that screen. **Rename a button and that test fails, naming the guide
+and the exact words it could not find.** Controls that are a group rather than
+one label (a row of filter chips, the status dropdown) are listed in
+`GROUP_SAMPLES` in the test with the token to search for instead - add a
+control of that shape and you add a line there. `SCREEN_TEMPLATES` maps each
+endpoint to the template it renders, written out rather than inferred, so a
+route that starts rendering something else is caught too.
+
+**The panel is injected into 13 pages that each have their own CSS**, so it
+isolates itself: every class and id is prefixed `hp-`, and it resets
+`text-align` and the `width` of its own buttons. That last one is not
+hypothetical - `owner_login.html` has `button { width: 100% }` for its submit
+button, which made the panel's close button eat the whole header and squeeze
+the title into a two-character column. Four tests hold the isolation
+(`test_the_panel_styles_cannot_collide_with_a_page`,
+`test_the_panel_ids_are_prefixed_too`,
+`test_the_panel_buttons_set_their_own_width`,
+`test_the_panel_does_not_inherit_a_page_that_centres_everything`).
+
+**Who sees which screen matters.** Each guide carries a `role`: `owner`,
+`agency` (Agency plan only), `agent` or `anyone`. The role guides are checked
+against it - a solo owner is never shown the Agents page they do not have, an
+agent is never shown Clear All Leads, and the agency owner guide has to cover
+every owner screen that exists (`test_a_solo_owner_is_not_shown_the_team_screens`,
+`test_an_agent_guide_never_shows_an_agent_an_owner_screen`,
+`test_the_agency_owner_guide_covers_everything_an_owner_has`).
+
+`/guide` and `/guide/<role>` are public and indexed - somebody deciding
+whether to buy can see what they would be operating, and the FAQs are
+published as `FAQPage` data as well as read on the page. `guide_role.html`
+carries a print stylesheet; its `body` rule uses `background: none` rather
+than `#fff`, because a literal light colour on `body` is what
+`test_theme.py::test_the_body_never_keeps_a_light_background` exists to catch.
+
 ## The acquisition engine
 
 `acquisition/` is a separate package in this repository that finds and wins
@@ -367,7 +418,7 @@ On Render, `SECRET_KEY` is mandatory: if it is missing or still the `'change-thi
 
 ## Architecture
 
-**Single-file backend** — all Flask routes, DB models, AI logic, and email are in `app.py`. There are no blueprints or separate modules.
+**Single-file backend** — all Flask routes, DB models, AI logic, and email are in `app.py`. There are no blueprints. The one other module, `guides.py`, is pure content (the user guides as data) with no imports, no logic and no database access; `app.py` reads it and owns every route.
 
 **Multi-tenant via `agency_id`** — every `Agency` record is a customer. Each agency gets a custom AI assistant name and prompt. All `Lead` records are scoped by `agency_id`. The embeddable widget (`static/widget.js`) is deployed on the agency's own website and passes `data-agency="<id>"` to identify which agency's bot is running.
 

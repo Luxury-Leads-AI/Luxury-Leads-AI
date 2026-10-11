@@ -1,0 +1,170 @@
+{# The ? button and the panel behind it.
+
+   Included at the end of <body> on every screen a customer can reach.
+   It renders nothing at all when the current endpoint has no entry in
+   guides.py, so a screen either has a real guide or has no button -
+   never an empty one.
+
+   Self-contained on purpose: its own styles and its own 30 lines of
+   script, so adding it to a page cannot collide with whatever that page
+   already defines. Everything is prefixed hp- for the same reason. #}
+{% if screen_guide %}
+<style>
+  .hp-open {
+    position: fixed; right: 18px; bottom: 18px; z-index: 900;
+    width: 46px; height: 46px; min-width: 0; margin: 0; border-radius: 50%;
+    background: var(--brand-2); color: var(--bg);
+    border: none; cursor: pointer;
+    font-size: 22px; font-weight: bold; line-height: 46px;
+    box-shadow: 0 6px 22px rgba(0,0,0,0.55);
+  }
+  .hp-open:hover { filter: brightness(1.1); }
+  .hp-open:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  .hp-veil {
+    position: fixed; inset: 0; z-index: 901;
+    background: rgba(0,0,0,0.6); display: none;
+  }
+  .hp-veil.hp-on { display: block; }
+  .hp-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 902;
+    width: min(480px, 100%);
+    background: var(--surface, #111827);
+    border-left: 1px solid var(--border, #1f2937);
+    box-sizing: border-box;
+    padding: 26px 26px 60px;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    font-size: 15px; line-height: 1.6;
+  }
+  .hp-panel.hp-on { transform: translateX(0); }
+  /* The thirteen pages this is injected into each have their own CSS,
+     and several of them centre everything on the page. Reset what the
+     panel's own readability depends on rather than inheriting it. */
+  .hp-panel, .hp-panel * {
+    text-align: left;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  }
+  .hp-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 14px; margin-bottom: 4px;
+  }
+  .hp-panel h2 {
+    font-size: 21px; color: #fff; margin: 0;
+    flex: 1 1 auto; line-height: 1.25;
+  }
+  .hp-role {
+    display: inline-block; margin: 8px 0 18px;
+    font-size: 11px; font-weight: bold; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--brand-2);
+    border: 1px solid var(--brand-line, #334155);
+    border-radius: 10px; padding: 3px 9px;
+  }
+  .hp-close {
+    /* width:auto matters. Several of these pages style every button on
+       them with width:100% for their own full-width submit button, and
+       an inherited 100% here eats the whole header and squeezes the
+       title into a two-line column. */
+    flex: 0 0 auto;
+    width: auto; min-width: 0; height: auto;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-faint, #94a3b8); font-size: 26px; line-height: 1;
+    padding: 0 4px; margin: 0;
+  }
+  .hp-close:hover { color: #fff; }
+  .hp-panel h3 {
+    font-size: 12px; font-weight: bold; letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--brand-2);
+    margin: 26px 0 10px;
+  }
+  .hp-panel p, .hp-panel li { color: var(--text-dim, #cbd5e1); }
+  .hp-where { font-size: 14px; color: var(--text-faint, #94a3b8); }
+  .hp-panel ol, .hp-panel ul { margin: 0; padding-left: 20px; }
+  .hp-panel li { margin-bottom: 9px; }
+  .hp-ctrl { border-top: 1px solid var(--border, #1f2937); padding: 12px 0; }
+  .hp-ctrl b { color: #fff; display: block; margin-bottom: 3px; font-size: 14.5px; }
+  .hp-ctrl span { font-size: 14px; }
+  .hp-note {
+    background: rgba(56,189,248,0.07);
+    border-left: 3px solid var(--brand-2);
+    padding: 11px 14px; margin-bottom: 10px; font-size: 14px;
+    border-radius: 0 6px 6px 0;
+  }
+  .hp-more { margin-top: 26px; font-size: 14px; }
+  .hp-more a { color: var(--brand-2); }
+  @media (max-width: 560px) {
+    .hp-open { right: 14px; bottom: 14px; }
+    .hp-panel { padding: 20px 18px 50px; font-size: 14.5px; }
+    .hp-panel h2 { font-size: 19px; }
+  }
+  @media print { .hp-open, .hp-veil, .hp-panel { display: none !important; } }
+</style>
+
+<button class="hp-open" id="hp-open" type="button"
+        aria-label="How this screen works" aria-expanded="false"
+        aria-controls="hp-panel">?</button>
+<div class="hp-veil" id="hp-veil"></div>
+
+<aside class="hp-panel" id="hp-panel" role="dialog" aria-modal="true"
+       aria-labelledby="hp-title" aria-hidden="true">
+  <div class="hp-head">
+    <h2 id="hp-title">{{ screen_guide.title }}</h2>
+    <button class="hp-close" id="hp-close" type="button"
+            aria-label="Close">&times;</button>
+  </div>
+  <span class="hp-role">{{ role_labels.get(screen_guide.role, screen_guide.role) }}</span>
+
+  <p class="hp-where">{{ screen_guide.where }}</p>
+
+  <h3>What this screen is for</h3>
+  <p>{{ screen_guide.purpose }}</p>
+
+  <h3>The usual job</h3>
+  <ol>
+    {% for step in screen_guide.steps %}<li>{{ step }}</li>{% endfor %}
+  </ol>
+
+  <h3>Every button on this screen</h3>
+  {% for control, effect in screen_guide.controls %}
+  <div class="hp-ctrl"><b>{{ control }}</b><span>{{ effect }}</span></div>
+  {% endfor %}
+
+  {% if screen_guide.notes %}
+  <h3>Worth knowing</h3>
+  {% for note in screen_guide.notes %}<p class="hp-note">{{ note }}</p>{% endfor %}
+  {% endif %}
+
+  <p class="hp-more">
+    <a href="/guide" target="_blank" rel="noopener">The full guide and FAQs &rarr;</a>
+  </p>
+</aside>
+
+<script>
+(function () {
+  var open = document.getElementById('hp-open');
+  var panel = document.getElementById('hp-panel');
+  var veil = document.getElementById('hp-veil');
+  var close = document.getElementById('hp-close');
+  if (!open || !panel) return;
+
+  function show(on) {
+    panel.classList.toggle('hp-on', on);
+    veil.classList.toggle('hp-on', on);
+    panel.setAttribute('aria-hidden', on ? 'false' : 'true');
+    open.setAttribute('aria-expanded', on ? 'true' : 'false');
+    // Send focus where the reader is, and give it back when they leave.
+    (on ? close : open).focus();
+  }
+  open.addEventListener('click', function () { show(true); });
+  close.addEventListener('click', function () { show(false); });
+  veil.addEventListener('click', function () { show(false); });
+  // Escape closes it. Nothing on these screens uses Escape for anything
+  // else while the panel is open, because the panel is modal.
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && panel.classList.contains('hp-on')) {
+      show(false);
+    }
+  });
+})();
+</script>
+{% endif %}

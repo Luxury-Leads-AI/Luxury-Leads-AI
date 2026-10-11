@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ plan.title }} - Luxury Leads AI</title>
+{% set page_title = plan.title ~ " - Luxury Leads AI" %}
+{% set page_description = plan.title ~ " for Luxury Leads AI: your first week, then every screen you have and what every button on it does." %}
+{% set page_path = "/guide/" ~ role %}
+{% include "_seo_head.html" %}
+  <link rel="stylesheet" href="/static/theme.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--grad-hero);
+            min-height: 100vh;
+            padding: 48px 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .crumb { font-size: 14px; margin-bottom: 24px; }
+        .crumb a { color: var(--text-faint); text-decoration: none; }
+        .crumb a:hover { color: var(--brand-2); }
+        h1 { font-size: 34px; color: #fff; margin-bottom: 10px; line-height: 1.2; }
+        .who { color: var(--text-dim); font-size: 17px; line-height: 1.7; margin-bottom: 14px; }
+        .print-hint { color: var(--text-faint); font-size: 13.5px; margin-bottom: 40px; }
+        h2.part {
+            color: #fff; font-size: 23px;
+            margin: 48px 0 16px; padding-top: 18px;
+            border-top: 1px solid var(--border);
+        }
+        ol.week { padding-left: 22px; }
+        ol.week li { color: var(--text-dim); line-height: 1.7; margin-bottom: 12px; }
+        .contents { background: var(--surface); border: 1px solid var(--border);
+                    border-radius: 12px; padding: 20px 24px; }
+        .contents ul { list-style: none; padding: 0; }
+        .contents li { padding: 5px 0; }
+        .contents a { color: var(--brand-2); text-decoration: none; font-size: 15px; }
+        .screen { margin-top: 44px; }
+        .screen h3 { color: #fff; font-size: 21px; margin-bottom: 6px; }
+        .where { color: var(--text-faint); font-size: 14px; margin-bottom: 14px; }
+        .purpose { color: var(--text-dim); font-size: 16px; line-height: 1.7; margin-bottom: 20px; }
+        h4 {
+            font-size: 12px; font-weight: bold; letter-spacing: 0.07em;
+            text-transform: uppercase; color: var(--brand-2);
+            margin: 24px 0 10px;
+        }
+        ol.steps { padding-left: 22px; }
+        ol.steps li { color: var(--text-dim); line-height: 1.65; margin-bottom: 8px; }
+        .ctrl { border-top: 1px solid var(--border); padding: 13px 0; }
+        .ctrl b { color: #fff; display: block; margin-bottom: 3px; font-size: 15px; }
+        .ctrl span { color: var(--text-dim); font-size: 14.5px; line-height: 1.6; }
+        .note {
+            background: rgba(56,189,248,0.07);
+            border-left: 3px solid var(--brand-2);
+            padding: 11px 15px; margin-bottom: 10px;
+            color: var(--text-dim); font-size: 14.5px; line-height: 1.6;
+            border-radius: 0 6px 6px 0;
+        }
+        .closing { text-align: center; margin-top: 60px; }
+        .closing p { color: var(--text-dim); }
+        .closing a { color: var(--brand-2); }
+        @media (max-width: 560px) {
+            body { padding: 32px 14px; }
+            h1 { font-size: 26px; }
+            h2.part { font-size: 20px; }
+            .screen h3 { font-size: 18px; }
+        }
+        @media print {
+            /* background: none, not #fff - browsers do not print
+               background colours by default anyway, and a literal light
+               colour on body is the exact mistake test_theme.py guards
+               against. This drops the dark gradient so the paper shows
+               through even when background printing is switched on. */
+            body { background: none; color: #000; padding: 0; }
+            h1, h2.part, .screen h3, .ctrl b { color: #000; }
+            .who, .purpose, .ctrl span, ol.steps li, ol.week li, .note { color: #222; }
+            h4 { color: #444; }
+            .crumb, .closing, .site-footer, .contents { display: none; }
+            .screen { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <p class="crumb"><a href="/guide">&larr; All guides</a></p>
+
+    <h1>{{ plan.title }}</h1>
+    <p class="who">{{ plan.who }}</p>
+    <p class="print-hint">Print this page to keep a copy, or hand it to
+       somebody new. Every screen also has a <strong>?</strong> button that
+       says the same thing without leaving the screen.</p>
+
+    <h2 class="part">Your first week</h2>
+    <ol class="week">
+        {% for step in plan.first_week %}<li>{{ step }}</li>{% endfor %}
+    </ol>
+
+    <h2 class="part">Your screens</h2>
+    <div class="contents">
+        <ul>
+            {% for key, screen in screens %}
+            <li><a href="#{{ key }}">{{ loop.index }}. {{ screen.title }}</a></li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    {% for key, screen in screens %}
+    <div class="screen" id="{{ key }}">
+        <h3>{{ loop.index }}. {{ screen.title }}</h3>
+        <p class="where">{{ screen.where }}</p>
+        <p class="purpose">{{ screen.purpose }}</p>
+
+        <h4>The usual job</h4>
+        <ol class="steps">
+            {% for step in screen.steps %}<li>{{ step }}</li>{% endfor %}
+        </ol>
+
+        <h4>Every button on this screen</h4>
+        {% for control, effect in screen.controls %}
+        <div class="ctrl"><b>{{ control }}</b><span>{{ effect }}</span></div>
+        {% endfor %}
+
+        {% if screen.notes %}
+        <h4>Worth knowing</h4>
+        {% for note in screen.notes %}<p class="note">{{ note }}</p>{% endfor %}
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    <div class="closing">
+        <p>Anything this does not answer:
+           <a href="/guide">the FAQs</a> or
+           <a href="mailto:{{ support_email }}">{{ support_email }}</a>.</p>
+    </div>
+</div>
+{% include "_public_footer.html" %}
+</body>
+</html>
