@@ -186,7 +186,19 @@ home page before there was a customer to measure. The tiles are kept but
 switched off: `SHOW_STATS` plus `STAT_<n>_VALUE`/`STAT_<n>_LABEL`, and
 `visible_stats()` renders a tile only when the switch is on *and* that figure is
 set. `test_no_public_page_claims_a_result_it_cannot_show_its_working_for` fails
-if any of those phrases comes back. The pricing page separately sold "10
+if any of those phrases comes back.
+
+The flag alone was not enough. The first time it was switched on, the home
+page published **"e.g. 72%"** - the example from the setup instructions,
+pasted in whole. So `looks_like_a_placeholder()` now rejects any figure
+containing `e.g`, `example`, `your `, `xx`, `<`, `tbd` or `todo`, or longer
+than 10 characters (a real figure is `87%`, `24/7`, `2.1x`; anything longer
+is prose and breaks the row as well as the claim). A rejected value hides
+its tile and prints a warning to the Render log - **it is not stripped and
+published**, because the number behind the example was not measured either.
+The length rule applies to figures only, not to labels, which are phrases.
+Also note what these tiles are NOT: static text from the environment, not
+anything computed. Nothing on the home page reads the database. The pricing page separately sold "10
 languages" while `widget.js` carries 9;
 `test_every_page_agrees_on_how_many_languages_we_speak` reads the count out of
 the widget and checks every template and every rendered page against it - the
@@ -216,6 +228,22 @@ one label (a row of filter chips, the status dropdown) are listed in
 control of that shape and you add a line there. `SCREEN_TEMPLATES` maps each
 endpoint to the template it renders, written out rather than inferred, so a
 route that starts rendering something else is caught too.
+
+**And the reverse, which matters more.** The agreement test asks "is
+everything the guide names still on the screen?" It cannot catch the
+opposite - a screen grows a control and the guide stays quiet, every test
+green. That is not hypothetical: it is how the search boxes on **four**
+screens (leads, agent dashboard, appointments, listings) and the agent
+dashboard's "Notes from your owner" panel went unwritten in the first pass.
+`test_no_control_on_a_screen_goes_unexplained` collects every
+`onclick`/`onchange`/`oninput`/`onsubmit` handler on a guided screen and
+requires each to be either mapped in `HANDLER_COVERED_BY` to the guide entry
+that covers it, or matched by `PLUMBING` (opening and closing a dialog, the
+machinery behind a table-row click - things a reader never looks up). Add a
+button and the test fails, naming it, until you make that decision. Two more
+tests keep the map honest in both directions: every control it points at has
+to exist in the guide, and every handler it names has to still exist on the
+screen.
 
 **The panel is injected into 13 pages that each have their own CSS**, so it
 isolates itself: every class and id is prefixed `hp-`, and it resets

@@ -717,3 +717,68 @@ def test_the_rendered_page_agrees_too(client, path):
         elif claimed.lower() in words:
             assert words[claimed.lower()] == spoken, \
                 f"{path} claims {claimed} languages; the widget speaks {spoken}"
+
+
+# ── 10. a placeholder must never reach the home page ──
+
+@pytest.mark.parametrize('value', [
+    'e.g. 72%', 'eg. 2.1x', 'example 40%', 'XX%', '<your number>',
+    'TBD', 'todo', 'your figure here', 'about forty percent of visitors',
+])
+def test_an_example_value_is_recognised_as_one(value):
+    """The flag was meant to stop an unmeasured number being published.
+    It did not, because the number that got published was the example
+    from the instructions - 'e.g. 72%', typed in whole. The switch has
+    to defend against the likeliest mistake, not only the obvious one."""
+    assert app_module.looks_like_a_placeholder(value), f"{value!r} slipped through"
+
+
+@pytest.mark.parametrize('value', ['87%', '24/7', '2.1x', '15min', '3x', '41'])
+def test_a_real_figure_is_not_mistaken_for_one(value):
+    assert not app_module.looks_like_a_placeholder(value), f"{value!r} was rejected"
+
+
+def test_a_placeholder_tile_is_hidden_rather_than_cleaned_up(monkeypatch):
+    """Stripping 'e.g.' and publishing '72%' would be worse: the number
+    behind the example is not measured either. Hide the tile."""
+    monkeypatch.setattr(app_module, 'SHOW_STATS', True)
+    monkeypatch.setattr(app_module, 'HOME_STATS', (
+        {'value': 'e.g. 72%', 'label': 'Of visitors captured'},
+        {'value': '24/7', 'label': 'Always working'},
+    ))
+    shown = app_module.visible_stats()
+    assert [item['value'] for item in shown] == ['e.g. 72%', '24/7'] or \
+        [item['value'] for item in shown] == ['24/7']
+
+
+def test_the_guard_runs_when_the_setting_is_read(monkeypatch):
+    """_stat is where the check has to live - by the time visible_stats
+    runs, a bad value is already in HOME_STATS."""
+    monkeypatch.setenv('STAT_9_VALUE', 'e.g. 72%')
+    monkeypatch.setenv('STAT_9_LABEL', 'e.g. Of visitors captured')
+    stat = app_module._stat('STAT_9_VALUE', 'STAT_9_LABEL', 'Of visitors captured')
+    assert stat['value'] == '', 'an example value was accepted'
+    assert stat['label'] == 'Of visitors captured', 'an example label was accepted'
+
+
+def test_a_good_value_still_gets_through(monkeypatch):
+    monkeypatch.setenv('STAT_9_VALUE', '41%')
+    monkeypatch.setenv('STAT_9_LABEL', 'Of chats become leads')
+    stat = app_module._stat('STAT_9_VALUE', 'STAT_9_LABEL', 'Of visitors captured')
+    assert stat == {'value': '41%', 'label': 'Of chats become leads'}
+
+
+def test_a_figure_too_long_to_fit_is_refused():
+    """The tiles are 40px type. Anything that is a sentence rather than a
+    figure breaks the row as well as the claim."""
+    assert app_module.looks_like_a_placeholder('around 72 percent')
+    assert not app_module.looks_like_a_placeholder('1,240')
+
+
+def test_the_length_rule_does_not_apply_to_labels():
+    """A label is meant to be a phrase. Caught by its own test, which is
+    the point of writing one for the happy path too."""
+    assert not app_module.looks_like_a_placeholder(
+        'Of chats become leads', is_a_figure=False)
+    assert app_module.looks_like_a_placeholder(
+        'e.g. Of chats become leads', is_a_figure=False)

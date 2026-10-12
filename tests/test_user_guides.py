@@ -10,6 +10,7 @@ the controls named across the guides and looks for its words in the
 template that renders that screen. Rename a button and the guide for it
 fails, by name, with the words it could not find.
 """
+import html
 import os
 import re
 
@@ -76,6 +77,10 @@ GROUP_SAMPLES = {
     'Leads Per Day - Last 30 Days': 'Leads Per Day',
     'New Password / Confirm New Password': 'confirm_password',
     'Coverage area': 'Coverage area',
+    '📋 Notes from your owner': 'owner-notes-toggle',
+    'Search name, email, budget': 'Search name, email, budget',
+    'Search listings': 'Search listings',
+    'Status dropdown on a viewing': 'updateApptStatus',
     'Assigned Leads': 'Assigned Leads',
     'Viewings': 'Viewings',
     'Email': 'Email',
@@ -90,9 +95,9 @@ def template_text(name):
 
 
 def searchable(text):
-    """Templates escape & as &amp;, and a guide spells out what a reader
-    sees. Normalise both sides before comparing."""
-    text = text.replace('&amp;', '&').replace('&rarr;', '→')
+    """Templates escape &, < and > as entities, and a guide spells out
+    what a reader sees. Normalise both sides before comparing."""
+    text = html.unescape(text).replace('&rarr;', '→')
     return re.sub(r'\s+', ' ', text)
 
 
@@ -326,3 +331,136 @@ def test_nothing_tells_the_reader_to_look_in_the_wrong_place():
         if '?' in answer and 'button' in answer:
             assert 'header' not in answer.lower(), \
                 f"'{question}' says the help button is in the header"
+
+
+# ── the reverse check: a screen cannot grow a button in silence ──
+
+# The agreement test above asks "is everything the guide names still on
+# the screen?". It cannot catch the opposite: a screen grows a control
+# and the guide stays quiet, with every test still green. That is not
+# hypothetical - it is how the Listings search box and the agent
+# dashboard's "Notes from your owner" panel went unwritten.
+#
+# So: every event handler wired to a control on these screens has to be
+# accounted for here. Either it maps to the guide entry that covers it,
+# or it is named as plumbing a reader never needs. Adding a button now
+# forces that decision rather than allowing silence.
+HANDLER_COVERED_BY = {
+    'owner_login': {'handleSubmit': 'Login to Dashboard'},
+    'agent_login': {},
+    'forgot_password': {},
+    'reset_password': {},
+    'admin': {
+        'toggleFeed': '🔔 Latest updates',
+        'filterByQuality': 'Quality filter row',
+        'filterByStatus': 'Status filter row',
+        'filterByType': 'Type filter row',
+        'openModal': '👁 View, or clicking the row',
+        'updateStatus': 'Status buttons inside a lead',
+        'addNote': '+ Add (Notes)',
+        'deleteNote': '🗑️ Remove (on a note)',
+        'deleteLead': '🗑️ (on a lead row)',
+        'bulkDelete': 'Delete Selected',
+        'clearAllLeads': '🗑️ Clear All Leads',
+        'openChangePassword': '🔑 Change Password',
+        'submitChangePassword': '🔑 Change Password',
+        'clearSelection': 'Delete Selected',
+        'searchLeads': 'Search name, email, budget',
+    },
+    'agents_page': {
+        'openAddModal': '+ Add Agent',
+        'submitAgent': '+ Add Agent',
+        'openEditAgent': '✏️ Edit',
+        'toggleAgent': '⏸ Disable',
+        'deleteAgent': '🗑️',
+    },
+    'agent_detail': {},
+    'appointments': {
+        'openNewApptModal': '+ New Appointment',
+        'submitNewAppt': '+ New Appointment',
+        'saveCapacity': 'Max viewings per slot (Save)',
+        'filterAppts': 'Filter row',
+        'searchAppts': 'Search by name or email',
+        'reassignAppt': '👤 Agent dropdown on a viewing',
+        'updateApptStatus': '📋 Status dropdown on a viewing',
+        'openFollowup': '📅 Book another viewing',
+        'submitFollowup': '📅 Book another viewing',
+        'deleteAppt': '🗑️ on a viewing',
+    },
+    'listings': {
+        'openAddModal': '+ Add Listing',
+        'submitAddListing': '+ Add Listing',
+        'openUploadModal': '📂 Upload CSV',
+        'submitUpload': '📂 Upload CSV',
+        'filterListings': 'Filter row',
+        'searchListings': 'Search listings',
+        'reviewListing': '✅ Approve & publish',
+        'updateStatus': '⏳ Pending / 🏷️ Sold / ✅ Available / ↩ Re-list',
+        'deleteListing': '🗑️ on a listing',
+        'deleteAllListings': '🗑️ Clear All',
+        'handleFileSelect': '📂 Upload CSV',
+    },
+    'analytics': {},
+    'agency_profile': {'saveProfile': '💾 Save Changes'},
+    'agent_dashboard': {
+        'toggleFeed': '🔔 Latest updates',
+        'togglePanel': '📋 Notes from your owner',
+        'filterLeads': 'Quality, Status and Type filter rows',
+        'openModal': '👁 View, or clicking a row',
+        'updateStatus': 'Status buttons inside a lead',
+        'addNote': 'Notes',
+        'addApptNote': '📝 Add Note (on an appointment)',
+        'applyLeadFilters': 'Search name, email, budget',
+        'updateApptStatus': 'Status dropdown on a viewing',
+        'openFollowup': '📅 Book Another Viewing',
+        'submitFollowup': '📅 Book Another Viewing',
+        'openChangePassword': '🔑 Password',
+        'submitChangePassword': '🔑 Password',
+    },
+    'agent_profile': {},
+}
+
+# Opening and closing a dialog, and the machinery behind a click on a
+# table row. A reader never looks these up.
+PLUMBING = re.compile(
+    r'^(close\w*|closeModal\w*|closeOnOverlay|closeModalOnOverlay|'
+    r'closeFollowup\w*|closeChangePassword|handleRowClick|toggleSelectAll|'
+    r'event|escapeHtml|applyFilters|updateBulkBar)$')
+
+
+def control_handlers(markup):
+    names = set(re.findall(r'on(?:click|change|input|submit)="([a-zA-Z_]\w*)\(',
+                           markup))
+    return {name for name in names if not PLUMBING.match(name)}
+
+
+@pytest.mark.parametrize('key', sorted(SCREEN_TEMPLATES))
+def test_no_control_on_a_screen_goes_unexplained(key):
+    """Add a button to one of these screens and this fails until you
+    either write it into guides.py or declare it plumbing."""
+    handlers = control_handlers(template_text(SCREEN_TEMPLATES[key]))
+    known = HANDLER_COVERED_BY[key]
+    unaccounted = sorted(handlers - set(known))
+    assert unaccounted == [], (
+        f"{SCREEN_TEMPLATES[key]} has controls no guide explains: "
+        f"{unaccounted}. Add each to guides.py and map it in "
+        f"HANDLER_COVERED_BY, or add it to PLUMBING.")
+
+
+@pytest.mark.parametrize('key', sorted(SCREEN_TEMPLATES))
+def test_the_handler_map_points_at_controls_that_exist(key):
+    """The map is only worth having if its right-hand side is real. A
+    stale entry would silently excuse a control nobody describes."""
+    named = {control for control, _ in guide_data.GUIDES[key]['controls']}
+    for handler, control in HANDLER_COVERED_BY[key].items():
+        assert any(control in actual for actual in named), (
+            f"{key}: '{handler}' is mapped to '{control}', which is not a "
+            f"control in its guide")
+
+
+@pytest.mark.parametrize('key', sorted(SCREEN_TEMPLATES))
+def test_the_handler_map_has_no_entries_for_vanished_controls(key):
+    handlers = control_handlers(template_text(SCREEN_TEMPLATES[key]))
+    stale = sorted(set(HANDLER_COVERED_BY[key]) - handlers)
+    assert stale == [], \
+        f"{SCREEN_TEMPLATES[key]} no longer has: {stale} - tidy the map"

@@ -156,10 +156,40 @@ SHOW_TIER_3 = os.getenv('SHOW_TIER_3', 'false').strip().lower() == 'true'
 SHOW_STATS = os.getenv('SHOW_STATS', 'false').strip().lower() == 'true'
 
 
+# Words that mean "this is not a real figure". A value carrying one of
+# these is a placeholder somebody pasted from an example and never
+# replaced - which is exactly what happened the first time these were
+# switched on, and the home page spent a day advertising "e.g. 72%".
+# A hidden tile is recoverable; a published placeholder is not.
+PLACEHOLDER_MARKS = ('e.g', 'eg.', 'example', 'your ', 'xx', '<', '>',
+                     'tbd', 'todo', 'placeholder')
+
+
+def looks_like_a_placeholder(value, is_a_figure=True):
+    """The length rule is for figures only. A label is meant to be a
+    phrase - 'Of chats become leads' is a perfectly good one."""
+    lowered = value.lower()
+    if any(mark in lowered for mark in PLACEHOLDER_MARKS):
+        return True
+    # A real figure is short: "87%", "24/7", "2.1x", "15min". Anything
+    # long is prose, and prose breaks the layout as well as the claim.
+    return is_a_figure and len(value) > 10
+
+
 def _stat(env_value, env_label, fallback_label):
     value = (os.getenv(env_value) or '').strip()
-    return {'value': value,
-            'label': (os.getenv(env_label) or fallback_label).strip()}
+    if value and looks_like_a_placeholder(value):
+        print(f"⚠️  {env_value}={value!r} looks like an example, not a "
+              f"measured figure - that tile is hidden. Set it to the number "
+              f"itself, e.g. the two characters 7 and 2 followed by a "
+              f"percent sign, with nothing in front of them.")
+        value = ''
+    label = (os.getenv(env_label) or '').strip()
+    if label and looks_like_a_placeholder(label, is_a_figure=False):
+        print(f"⚠️  {env_label}={label!r} looks like an example - using the "
+              f"default label instead.")
+        label = ''
+    return {'value': value, 'label': label or fallback_label}
 
 
 HOME_STATS = (
@@ -6069,6 +6099,56 @@ FEATURES = (
              'spread of lead quality scores.'),
             ('Can I export my leads?',
              'Yes, to a spreadsheet, at any time.'),
+        ),
+        'plans': 'both',
+    },
+    {
+        'slug': 'crm-webhook',
+        'icon': '🔗',
+        'name': 'Straight into your CRM',
+        'card': 'Every qualifying lead posted to your CRM as it is '
+                'captured, not at the end of the day.',
+        'description': 'Send every qualified real estate lead straight to '
+                       'HubSpot, Follow Up Boss, Zapier or Make.com by webhook, '
+                       'the moment it is captured.',
+        'summary': 'If your team already works out of a CRM, a lead that only '
+                   'exists in an email is a lead somebody has to retype. Paste '
+                   'one address into your Analytics page and every qualifying '
+                   'lead is posted to it as JSON the moment it is captured.',
+        'points': (
+            ('One field, no integration to build',
+             'Your CRM or automation tool gives you a webhook address. Paste '
+             'it on the Analytics page and save. Nothing else to configure, '
+             'no API key to manage.'),
+            ('Works with what you already use',
+             'HubSpot, Follow Up Boss, Zapier and Make.com all accept a '
+             'webhook, and so does anything else that can receive a POST. '
+             'From Zapier or Make you can route the lead onwards to almost '
+             'anything.'),
+            ('What arrives',
+             'The lead\'s name, email, phone and WhatsApp number, which they '
+             'prefer to be contacted on, their budget, the summary of what '
+             'they asked for, the star rating and the time it was captured - '
+             'with your agency\'s name and number alongside it.'),
+            ('It does not replace your email alert',
+             'Both go out. If your webhook is down, the lead is still in your '
+             'inbox and on your dashboard - nothing is lost. A failed post is '
+             'not retried, so a CRM that was offline will have a gap your '
+             'dashboard does not.'),
+        ),
+        'answers': (
+            ('Can I send leads straight to my CRM?',
+             'Yes. Put your webhook address on the Analytics page and every '
+             'qualifying lead is posted to it as JSON the moment it is '
+             'captured.'),
+            ('Which CRMs does it work with?',
+             'Anything that accepts a webhook - HubSpot, Follow Up Boss, '
+             'Zapier and Make.com among them. There is no integration to '
+             'install; you paste one address.'),
+            ('What happens if my CRM is down?',
+             'The lead is still saved and still emailed to you. A failed post '
+             'is not retried, so compare against your dashboard if your CRM '
+             'had an outage.'),
         ),
         'plans': 'both',
     },

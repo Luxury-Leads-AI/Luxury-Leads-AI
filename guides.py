@@ -203,6 +203,10 @@ GUIDES = {
             ('Type filter row (Everyone / Buyers / Sellers)',
              'A seller is somebody who offered you a property through the '
              'chat rather than asking about one.'),
+            ('Search name, email, budget',
+             'Filters the table as you type, alongside whatever filters are '
+             'already on. This is how you find somebody who has just rung '
+             'you, without scrolling.'),
             ('👁 View, or clicking the row',
              'Opens the lead: their details, the star rating with the reason '
              'for it, what the assistant learned, their appointments, and '
@@ -375,8 +379,12 @@ GUIDES = {
              'emailed about it.'),
             ('👤 Agent dropdown on a viewing',
              'Moves that viewing to a different agent, or to Unassigned. It '
-             'saves as soon as you pick. Agency plan only - a solo account '
-             'has nobody to reassign to.'),
+             'saves as soon as you pick - there is no save button. If that '
+             'agent already has a booking at the same time it is refused and '
+             'says so, so you cannot double-book somebody by accident. Both '
+             'agents are told: the one who gained the viewing and the one '
+             'who lost it, each in their own Latest updates. Agency plan '
+             'only - a solo account has nobody to reassign to.'),
             ('Max viewings per slot (Save)',
              'How many viewings may share one time slot before the assistant '
              'stops offering it. Raise it if you are turning people away, '
@@ -427,6 +435,10 @@ GUIDES = {
             ('Filter row (All / Available / Pending / Sold)',
              'Narrows the list on screen. It changes nothing about the '
              'properties themselves.'),
+            ('Search listings',
+             'Filters the list as you type, and works alongside whichever '
+             'status filter is on. Quicker than scrolling once you have more '
+             'than a screenful of stock.'),
             ('+ Add Listing',
              'Title is required; price, type, location, bedrooms, bathrooms, '
              'features and description are optional but every one you fill '
@@ -563,6 +575,9 @@ GUIDES = {
             ('Quality, Status and Type filter rows',
              'Narrow the list in front of you. They combine, and they change '
              'nothing about the leads themselves.'),
+            ('Search name, email, budget',
+             'Filters your leads as you type, alongside whichever filters are '
+             'on. The quickest way to find somebody who has just rung you.'),
             ('👁 View, or clicking a row',
              'Opens the lead: contact details, budget, timeline, the star '
              'rating and why, the transcript, and the notes.'),
@@ -575,8 +590,17 @@ GUIDES = {
             ('📅 Book Another Viewing',
              'Books the next viewing for a customer you have already seen, '
              'without retyping their details.'),
+            ('Status dropdown on a viewing',
+             'The one control that carries a viewing through its life: '
+             'pending, confirmed, viewing done, then how it went - wants to '
+             'buy, other options, not interested - or cancelled. It saves the '
+             'moment you pick, and your owner sees it.'),
             ('📝 Add Note (on an appointment)',
              'Records what happened at that viewing.'),
+            ('📋 Notes from your owner',
+             'Appears on a viewing whose lead your owner has written notes '
+             'on. Opens them. Worth a look before you go - it is where '
+             'anything they learned on the phone will be.'),
             ('⚙️ Profile',
              'Your name, email and coverage area.'),
             ('🔑 Password',
