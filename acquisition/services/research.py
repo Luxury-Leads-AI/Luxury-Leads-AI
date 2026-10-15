@@ -171,12 +171,49 @@ def whatsapp_in(html):
 
 
 def widget_in(html):
-    """Which chat widget, if any, this page loads."""
+    """Which hosted chat product, if any, this page loads."""
     lowered = (html or '').lower()
     for name, signs in WIDGETS:
         if any(sign in lowered for sign in signs):
             return name
     return ''
+
+
+# Click-to-chat: a button that hands the visitor off to a messaging app
+# rather than running a chat on the page. It looks the same to a visitor -
+# a round button in the corner - which is why it was being missed. It is
+# not the same thing commercially: nobody is paying for software, and
+# nothing answers while the agent is asleep.
+CLICK_TO_CHAT = (
+    ('WhatsApp', ('wa.me/', 'api.whatsapp.com/send', 'web.whatsapp.com/send')),
+    ('Facebook Messenger', ('m.me/',)),
+    ('Telegram', ('t.me/',)),
+)
+
+
+def click_to_chat_in(html):
+    """Which messaging app this page hands visitors off to, if any."""
+    lowered = (html or '').lower()
+    for name, signs in CLICK_TO_CHAT:
+        if any(sign in lowered for sign in signs):
+            return name
+    return ''
+
+
+def chat_on(html):
+    """What chat this page offers, and of which kind.
+
+    Returns (name, kind) where kind is 'hosted', 'click_to_chat' or
+    'none'. A hosted product wins when both are present: an agency
+    running Intercom AND a WhatsApp button is an Intercom customer.
+    """
+    hosted = widget_in(html)
+    if hosted:
+        return hosted, 'hosted'
+    handoff = click_to_chat_in(html)
+    if handoff:
+        return f'{handoff} click-to-chat', 'click_to_chat'
+    return '', 'none'
 
 
 def has_contact_form(html):

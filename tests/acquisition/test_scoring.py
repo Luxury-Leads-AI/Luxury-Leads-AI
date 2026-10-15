@@ -380,3 +380,132 @@ def test_an_unknown_weight_key_is_ignored(client):
     weights, _ = handlers.wanted_weights()
     assert weights['chat_widget'] == 30
     assert 'vibes' not in weights
+
+
+# ── the bug Moaz found by opening a real website ──
+#
+# Research records `chat_widget` as the literal string 'none seen' when a
+# site has no chat. The scorer had no case for it, so it fell through to
+# the default and awarded the full 22 points - the largest signal in the
+# model - for having no chat at all, with the reasoning line reading
+# "already runs a chat widget (none seen)". The damage was not the
+# inflated number but that the signal was CONSTANT across every
+# prospect, so the biggest weight contributed nothing to the ranking.
+#
+# The test meant to cover this compared 'Tawk.to' against an EMPTY
+# string, which research never writes. A test using a value the system
+# cannot produce proves nothing. These use the real ones.
+
+SENTINELS = ('none seen', 'none', 'None', '')
+
+
+@pytest.mark.parametrize('sentinel', SENTINELS)
+def test_no_chat_earns_no_chat_points(sentinel):
+    result = scoring.score_prospect(
+        [FakeFact('chat_widget', sentinel), FakeFact('chat_kind', 'none')], [])
+    line = [l for l in result['breakdown'] if l['signal'] == 'chat_widget'][0]
+    assert line['points'] == 0, \
+        f"an agency with no chat earned {line['points']} points for it"
+
+
+@pytest.mark.parametrize('sentinel', SENTINELS)
+def test_no_signal_anywhere_is_ever_read_as_a_yes(sentinel):
+    """The same mistake could be made in any branch. Sweep all of them -
+    which is how the identical hole in enquiry_routes was found."""
+    for field in scoring.DEFAULT_WEIGHTS:
+        result = scoring.score_prospect([FakeFact(field, sentinel)], [])
+        line = [l for l in result['breakdown'] if l['signal'] == field][0]
+        assert line['points'] == 0, \
+            f"{field}={sentinel!r} earned {line['points']} points"
+
+
+def test_a_blank_says_what_is_missing_rather_than_shrugging():
+    result = scoring.score_prospect([FakeFact('price_band', 'none seen')], [])
+    line = [l for l in result['breakdown'] if l['signal'] == 'price_band'][0]
+    assert line['why'] == 'no prices published'
+
+
+def test_the_reasoning_never_claims_something_the_fact_denies():
+    """'already runs a chat widget (none seen)' is how this was spotted -
+    a line a person could read and know was wrong."""
+    result = scoring.score_prospect(
+        [FakeFact('chat_widget', 'none seen'), FakeFact('chat_kind', 'none')], [])
+    line = [l for l in result['breakdown'] if l['signal'] == 'chat_widget'][0]
+    assert 'none seen' not in line['why']
+    assert 'already runs' not in line['why']
+
+
+def test_an_agency_with_no_chat_ranks_below_one_with_a_whatsapp_button():
+    """The ordering that was wrong: these two scored the same 22."""
+    nothing = scoring.score_prospect(
+        [FakeFact('chat_widget', 'none seen'), FakeFact('chat_kind', 'none')], [])
+    button = scoring.score_prospect(
+        [FakeFact('chat_widget', 'WhatsApp click-to-chat'),
+         FakeFact('chat_kind', 'click_to_chat')], [])
+    hosted = scoring.score_prospect(
+        [FakeFact('chat_widget', 'Intercom'), FakeFact('chat_kind', 'hosted')], [])
+    assert nothing['fit'] < button['fit'] < hosted['fit']
+
+
+# ── click-to-chat: the WhatsApp button on thehofmangroup.com ──
+
+def test_a_whatsapp_button_counts_as_chat():
+    """It looks identical to a visitor - a round button in the corner -
+    and the engine was calling it 'no chat'."""
+    result = scoring.score_prospect(
+        [FakeFact('chat_widget', 'WhatsApp click-to-chat'),
+         FakeFact('chat_kind', 'click_to_chat')], [])
+    line = [l for l in result['breakdown'] if l['signal'] == 'chat_widget'][0]
+    assert line['points'] > 0
+
+
+def test_a_whatsapp_button_is_worth_less_than_paid_software():
+    """They want to chat, but nobody is paying for software and nothing
+    answers overnight. Less proof of budget, and a different pitch."""
+    button = scoring.score_prospect(
+        [FakeFact('chat_widget', 'WhatsApp click-to-chat'),
+         FakeFact('chat_kind', 'click_to_chat')], [])
+    hosted = scoring.score_prospect(
+        [FakeFact('chat_widget', 'Intercom'), FakeFact('chat_kind', 'hosted')], [])
+    assert button['fit'] < hosted['fit']
+
+
+def test_the_reasoning_gives_phase_five_a_different_thing_to_say():
+    """The whole reason for splitting the two kinds: the opening line of
+    an email to each of these agencies is not the same sentence."""
+    button = scoring.score_prospect(
+        [FakeFact('chat_widget', 'WhatsApp click-to-chat'),
+         FakeFact('chat_kind', 'click_to_chat')], [])
+    why = [l for l in button['breakdown'] if l['signal'] == 'chat_widget'][0]['why']
+    assert 'awake' in why, 'the line says nothing a draft could use'
+    assert 'worth paying for' not in why, 'that is the hosted-widget line'
+
+
+def test_a_hosted_widget_wins_when_a_site_has_both():
+    """An agency running Intercom and also showing a WhatsApp link is an
+    Intercom customer, and should be written to as one."""
+    from acquisition.services import research as reading
+    markup = ('<script src="https://widget.intercom.io/widget/abc"></script>'
+              '<a href="https://wa.me/15551234">Chat on WhatsApp</a>')
+    assert reading.chat_on(markup) == ('Intercom', 'hosted')
+
+
+@pytest.mark.parametrize('markup,expected', [
+    ('<a href="https://wa.me/17868633151?text=Hi">WhatsApp</a>',
+     ('WhatsApp click-to-chat', 'click_to_chat')),
+    ('<a href="https://api.whatsapp.com/send?phone=1786">chat</a>',
+     ('WhatsApp click-to-chat', 'click_to_chat')),
+    ('<a href="https://m.me/someagency">Messenger</a>',
+     ('Facebook Messenger click-to-chat', 'click_to_chat')),
+    ('<p>no chat here</p>', ('', 'none')),
+])
+def test_click_to_chat_is_recognised_in_its_usual_shapes(markup, expected):
+    from acquisition.services import research as reading
+    assert reading.chat_on(markup) == expected
+
+
+def test_research_records_the_kind_so_scoring_need_not_read_prose(client):
+    """chat_kind is its own fact. Parsing 'WhatsApp click-to-chat' out of
+    a sentence is the sort of thing that breaks when wording changes."""
+    from acquisition.jobs.handlers import FACT_LABELS
+    assert 'chat_kind' in FACT_LABELS

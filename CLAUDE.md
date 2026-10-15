@@ -516,6 +516,37 @@ Unparseable JSON and unknown keys fall back rather than scoring on nothing.
 confidence — rendered as a table on the prospect page. It is not decoration:
 it is the only reason to trust the number.
 
+**Chat comes in two kinds, and they are different sales.** A hosted product
+(`chat_kind: hosted`) means somebody is paying for chat software: the pitch is
+a comparison. A **click-to-chat button** (`click_to_chat`) — a `wa.me`, `m.me`
+or `t.me` link styled as a floating bubble — looks identical to a visitor but
+means nobody is paying for anything and nothing answers while the agent is
+asleep, which is the pitch almost word for word. It earns
+`CLICK_TO_CHAT_SHARE` (0.7) of the hosted points, and its reasoning line says
+something different so Phase 5 can open the email differently. `chat_on()` in
+`services/research.py` returns `(name, kind)` and a hosted product wins when a
+site has both: an agency running Intercom *and* showing a WhatsApp link is an
+Intercom customer.
+
+**The sentinel bug, and the shape of it.** Research records `chat_widget` as
+the literal string `'none seen'` rather than leaving it empty. The scorer had
+no case for that, so it fell through to the default and awarded **the full 22
+points — the largest signal in the model — for having no chat at all**, with
+the reasoning line reading "already runs a chat widget (none seen)". The
+effect was worse than an inflated number: the chat signal was *constant* across
+every prospect, so the largest weight in the model contributed nothing to the
+ranking. Moaz found it by opening a prospect's website and reading the page.
+
+Two things came out of it. `means_nothing()` gates **every** signal against a
+shared `SENTINELS` list once, at the top of the loop, rather than per branch —
+the sweep that added it immediately found the same hole in `enquiry_routes`.
+And the test that was supposed to cover this compared `'Tawk.to'` against an
+**empty string**, which research never writes: a test using a value the system
+cannot produce proves nothing.
+`test_no_signal_anywhere_is_ever_read_as_a_yes` now sweeps every weighted field
+against every sentinel, and `NOTHING_REASONS` gives each blank a line a person
+can act on ("no prices published") instead of a shrug.
+
 ## Architecture
 
 **Single-file backend** — all Flask routes, DB models, AI logic, and email are in `app.py`. There are no blueprints. The one other module, `guides.py`, is pure content (the user guides as data) with no imports, no logic and no database access; `app.py` reads it and owns every route.

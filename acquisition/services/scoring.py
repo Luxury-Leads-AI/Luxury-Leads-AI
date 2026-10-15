@@ -57,6 +57,24 @@ DEFAULT_WEIGHTS = {
 # what sorts the list.
 DEFAULT_THRESHOLDS = {'strong': 65, 'worth_a_look': 40}
 
+# What a click-to-chat button earns, as a share of a hosted widget's
+# points. They look identical to a visitor; commercially they are not.
+CLICK_TO_CHAT_SHARE = 0.7
+
+# What a blank means for each signal, so the reasoning says something a
+# person can act on rather than a shrug.
+NOTHING_REASONS = {
+    'chat_widget': 'no chat on the site at all',
+    'enquiry_routes': 'no way to contact them found on the site',
+    'luxury_positioning': 'the site does not say how it positions itself',
+    'price_band': 'no prices published',
+    'languages': 'one language, or none declared',
+    'offices': 'no offices listed',
+    'booking_link': 'no online booking',
+    'whatsapp': 'no WhatsApp number',
+    'property_types': 'no property types listed',
+}
+
 BAND_LABELS = {
     'strong': 'Strong fit',
     'worth_a_look': 'Worth a look',
@@ -76,6 +94,23 @@ KNOWN_WIDGETS = (
 # market. Matched on the lowercased value.
 LUXURY_WORDS = ('luxury', 'prime', 'premium', 'exclusive', 'high-end',
                 'high end', 'bespoke', 'prestige', 'finest', 'elite')
+
+
+# What research writes into a fact to mean "there is nothing here".
+# `chat_widget` is recorded as the literal 'none seen' rather than left
+# empty, and a scorer with no case for that awarded the full points for
+# having no chat at all - the largest signal in the model - with the
+# reasoning line reading "already runs a chat widget (none seen)". The
+# effect was worse than an inflated number: the signal was constant
+# across every prospect, so the biggest weight contributed nothing to
+# the ranking. Moaz found it by opening a prospect's website.
+# The gate lives here, once, rather than in each branch, because the
+# next sentinel will not announce itself either.
+SENTINELS = ('none seen', 'none', 'not found', 'nothing', 'n/a', '-')
+
+
+def means_nothing(value):
+    return (value or '').strip().lower() in SENTINELS
 
 
 def _facts_by_field(facts):
@@ -121,15 +156,34 @@ def score_facts(facts, weights=None):
                           'why': 'nothing found', 'source': None,
                           'confidence': None})
             continue
+        if means_nothing(fact.value):
+            lines.append({'signal': field, 'points': 0, 'of': full,
+                          'why': NOTHING_REASONS.get(field, 'nothing found'),
+                          'source': fact.source_url,
+                          'confidence': fact.confidence})
+            continue
 
         value = fact.value.strip()
         points, why = full, 'present'
 
         if field == 'chat_widget':
-            named = [name for name in KNOWN_WIDGETS if name in value.lower()]
-            why = (f"already runs {value} - they have decided chat is worth "
-                   f"paying for" if named else
-                   f"already runs a chat widget ({value})")
+            kind = (found.get('chat_kind').value
+                    if found.get('chat_kind') else 'hosted')
+            if kind == 'click_to_chat':
+                # A button that hands the visitor to WhatsApp looks the
+                # same as a chat widget and means something different.
+                # They want to talk to visitors, but nobody is paying for
+                # software and nothing answers while they are asleep -
+                # which is the pitch, almost word for word. Worth most of
+                # the points, not all: less proof of budget.
+                points = full * CLICK_TO_CHAT_SHARE
+                why = (f"has a {value} button - they want to chat, but it "
+                       f"only works while somebody is awake to answer")
+            else:
+                named = [name for name in KNOWN_WIDGETS if name in value.lower()]
+                why = (f"already runs {value} - they have decided chat is "
+                       f"worth paying for" if named else
+                       f"already runs a chat widget ({value})")
         elif field == 'enquiry_routes':
             count = _count_in(value)
             points = min(full, full * count / 3.0)

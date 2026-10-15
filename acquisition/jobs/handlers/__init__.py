@@ -214,6 +214,7 @@ AI_KEYS = ('luxury', 'price_band', 'property_types', 'languages', 'offices',
 # the extractor cannot drift apart.
 FACT_LABELS = {
     'chat_widget': 'Chat widget',
+    'chat_kind': 'Kind of chat',
     'enquiry_routes': 'How enquiries reach them',
     'phone': 'Phone',
     'whatsapp': 'WhatsApp',
@@ -295,7 +296,8 @@ def facts_from_markup(prospect, pages):
     """Everything learnable for free, and where each thing was seen."""
     domain = prospect.canonical_domain
     signals = {'emails': [], 'phones': [], 'whatsapp': [], 'form': False,
-               'booking': '', 'languages': [], 'widget': '', 'sources': {}}
+               'booking': '', 'languages': [], 'widget': '',
+               'chat_kind': 'none', 'sources': {}}
 
     for url, html in pages:
         for address in reading.emails_in(html, domain):
@@ -318,11 +320,15 @@ def facts_from_markup(prospect, pages):
             if link:
                 signals['booking'] = link
                 signals['sources'].setdefault('booking', url)
-        if not signals['widget']:
-            name = reading.widget_in(html)
-            if name:
+        # A hosted product beats a click-to-chat button found earlier: an
+        # agency running Intercom AND a WhatsApp link is an Intercom
+        # customer. Hence the re-check rather than a plain `if not`.
+        if signals['chat_kind'] != 'hosted':
+            name, kind = reading.chat_on(html)
+            if name and (signals['chat_kind'] == 'none' or kind == 'hosted'):
                 signals['widget'] = name
-                signals['sources'].setdefault('widget', url)
+                signals['chat_kind'] = kind
+                signals['sources']['widget'] = url
         for code in reading.languages_in(html):
             if code not in signals['languages']:
                 signals['languages'].append(code)
@@ -364,6 +370,9 @@ def research(job, payload):
 
     record_fact(prospect, 'chat_widget', signals['widget'] or 'none seen',
                 'verified', where.get('widget', home_url), 'rules')
+    # The kind, as its own fact, so scoring does not have to read prose.
+    record_fact(prospect, 'chat_kind', signals['chat_kind'],
+                'verified', where.get('widget', home_url), 'rules')
     record_fact(prospect, 'enquiry_routes', reading.routes_from(signals),
                 'verified', home_url, 'rules')
     record_fact(prospect, 'phone', signals['phones'], 'verified',
@@ -393,6 +402,7 @@ def research(job, payload):
     return {'prospect_id': prospect.id, 'domain': prospect.canonical_domain,
             'pages': len(pages), 'emails': len(signals['emails']),
             'widget': signals['widget'] or 'none seen',
+            'chat_kind': signals['chat_kind'],
             'routes': reading.routes_from(signals),
             'ai': model_used or 'skipped', 'note': note}
 
