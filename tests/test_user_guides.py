@@ -94,6 +94,11 @@ def template_text(name):
         return handle.read()
 
 
+def panel_css():
+    panel = template_text('_help_panel.html')
+    return panel.split('<style>')[1].split('</style>')[0]
+
+
 def searchable(text):
     """Templates escape &, < and > as entities, and a guide spells out
     what a reader sees. Normalise both sides before comparing."""
@@ -296,6 +301,64 @@ def test_the_panel_ids_are_prefixed_too():
     ids = set(re.findall(r'\bid="([^"]+)"', panel))
     stray = {name for name in ids if not name.startswith('hp-')}
     assert stray == set(), f"unprefixed ids in the help panel: {stray}"
+
+
+def test_the_help_button_states_its_whole_box_model():
+    """Six of these pages style every button with padding:14px. A fixed
+    54px circle that inherits that, with no box-sizing, is 82px wide with
+    the glyph shoved into the corner - which is exactly what shipped."""
+    css = panel_css()
+    rule = re.search(r'\.hp-open\s*\{([^}]*)\}', css).group(1)
+    for required in ('box-sizing', 'padding', 'margin', 'width', 'height'):
+        assert required in rule, f".hp-open does not state its own {required}"
+    assert re.search(r'padding:\s*0', rule), '.hp-open inherits page padding'
+    assert 'border-box' in rule
+
+
+def test_the_glyph_is_centred_by_the_box_not_by_the_font():
+    """line-height:46px centres a glyph only until a page sets its own
+    line-height. Flex does not care."""
+    css = panel_css()
+    rule = re.search(r'\.hp-open\s*\{([^}]*)\}', css).group(1)
+    assert 'display: flex' in rule or 'display:flex' in rule
+    assert 'align-items: center' in rule
+    assert 'justify-content: center' in rule
+
+
+def test_the_glyph_is_a_drawing_not_a_character():
+    """A text ? inherits font-family, font-size, letter-spacing and
+    text-transform from whichever page it lands on. An SVG inherits
+    nothing but its colour."""
+    panel = template_text('_help_panel.html')
+    opener = panel.split('class="hp-open"')[1].split('</button>')[0]
+    assert '<svg' in opener, 'the help button is back to a text glyph'
+    assert 'currentColor' in opener
+
+
+def test_the_close_button_states_its_box_model_too():
+    css = panel_css()
+    rule = re.search(r'\.hp-close\s*\{([^}]*)\}', css).group(1)
+    assert 'box-sizing' in rule and re.search(r'padding:\s*0', rule)
+    assert 'display: flex' in rule
+
+
+def test_the_button_clears_a_phone_home_bar():
+    """A floating control pinned to the bottom lands under the gesture
+    bar on a notched phone unless it is told about the safe area."""
+    css = panel_css()
+    assert 'safe-area-inset-bottom' in css
+
+
+def test_the_button_is_big_enough_to_hit_with_a_thumb():
+    css = panel_css()
+    for block in re.findall(r'\.hp-open\s*\{([^}]*)\}', css):
+        for size in re.findall(r'(?:width|height):\s*(\d+)px', block):
+            assert int(size) >= 44, \
+                f"the help button is {size}px - below the 44px touch target"
+
+
+def test_motion_is_optional():
+    assert 'prefers-reduced-motion' in panel_css()
 
 
 def test_the_panel_buttons_set_their_own_width():

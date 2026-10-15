@@ -256,6 +256,27 @@ the title into a two-character column. Four tests hold the isolation
 `test_the_panel_buttons_set_their_own_width`,
 `test_the_panel_does_not_inherit_a_page_that_centres_everything`).
 
+That `button { width: 100% }` had a sibling: **six** pages (`owner_login`,
+`agent_login`, `forgot_password`, `reset_password`, `agency_profile`,
+`agent_profile`) also set `button { padding: 14px }`. `.hp-open` was a fixed
+46px circle with no `padding: 0` and no `box-sizing`, so on those six pages it
+rendered 74px wide with the glyph shoved down and right. The rule now states
+its entire box model, the glyph is centred with flex rather than a
+`line-height` a page can override, and the glyph itself is an **inline SVG** -
+a text `?` inherits `font-family`, `font-size`, `letter-spacing` and
+`text-transform` from whatever page it lands on, an SVG inherits only
+`currentColor`. `test_the_help_button_states_its_whole_box_model` and
+`test_the_glyph_is_centred_by_the_box_not_by_the_font` both fail against the
+old CSS; the Chromium check measures the glyph's centre against the button's
+on every affected page and wants them within 1.5px.
+
+The button's look comes from the same three layers the public cards use: the
+brand gradient, a 1px inner highlight ring, and a violet glow under an ambient
+shadow. It is 54px (50px on a phone - above the 44px touch minimum, which
+`test_the_button_is_big_enough_to_hit_with_a_thumb` holds), clears a notched
+phone's gesture bar with `env(safe-area-inset-bottom)`, and drops its
+transforms under `prefers-reduced-motion`.
+
 **Who sees which screen matters.** Each guide carries a `role`: `owner`,
 `agency` (Agency plan only), `agent` or `anyone`. The role guides are checked
 against it - a solo owner is never shown the Agents page they do not have, an
