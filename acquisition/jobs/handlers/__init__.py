@@ -8,6 +8,7 @@ with a real website before it becomes a prospect.
 Research, scoring, drafting and reply classification arrive in phases 3
 to 6, each as one more function here.
 """
+import json
 import time
 from datetime import datetime, timedelta
 
@@ -15,6 +16,7 @@ from ... import compliance, models, settings
 from ...providers import discovery
 from ...services import ai, fetch, prospects
 from ...services import research as reading
+from ...services import scoring
 from .. import registry, runner
 
 
@@ -443,3 +445,135 @@ def ai_read(prospect, pages, job, signals):
         record_fact(prospect, 'languages', data.get('languages'), 'inferred',
                     home_url, model)
     return '', model
+
+
+# ── Phase 4: scoring ─────────────────────────────────────────────────
+
+SCORE_FIELDS = ('fit', 'band', 'reachability', 'confidence')
+
+
+def wanted_weights():
+    """What Settings says the weights should be. Blank or unreadable
+    falls back to the built-in ones rather than scoring on nothing."""
+    weights = dict(scoring.DEFAULT_WEIGHTS)
+    thresholds = dict(scoring.DEFAULT_THRESHOLDS)
+    raw = (settings.get('score_weights_json') or '').strip()
+    if raw:
+        try:
+            given = json.loads(raw)
+            weights.update({k: v for k, v in given.items()
+                            if k in scoring.DEFAULT_WEIGHTS
+                            and isinstance(v, (int, float)) and v >= 0})
+        except ValueError:
+            pass
+    raw = (settings.get('score_thresholds_json') or '').strip()
+    if raw:
+        try:
+            given = json.loads(raw)
+            thresholds.update({k: v for k, v in given.items()
+                               if k in scoring.DEFAULT_THRESHOLDS
+                               and isinstance(v, (int, float))})
+        except ValueError:
+            pass
+    return weights, thresholds
+
+
+def active_score_model():
+    """The weights in force, as a row, so a score can say which version
+    produced it.
+
+    Changing the weights in Settings makes a NEW version rather than
+    rewriting the active one - otherwise last week's 80 silently becomes
+    a number nobody can account for. An unchanged setting reuses the
+    existing row, so re-scoring does not pile up versions.
+    """
+    weights, thresholds = wanted_weights()
+    row = (models.ScoreModel.query
+           .filter_by(active=True)
+           .order_by(models.ScoreModel.version.desc())
+           .first())
+    if row:
+        current, current_bands = weights_of(row)
+        if current == weights and current_bands == thresholds:
+            return row
+        row.active = False
+        next_version = (row.version or 0) + 1
+        note = 'Weights changed in Settings.'
+    else:
+        next_version, note = 1, 'The weights the engine shipped with.'
+
+    row = models.ScoreModel(
+        version=next_version, active=True,
+        weights=json.dumps(weights), thresholds=json.dumps(thresholds),
+        notes=note)
+    runner.session().add(row)
+    runner.session().commit()
+    return row
+
+
+def weights_of(model_row):
+    try:
+        weights = json.loads(model_row.weights or '{}')
+    except ValueError:
+        weights = {}
+    try:
+        thresholds = json.loads(model_row.thresholds or '{}')
+    except ValueError:
+        thresholds = {}
+    return weights, thresholds
+
+
+def score_one(prospect, model_row):
+    """Score a prospect and record it. Writes a Score row, updates the
+    prospect's own fit/reachability/confidence - and does NOT touch the
+    stage. Promoting a prospect to 'qualified' is a person's decision,
+    so a scoring mistake can never push anybody toward outreach."""
+    weights, thresholds = weights_of(model_row)
+    result = scoring.score_prospect(
+        list(prospect.facts), list(prospect.contacts), weights, thresholds)
+
+    runner.session().add(models.Score(
+        prospect_id=prospect.id,
+        model_version=model_row.version,
+        fit=result['fit'],
+        reachability=result['reachability'],
+        confidence=result['confidence'],
+        breakdown=scoring.breakdown_json(result)))
+
+    prospect.fit_score = result['fit']
+    prospect.reachability = result['reachability']
+    prospect.confidence = result['confidence']
+    # Sorting by priority puts the reachable ones first among equals: a
+    # 90 we cannot write to is not the one to work on this morning.
+    prospect.priority = result['fit'] + (5 if result['reachability'] == 'inbox' else 0)
+    return result
+
+
+@registry.handler('score')
+def score(job, payload):
+    """Score one prospect from what Phase 3 already wrote down.
+
+    Free and offline: no network, no model call. It reads facts and
+    contacts from the database and does arithmetic, so it can be re-run
+    as often as you like and costs nothing.
+    """
+    prospect_id = job.prospect_id or payload.get('prospect_id')
+    prospect = runner.session().get(models.Prospect, prospect_id)
+    if prospect is None:
+        return {'skipped': 'prospect is gone'}
+    if settings.everything_stopped():
+        return {'error': 'everything is stopped in Settings'}
+    if not prospect.facts:
+        return {'error': f"{prospect.canonical_domain} has not been researched "
+                         f"yet - run Research on it first",
+                'prospect_id': prospect.id}
+
+    model_row = active_score_model()
+    result = score_one(prospect, model_row)
+    runner.session().commit()
+
+    return {'prospect_id': prospect.id, 'domain': prospect.canonical_domain,
+            'fit': result['fit'], 'band': result['band_label'],
+            'reachability': result['reachability'],
+            'confidence': result['confidence'],
+            'model_version': model_row.version}

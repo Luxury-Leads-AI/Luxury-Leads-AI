@@ -45,8 +45,53 @@
     <p><label><input type="checkbox" name="needs_human" {{ 'checked' if prospect.needs_human }}> Needs me to look at it</label></p>
     <button type="submit">Save</button>
     <button class="secondary" type="submit" name="action" value="research">Research this agency</button>
+    <button class="secondary" type="submit" name="action" value="score">Score it</button>
     <button class="secondary" type="submit" name="action" value="queue_normalize">Queue a tidy-up job</button>
   </form>
+</div>
+
+<div class="box">
+  <h3>Fit</h3>
+  {% if score %}
+  <p>
+    <strong style="font-size:26px;">{{ score.fit }}</strong><span class="muted">/100</span>
+    · <span class="tag {{ 'good' if breakdown and breakdown.band == 'strong' else ('warn' if breakdown and breakdown.band == 'worth_a_look' else '') }}">{{ band_labels.get(breakdown.band, breakdown.band) if breakdown else '' }}</span>
+    · <span class="tag {{ 'good' if score.reachability == 'inbox' else 'warn' }}">{{ score.reachability }}</span>
+    · <span class="tag {{ 'good' if score.confidence == 'high' else 'warn' }}">{{ score.confidence }} confidence</span>
+    <span class="muted">· scored by weights v{{ score.model_version }}</span>
+  </p>
+  {% if breakdown %}
+  <p class="muted">{{ breakdown.reachability_why }}. {{ breakdown.confidence_why }}.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Signal</th><th>Points</th><th>Why</th><th>Source</th></tr></thead>
+    <tbody>
+    {% for line in breakdown.lines %}
+      <tr>
+        <td class="dim">{{ fact_labels.get(line.signal, line.signal) }}</td>
+        <td>{{ line.points }}<span class="muted">/{{ line.of }}</span></td>
+        <td>{{ line.why }}{% if line.confidence %} <span class="tag {{ 'good' if line.confidence == 'verified' else 'warn' }}">{{ line.confidence }}</span>{% endif %}</td>
+        <td class="dim">{% if line.source %}<a href="{{ line.source }}" target="_blank" rel="noopener noreferrer">page</a>{% else %}&mdash;{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="muted" style="margin-top:12px;">A signal a model only <span class="tag warn">inferred</span>
+     earns less than one we <span class="tag good">verified</span> in the markup &mdash; otherwise a
+     confident model could talk a prospect's score up on its own say-so. Nothing here changed the
+     stage: the engine scores, you decide.</p>
+  {% endif %}
+  <form method="POST" action="{{ url_for('acquisition.update_prospect', prospect_id=prospect.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" name="action" value="qualify">Qualify this one</button>
+    <button class="secondary" type="submit" name="action" value="park">Park it</button>
+    <button class="secondary" type="submit" name="action" value="score">Score again</button>
+  </form>
+  {% else %}
+  <p class="muted">Not scored yet. {% if prospect.facts %}Press <strong>Score it</strong> above,
+     then Run the queue on Today &mdash; scoring reads what research already wrote down, so it
+     needs no internet and costs nothing.{% else %}Research it first: there is nothing to score
+     until the website has been read.{% endif %}</p>
+  {% endif %}
 </div>
 
 <div class="box">

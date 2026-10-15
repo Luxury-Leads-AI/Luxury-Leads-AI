@@ -70,6 +70,11 @@ DEFAULTS = {
     'model_prices_json': json.dumps(DEFAULT_MODEL_PRICES),
     'web_search_usd': str(DEFAULT_WEB_SEARCH_USD),
     'fixed_costs_usd_month': '0',
+    # Blank = the weights in services/scoring.py. Editing these makes a
+    # new scoring version rather than rewriting the old one, so a score
+    # given last week still says what it was based on.
+    'score_weights_json': '',
+    'score_thresholds_json': '',
     'operator_email': '',
     'postal_address': '',
 }
@@ -91,6 +96,8 @@ EDITABLE = (
     ('osm_overpass_url', 'Overpass servers to try, comma separated (blank = the built-in list)'),
     ('osm_nominatim_url', 'Nominatim server (blank = the public one)'),
     ('osm_nominatim_fallback', 'If no Overpass server answers, search Nominatim instead (on/off)'),
+    ('score_weights_json', 'Scoring weights, as JSON (blank = the built-in ones)'),
+    ('score_thresholds_json', 'Score bands, as JSON (blank = strong 65, worth a look 40)'),
     ('kill_switch_all', 'Stop everything (on/off)'),
     ('kill_switch_outreach', 'Stop outreach only (on/off)'),
     ('retention_days_uncontacted', 'Delete contact details of never-contacted prospects after (days)'),

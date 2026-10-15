@@ -262,8 +262,19 @@ def build_blueprint(db):
             query = query.filter(models.Prospect.stage == stage)
         if market_id:
             query = query.filter(models.Prospect.market_id == market_id)
-        rows = query.order_by(models.Prospect.created_at.desc()).limit(300).all()
+        sort = request.args.get('sort') or ''
+        if sort == 'fit':
+            # Priority is the fit plus a nudge for the reachable ones, so
+            # "best fit first" means "work on this one this morning",
+            # not "highest number we cannot write to".
+            rows = (query.order_by(models.Prospect.priority.desc().nullslast(),
+                                   models.Prospect.fit_score.desc().nullslast(),
+                                   models.Prospect.created_at.desc())
+                    .limit(300).all())
+        else:
+            rows = query.order_by(models.Prospect.created_at.desc()).limit(300).all()
         return render_template('acquisition/prospects.html', prospects=rows,
+                               sort=sort,
                                markets=models.Market.query.order_by(
                                    models.Market.country, models.Market.city).all(),
                                sources=discovery.choices(),
@@ -291,6 +302,37 @@ def build_blueprint(db):
             parts.append(f"{len(problems)} not usable: "
                          + "; ".join(f"{text} ({why})" for text, why in problems[:3]))
         return back('prospect_list', notice=". ".join(parts) + ".")
+
+    @bp.route('/prospects/score-all', methods=['POST'])
+    def score_all():
+        """Score every researched prospect that has not been scored.
+
+        Scoring is free and offline - no network, no model call - so this
+        is cheap to run and cheap to re-run. It is still one job each,
+        for the same reason research is: a run has to fit in the 30
+        seconds gunicorn allows.
+        """
+        limit = request.form.get('limit', type=int) or 50
+        again = bool(request.form.get('again'))
+        query = (models.Prospect.query
+                 .filter(models.Prospect.stage.in_(('researched', 'qualified')),
+                         models.Prospect.do_not_contact.isnot(True)))
+        if not again:
+            query = query.filter(models.Prospect.fit_score.is_(None))
+        rows = query.order_by(models.Prospect.id).limit(limit).all()
+        for prospect in rows:
+            runner.enqueue(
+                'score', prospect_id=prospect.id,
+                idempotency_key=f"score:{prospect.id}:{datetime.utcnow():%Y%m%d%H%M}")
+        record('score_queued_bulk', 'prospect', None, after={'queued': len(rows)})
+        if not rows:
+            return back('prospect_list',
+                        notice="Nothing to score. Research a prospect first, "
+                               "or tick Score again to re-score the ones "
+                               "already done.")
+        return back('prospect_list',
+                    notice=f"Queued scoring for {len(rows)} agencies. Press "
+                           f"Run the queue on Today. It costs nothing.")
 
     @bp.route('/prospects/research-all', methods=['POST'])
     def research_all():
@@ -352,7 +394,19 @@ def build_blueprint(db):
             return back('prospect_list', error="That prospect is gone.")
         decision = compliance.can_contact(prospect)
         from ..jobs.handlers import FACT_LABELS
+        from ..services import scoring as scoring_service
+        latest = (models.Score.query
+                  .filter_by(prospect_id=prospect.id)
+                  .order_by(models.Score.id.desc()).first())
+        breakdown = None
+        if latest and latest.breakdown:
+            try:
+                breakdown = json.loads(latest.breakdown)
+            except ValueError:
+                breakdown = None
         return render_template('acquisition/prospect.html', prospect=prospect,
+                               score=latest, breakdown=breakdown,
+                               band_labels=scoring_service.BAND_LABELS,
                                decision=decision, fact_labels=FACT_LABELS,
                                markets=models.Market.query.order_by(
                                    models.Market.country, models.Market.city).all(),
@@ -389,6 +443,37 @@ def build_blueprint(db):
             record('research_queued', 'prospect', prospect.id)
             return back('prospect_detail', prospect_id=prospect.id,
                         notice="Queued. Press Run the queue on Today.")
+
+        if action == 'score':
+            runner.enqueue(
+                'score', prospect_id=prospect.id,
+                idempotency_key=f"score:{prospect.id}:{datetime.utcnow():%Y%m%d%H%M%S}")
+            record('score_queued', 'prospect', prospect.id)
+            return back('prospect_detail', prospect_id=prospect.id,
+                        notice="Queued. Press Run the queue on Today. "
+                               "Scoring is free.")
+
+        if action == 'qualify':
+            # The one place a prospect moves toward outreach, and it is a
+            # button a person presses. Nothing the engine does moves it.
+            before = {'stage': prospect.stage}
+            prospect.stage = 'qualified'
+            db.session.commit()
+            record('prospect_qualified', 'prospect', prospect.id,
+                   before=before, after={'stage': 'qualified'})
+            return back('prospect_detail', prospect_id=prospect.id,
+                        notice="Marked qualified. Nothing is sent yet - "
+                               "drafting arrives in the next phase.")
+
+        if action == 'park':
+            before = {'stage': prospect.stage}
+            prospect.stage = 'parked'
+            db.session.commit()
+            record('prospect_parked', 'prospect', prospect.id,
+                   before=before, after={'stage': 'parked'})
+            return back('prospect_detail', prospect_id=prospect.id,
+                        notice="Parked. It stays on file and can be brought "
+                               "back at any time.")
 
         if action == 'queue_normalize':
             runner.enqueue('normalize_prospect', prospect_id=prospect.id,

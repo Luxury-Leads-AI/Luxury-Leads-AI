@@ -465,6 +465,57 @@ and every form carries a CSRF token checked in the blueprint's
 
 On Render, `SECRET_KEY` is mandatory: if it is missing or still the `'change-this-in-production'` fallback, `app.py` raises at import and the deploy fails with a message saying so (`secret_key_problem()`, keyed off Render's own `RENDER=true`). Locally the fallback still works.
 
+### Phase 4 — scoring
+
+`acquisition/services/scoring.py` turns the facts Phase 3 wrote down into
+**three numbers, kept deliberately separate**: `fit` 0-100, `reachability`
+(`inbox` / `form_only` / `bad_address` / `none`) and `confidence`. Collapsing
+them hides the thing a person most needs: a perfect-fit agency with no inbox
+is a 90 we cannot reach, not a 60, and those two want different actions.
+
+The module is **pure** — no database, no network, no model call. It takes fact
+and contact rows and returns numbers plus the reasoning. A test asserts it
+never imports `httpx`, `openai` or `fetch`, because the moment scoring costs
+money the budget page has to learn about it first.
+
+**Two decisions are Moaz's, not defaults** (15 Oct 2026):
+
+- An agency **already running a chat widget scores higher**, not lower. They
+  have decided chat is worth paying for, which is the hardest part of the
+  sale, so the pitch becomes a comparison. Every widget earns the same points
+  — guessing which products are paid would be guessing — but the reasoning
+  line names it, which Phase 5 can quote.
+- **Luxury ranks, it does not filter.** Positioning and a high price band add
+  points; a mid-market agency still scores on everything else and can reach
+  the top band. The list is ranked, not filtered, so there is something to
+  learn from whether luxury actually converts.
+
+**The safeguard that makes the number worth reading**: a fact's confidence
+scales its points — `verified` ×1.0, `inferred` ×0.6, `estimated` ×0.4. Without
+it an enthusiastic model could talk a prospect's score up on its own say-so.
+`test_a_model_cannot_talk_a_prospect_into_the_top_band_alone` builds a prospect
+whose every signal is inferred and asserts it cannot reach `strong`.
+
+**Scoring never moves a prospect.** `score_one()` writes a `Score` row and
+updates `fit_score`, `reachability`, `confidence` and `priority`, and leaves
+`stage` alone. `qualified` and `parked` are reached only through buttons on the
+prospect's own page, so a scoring bug can never push a batch toward outreach.
+`priority` is the fit plus 5 when there is a usable inbox, and "Best fit first"
+sorts on it — the top of that list is the one to work on this morning, not the
+highest number nobody can write to.
+
+**Weights are versioned, not overwritten.** `score_weights_json` and
+`score_thresholds_json` in Settings (blank = the built-ins, which sum to 100 so
+a weight reads as points out of a hundred). Changing either makes a **new**
+`ScoreModel` version and deactivates the old row; an unchanged setting reuses
+the existing one, so re-scoring does not pile up versions. Every `Score` row
+records its `model_version`, so last week's 80 still says what it was based on.
+Unparseable JSON and unknown keys fall back rather than scoring on nothing.
+
+`breakdown` is a JSON line per signal — points, out of, why, source page,
+confidence — rendered as a table on the prospect page. It is not decoration:
+it is the only reason to trust the number.
+
 ## Architecture
 
 **Single-file backend** — all Flask routes, DB models, AI logic, and email are in `app.py`. There are no blueprints. The one other module, `guides.py`, is pure content (the user guides as data) with no imports, no logic and no database access; `app.py` reads it and owns every route.

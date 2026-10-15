@@ -66,8 +66,24 @@
       checks always run; the AI read costs about a penny an agency and can be
       switched off in Settings.</span>
   </form>
+  <form method="POST" action="{{ url_for('acquisition.score_all') }}" style="margin-bottom:14px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="limit" value="50">
+    <button type="submit">Score the researched ones</button>
+    <label class="muted" style="margin-left:10px;">
+      <input type="checkbox" name="again" value="1"> Score again, including ones already scored
+    </label>
+    <span class="muted">Reads what research already wrote down and works out how
+      good a fit each agency is, with the reasoning line by line. No internet, no
+      AI, nothing to pay &mdash; run it as often as you like. It does not move
+      anybody along: you do that from the agency's own page.</span>
+  </form>
   <form method="GET">
     <div class="row">
+      <select name="sort" onchange="this.form.submit()">
+        <option value="">Newest first</option>
+        <option value="fit" {{ 'selected' if sort == 'fit' }}>Best fit first</option>
+      </select>
       <select name="stage" onchange="this.form.submit()">
         <option value="">Every stage</option>
         {% for value, label in stage_labels.items() %}
@@ -98,7 +114,14 @@
         <td><span class="tag">{{ stage_labels.get(prospect.stage, prospect.stage) }}</span></td>
         <td class="dim">{{ prospect.source or 'manual' }}
             {% if prospect.needs_human %}<br><span class="tag warn">needs a look</span>{% endif %}</td>
-        <td class="dim">{{ prospect.fit_score if prospect.fit_score is not none else '—' }}</td>
+        <td class="dim">
+          {% if prospect.fit_score is not none %}
+            <strong>{{ prospect.fit_score }}</strong>
+            {% if prospect.reachability and prospect.reachability != 'inbox' %}
+            <br><span class="tag warn">{{ prospect.reachability.replace('_', ' ') }}</span>
+            {% endif %}
+          {% else %}&mdash;{% endif %}
+        </td>
         <td class="dim">{{ prospect.created_at.strftime('%Y-%m-%d') if prospect.created_at else '—' }}</td>
       </tr>
     {% endfor %}
