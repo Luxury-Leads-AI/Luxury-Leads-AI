@@ -1,0 +1,122 @@
+{% extends "acquisition/base.html" %}
+{% set page = 'drafts' %}
+{% block title %}Drafts{% endblock %}
+{% block body %}
+
+<div class="box">
+  <h3>Ready to send</h3>
+  {% if waiting %}
+  <p class="muted">Nothing here has been sent. Copy each one into your own
+     email, send it as yourself, then press <strong>I sent this</strong> so
+     the prospect moves to Contacted and you do not write to them twice.</p>
+
+  {% for row in waiting %}
+  <div class="draft" id="d{{ row.message.id }}">
+    <p>
+      <strong>{{ row.prospect.name or row.prospect.canonical_domain }}</strong>
+      <span class="muted">· fit {{ row.prospect.fit_score if row.prospect.fit_score is not none else '—' }}</span>
+      · <a href="{{ url_for('acquisition.prospect_detail', prospect_id=row.prospect.id) }}">the research</a>
+    </p>
+
+    {% if row.problems %}
+    <p class="notice bad"><strong>Read this one carefully:</strong>
+       {{ row.problems | join('; ') }}</p>
+    {% endif %}
+
+    <div class="field">
+      <label>To</label>
+      <div class="copyrow">
+        <input readonly id="to{{ row.message.id }}"
+               value="{{ row.contact.email if row.contact else 'no inbox found — look at their site' }}">
+        <button type="button" class="secondary" onclick="copyFrom('to{{ row.message.id }}', this)">Copy</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Subject</label>
+      <div class="copyrow">
+        <input readonly id="s{{ row.message.id }}" value="{{ row.message.subject }}">
+        <button type="button" class="secondary" onclick="copyFrom('s{{ row.message.id }}', this)">Copy</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Body</label>
+      <textarea readonly rows="12" id="b{{ row.message.id }}">{{ row.message.body }}</textarea>
+      <button type="button" class="secondary" onclick="copyFrom('b{{ row.message.id }}', this)">Copy the body</button>
+    </div>
+
+    <form method="POST" action="{{ url_for('acquisition.mark_sent', message_id=row.message.id) }}"
+          style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">I sent this</button>
+    </form>
+    <form method="POST" action="{{ url_for('acquisition.discard_draft', message_id=row.message.id) }}"
+          style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit">Discard</button>
+    </form>
+  </div>
+  {% endfor %}
+
+  {% else %}
+  <p class="muted">Nothing waiting. Qualify a prospect, then press
+     <strong>Draft the qualified ones</strong> on Prospects.</p>
+  {% endif %}
+</div>
+
+{% if sent %}
+<div class="box">
+  <h3>Already sent</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Agency</th><th>Subject</th><th>Sent</th></tr></thead>
+    <tbody>
+    {% for row in sent %}
+      <tr>
+        <td><a href="{{ url_for('acquisition.prospect_detail', prospect_id=row.prospect.id) }}">{{ row.prospect.name or row.prospect.canonical_domain }}</a></td>
+        <td class="dim">{{ row.message.subject }}</td>
+        <td class="dim">{{ row.message.sent_at.strftime('%d %b %H:%M') if row.message.sent_at else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<style>
+  .draft { border-top: 1px solid var(--border); padding: 20px 0; }
+  .draft .field { margin: 12px 0; }
+  .draft label {
+    display: block; font-size: 11px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-faint); margin-bottom: 5px;
+  }
+  .draft .copyrow { display: flex; gap: 8px; }
+  .draft .copyrow input { flex: 1 1 auto; }
+  .draft textarea { width: 100%; box-sizing: border-box; font-family: inherit; }
+  .draft input[readonly], .draft textarea[readonly] { background: var(--bg-elev); }
+</style>
+
+<script>
+  function copyFrom(id, button) {
+    const field = document.getElementById(id);
+    if (!field) return;
+    field.select();
+    field.setSelectionRange(0, field.value.length);
+    // navigator.clipboard needs https; this page is https, but the
+    // fallback keeps it working if that ever changes.
+    const done = () => {
+      const was = button.textContent;
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = was; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(field.value).then(done, () => {
+        document.execCommand('copy'); done();
+      });
+    } else {
+      document.execCommand('copy');
+      done();
+    }
+  }
+</script>
+{% endblock %}

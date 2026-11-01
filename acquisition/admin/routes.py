@@ -303,6 +303,101 @@ def build_blueprint(db):
                          + "; ".join(f"{text} ({why})" for text, why in problems[:3]))
         return back('prospect_list', notice=". ".join(parts) + ".")
 
+    @bp.route('/drafts')
+    def drafts():
+        """Everything written and waiting to be sent.
+
+        Until the acquisition mailbox exists, this page IS the sending
+        mechanism: Moaz copies each one into his own email. So it is
+        built for that - the address, the subject and the body each with
+        a copy button, and one press to record that it went.
+        """
+        waiting = (models.Message.query
+                   .filter_by(status='draft', step=0)
+                   .order_by(models.Message.id.desc()).limit(50).all())
+        sent = (models.Message.query
+                .filter_by(status='sent')
+                .order_by(models.Message.sent_at.desc()).limit(20).all())
+        rows = []
+        for message in waiting + sent:
+            prospect = db.session.get(models.Prospect, message.prospect_id)
+            contact = (db.session.get(models.Contact, message.contact_id)
+                       if message.contact_id else None)
+            try:
+                checks = json.loads(message.check_results or '{}')
+            except ValueError:
+                checks = {}
+            rows.append({'message': message, 'prospect': prospect,
+                         'contact': contact,
+                         'problems': checks.get('problems') or []})
+        return render_template(
+            'acquisition/drafts.html',
+            waiting=[r for r in rows if r['message'].status == 'draft'],
+            sent=[r for r in rows if r['message'].status == 'sent'],
+            notice=request.args.get('notice'),
+            error=request.args.get('error'))
+
+    @bp.route('/drafts/<int:message_id>/sent', methods=['POST'])
+    def mark_sent(message_id):
+        """Moaz has pasted it into his own email and pressed send."""
+        message = db.session.get(models.Message, message_id)
+        if message is None:
+            return back('drafts', error="That draft is gone.")
+        message.status = 'sent'
+        message.sent_at = datetime.utcnow()
+        message.provider = 'manual'
+        prospect = db.session.get(models.Prospect, message.prospect_id)
+        if prospect and prospect.stage in ('qualified', 'researched'):
+            prospect.stage = 'contacted'
+        db.session.commit()
+        record('message_sent_by_hand', 'prospect', message.prospect_id)
+        return back('drafts',
+                    notice=f"Marked as sent to "
+                           f"{prospect.canonical_domain if prospect else 'them'}. "
+                           f"Their stage is now Contacted.")
+
+    @bp.route('/drafts/<int:message_id>/discard', methods=['POST'])
+    def discard_draft(message_id):
+        message = db.session.get(models.Message, message_id)
+        if message is None:
+            return back('drafts', error="That draft is gone.")
+        db.session.delete(message)
+        db.session.commit()
+        return back('drafts', notice="Draft discarded. Draft it again any "
+                                     "time - it costs about a penny.")
+
+    @bp.route('/prospects/draft-all', methods=['POST'])
+    def draft_all():
+        """Write an email for every qualified prospect that has not got
+        one. One job each: the model call has to fit in the 30 seconds
+        gunicorn allows."""
+        limit = request.form.get('limit', type=int) or 20
+        drafted = {m.prospect_id for m in
+                   models.Message.query.filter_by(step=0).all()}
+        rows = (models.Prospect.query
+                .filter(models.Prospect.stage == 'qualified',
+                        models.Prospect.do_not_contact.isnot(True))
+                .order_by(models.Prospect.priority.desc().nullslast())
+                .limit(limit + len(drafted)).all())
+        queued = 0
+        for prospect in rows:
+            if prospect.id in drafted or queued >= limit:
+                continue
+            runner.enqueue(
+                'draft', prospect_id=prospect.id,
+                idempotency_key=f"draft:{prospect.id}:{datetime.utcnow():%Y%m%d%H%M}")
+            queued += 1
+        record('draft_queued_bulk', 'prospect', None, after={'queued': queued})
+        if not queued:
+            return back('prospect_list',
+                        notice="Nothing to draft. Qualify a prospect first - "
+                               "drafting only writes to the ones you have "
+                               "approved.")
+        return back('prospect_list',
+                    notice=f"Queued {queued} email{'s' if queued != 1 else ''}. "
+                           f"Press Run the queue on Today, then read them on "
+                           f"the Drafts page.")
+
     @bp.route('/prospects/score-all', methods=['POST'])
     def score_all():
         """Score every researched prospect that has not been scored.
@@ -452,6 +547,15 @@ def build_blueprint(db):
             return back('prospect_detail', prospect_id=prospect.id,
                         notice="Queued. Press Run the queue on Today. "
                                "Scoring is free.")
+
+        if action == 'draft':
+            runner.enqueue(
+                'draft', prospect_id=prospect.id,
+                idempotency_key=f"draft:{prospect.id}:{datetime.utcnow():%Y%m%d%H%M%S}")
+            record('draft_queued', 'prospect', prospect.id)
+            return back('prospect_detail', prospect_id=prospect.id,
+                        notice="Queued. Press Run the queue on Today, then "
+                               "read it on the Drafts page.")
 
         if action == 'qualify':
             # The one place a prospect moves toward outreach, and it is a

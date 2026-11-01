@@ -73,6 +73,11 @@ DEFAULTS = {
     # Blank = the weights in services/scoring.py. Editing these makes a
     # new scoring version rather than rewriting the old one, so a score
     # given last week still says what it was based on.
+    # Drafting. The polish is the only paid part; the template fills
+    # itself for free. Blank sign-off means the email ends without one,
+    # which is better than a wrong name.
+    'draft_ai': 'on',
+    'draft_sign_off': '',
     'score_weights_json': '',
     'score_thresholds_json': '',
     'operator_email': '',
@@ -96,6 +101,8 @@ EDITABLE = (
     ('osm_overpass_url', 'Overpass servers to try, comma separated (blank = the built-in list)'),
     ('osm_nominatim_url', 'Nominatim server (blank = the public one)'),
     ('osm_nominatim_fallback', 'If no Overpass server answers, search Nominatim instead (on/off)'),
+    ('draft_ai', 'Let AI polish each draft so a batch does not read like a mail merge (on/off)'),
+    ('draft_sign_off', 'How your emails sign off, e.g. your name and a line about you'),
     ('score_weights_json', 'Scoring weights, as JSON (blank = the built-in ones)'),
     ('score_thresholds_json', 'Score bands, as JSON (blank = strong 65, worth a look 40)'),
     ('kill_switch_all', 'Stop everything (on/off)'),

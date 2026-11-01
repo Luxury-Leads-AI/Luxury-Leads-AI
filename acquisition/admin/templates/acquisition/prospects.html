@@ -78,6 +78,15 @@
       AI, nothing to pay &mdash; run it as often as you like. It does not move
       anybody along: you do that from the agency's own page.</span>
   </form>
+  <form method="POST" action="{{ url_for('acquisition.draft_all') }}" style="margin-bottom:14px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="limit" value="20">
+    <button type="submit">Draft the qualified ones</button>
+    <span class="muted">Writes one email per agency you have qualified, using
+      the single strongest thing we actually saw on their site. Nothing is
+      sent &mdash; they wait on the Drafts page for you to copy into your own
+      email. About a penny each.</span>
+  </form>
   <form method="GET">
     <div class="row">
       <select name="sort" onchange="this.form.submit()">

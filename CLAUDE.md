@@ -592,6 +592,51 @@ browser's `Origin` header (falling back to `Referer`), which someone determined
 could forge from their own server. It catches the thing that actually happens:
 the same script tag pasted onto a second site.
 
+### Phase 5 — drafting
+
+The engine **writes; it does not send**. `draft` produces a `Message` row with
+`status='draft'` and `provider='manual'`, and Moaz copies it into his own email
+from the Drafts page. Until the acquisition mailbox exists that is the whole
+delivery mechanism — and for the first twenty it is the better one: you learn
+what works from replies to something a person actually sent.
+`test_nothing_in_drafting_sends_an_email` asserts the module never reaches for
+smtp, Brevo or a POST.
+
+**Three decisions are Moaz's** (1 Nov 2026): the ask is a **reply**, not a call
+or a pilot — one question answerable in a line, because a booking link in a
+first cold email from a personal address reads like a campaign. **One**
+observation, stated plainly: the research found four or five true things and
+the email uses the strongest, since reciting a dossier about someone's business
+unsettles them rather than impressing them. And a **template he owns, polished
+by AI** — he writes the voice once, the facts fill the slots, one cheap pass
+stops a batch sent the same morning reading like a mail merge.
+
+**Only `verified` facts are quoted.** `pick_observation()` reads nothing else:
+a model's inference about an agency is not something to tell them about their
+own business. It returns the sentence *and the fact ids behind it*, stored in
+`Message.facts_used`, so any claim in a sent email traces back to a page. With
+nothing verified it returns `''` and the job refuses to draft, flagging the
+prospect for a human — better than inventing an opening.
+
+**The polish may remove, never add.** `polish()` runs the draft past the model,
+then checks the result with `new_facts_in()` (any number not in the input) and
+`unsupported_claims()` (percentages, `3x`, guarantees, "most agencies"). If
+either fires, **the polish is thrown away and the hand-filled draft is kept** —
+a plain email a person wrote beats a nicer one nobody can vouch for. The
+opt-out line surviving the pass is checked too. Same claim rules as the home
+page, for the same reason, and this one goes to a stranger over Moaz's name.
+
+`compliance.can_contact()` gates drafting, not just sending: a prospect in an
+unverified market or marked do-not-contact gets no draft at all.
+
+**Paragraphs in the template are one line each.** Hard-wrapping at 70
+characters looks tidy in an editor and looks broken in Gmail, which re-wraps to
+the reader's window and leaves the old breaks mid-sentence.
+`test_no_paragraph_is_hard_wrapped` holds it.
+
+Settings: `draft_ai` (the only paid part), `draft_sign_off`. Templates are
+versioned like score models, so a draft says which words it came from.
+
 ## Architecture
 
 **Single-file backend** — all Flask routes, DB models, AI logic, and email are in `app.py`. There are no blueprints. The one other module, `guides.py`, is pure content (the user guides as data) with no imports, no logic and no database access; `app.py` reads it and owns every route.

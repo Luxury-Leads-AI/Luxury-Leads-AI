@@ -83,6 +83,7 @@
   <form method="POST" action="{{ url_for('acquisition.update_prospect', prospect_id=prospect.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button type="submit" name="action" value="qualify">Qualify this one</button>
+    <button class="secondary" type="submit" name="action" value="draft">Write the email</button>
     <button class="secondary" type="submit" name="action" value="park">Park it</button>
     <button class="secondary" type="submit" name="action" value="score">Score again</button>
   </form>
