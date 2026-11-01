@@ -9,6 +9,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from io import BytesIO, StringIO
 import os
+from urllib.parse import urlparse
 import re
 import json
 import csv
@@ -55,6 +56,144 @@ def normalize_base_url(value):
     if not value.startswith(('http://', 'https://')):
         value = 'https://' + value
     return value
+
+# -------------------------
+# ONE SUBSCRIPTION, ONE WEBSITE
+# -------------------------
+# A client registers the website their assistant is for. The widget is
+# allowed on that site and its subdomains - acme.com, www.acme.com and
+# staging.acme.com are one website, because that is how an agency
+# actually runs one. A second business's domain is not.
+#
+# This is a LICENCE check, not a security control. The domain comes from
+# the browser's Origin header, which a determined person could forge by
+# calling /chat from their own server. It catches the thing that really
+# happens - the same script tag pasted onto a second site - and it is
+# honest to say it does no more than that.
+#
+# Nothing is blocked. A mismatch is recorded and shown to the super
+# admin, because a client's live chatbot going silent over a rule we
+# guessed at is worse than a client getting a fortnight's free use of a
+# second site.
+
+# Suffixes where the registrable domain is the last THREE labels, not
+# two: acme.co.uk is a site, co.uk is not. Not the full public suffix
+# list - that is a moving target and a dependency - but every suffix an
+# estate agency in our markets is likely to use.
+MULTI_LABEL_SUFFIXES = (
+    'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'sch.uk',
+    'com.au', 'net.au', 'org.au', 'co.nz', 'net.nz', 'org.nz',
+    'co.za', 'com.br', 'com.mx', 'com.ar', 'com.sg', 'com.my', 'com.hk',
+    'co.in', 'co.jp', 'co.kr', 'com.tr', 'com.pk', 'com.cn', 'co.il',
+    'com.pt', 'com.es', 'com.pl', 'com.ua', 'co.th', 'com.ph', 'com.vn',
+    'co.id', 'com.sa', 'com.eg', 'co.ke', 'com.ng', 'com.gr', 'com.cy',
+)
+
+
+def site_host(value):
+    """A website address -> the registrable domain, lowercased.
+
+    'https://WWW.Acme.co.uk/contact?x=1' -> 'acme.co.uk'
+    Returns '' for anything that is not a usable hostname, so a blank or
+    a typo can never accidentally match something.
+    """
+    text = (value or '').strip().lower()
+    if not text:
+        return ''
+    if '//' not in text:
+        text = 'https://' + text
+    try:
+        host = urlparse(text).hostname or ''
+    except ValueError:
+        return ''
+    host = host.strip('.')
+    if host.startswith('www.'):
+        host = host[4:]
+    if not host or '.' not in host:
+        return ''
+    # An IP address is not a registrable domain; treat it as given.
+    if all(part.isdigit() for part in host.split('.')):
+        return host
+    labels = host.split('.')
+    for suffix in MULTI_LABEL_SUFFIXES:
+        if host.endswith('.' + suffix):
+            wanted = len(suffix.split('.')) + 1
+            return '.'.join(labels[-wanted:])
+    return '.'.join(labels[-2:])
+
+
+def same_site(registered, seen):
+    """Is `seen` the registered website, or a subdomain of it?"""
+    left, right = site_host(registered), site_host(seen)
+    return bool(left) and left == right
+
+
+def origin_host(req):
+    """The website a widget request came from, as the browser reports it.
+
+    Origin is sent on every cross-origin POST, which is what /chat is.
+    Referer is the fallback for the handful of browsers and privacy
+    extensions that strip it.
+    """
+    for header in ('Origin', 'Referer'):
+        value = (req.headers.get(header) or '').strip()
+        if value and value.lower() != 'null':
+            host = site_host(value)
+            if host:
+                return host
+    return ''
+
+
+def note_widget_origin(agency, host):
+    """Remember that this agency's widget answered on this website.
+
+    Deliberately forgiving: a failure here must never stop a visitor
+    being answered. A licence ledger is not worth one lost lead.
+    """
+    if not agency or not host:
+        return None
+    try:
+        allowed = (not licence_is_checked(agency)
+                   or same_site(agency.website_url, host))
+        row = WidgetOrigin.query.filter_by(agency_id=agency.id,
+                                           host=host).first()
+        if row:
+            row.hits = (row.hits or 0) + 1
+            row.last_seen = datetime.utcnow()
+            row.allowed = allowed
+        else:
+            row = WidgetOrigin(agency_id=agency.id, host=host,
+                               allowed=allowed, hits=1)
+            db.session.add(row)
+            if not allowed:
+                print(f"⚠️  Agency {agency.id} ({agency.name}) answered on "
+                      f"{host}, which is not {site_host(agency.website_url)}")
+        db.session.commit()
+        return row
+    except Exception as problem:          # noqa: BLE001 - never break /chat
+        db.session.rollback()
+        print(f"⚠️  Could not record widget origin: {problem}")
+        return None
+
+
+def unlicensed_origins():
+    """Every domain an assistant has answered on that it should not have.
+    What the super admin panel shows."""
+    return (WidgetOrigin.query
+            .filter_by(allowed=False)
+            .order_by(WidgetOrigin.last_seen.desc())
+            .limit(100).all())
+
+
+def licence_is_checked(agency):
+    """Whether this agency's widget is subject to the one-site rule.
+
+    A test agency is never checked - it exists to try things out and has
+    no website. Neither is an agency with no website on file: the rule
+    arrived after they did, and nobody's account changes under them.
+    """
+    return bool(agency and agency.website_url and not agency.is_test)
+
 
 PUBLIC_BASE_URL = normalize_base_url(os.getenv('PUBLIC_BASE_URL'))
 app.jinja_env.globals['public_base_url'] = PUBLIC_BASE_URL
@@ -2917,12 +3056,38 @@ class Agency(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reset_token = db.Column(db.String(100), nullable=True)
     reset_token_expires = db.Column(db.DateTime, nullable=True)
+    # The one website this subscription is for. Set at signup, and
+    # changeable ONLY from the super admin panel - an owner who could
+    # edit it could licence themselves a second site.
+    website_url = db.Column(db.String(300), nullable=True)
+    # A test agency has no website and is never checked. It exists so
+    # features can be tried end to end without inventing a real site.
+    is_test = db.Column(db.Boolean, default=False)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+class WidgetOrigin(db.Model):
+    """Every website an agency's widget has answered on.
+
+    Without this, "warn rather than block" warns nobody: a mismatch that
+    is noticed and forgotten tells you nothing, and you cannot tell a
+    client cheating from a client with a staging site. One row per
+    agency per domain, with a count and a last-seen, so the super admin
+    panel can show where each assistant is really being used.
+    """
+    __tablename__ = 'widget_origin'
+    id = db.Column(db.Integer, primary_key=True)
+    agency_id = db.Column(db.Integer, index=True, nullable=False)
+    host = db.Column(db.String(200), nullable=False)
+    allowed = db.Column(db.Boolean, default=True)
+    hits = db.Column(db.Integer, default=1)
+    first_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class Lead(db.Model):
@@ -3258,7 +3423,8 @@ def is_smoke_test_request():
 def provision_agency(name, email, tier='solo', prompt=None, assistant_name=None,
                      owner_name=None, whatsapp=None, subscription_type='Basic',
                      billing_email=None, password=None, trial_days=14,
-                     status='Active', subscription_status='trialing'):
+                     status='Active', subscription_status='trialing',
+                     website_url=None, is_test=False):
     """Create an agency and return (agency, temp_password).
 
     Every route that makes an agency comes through here: the Super Admin
@@ -3267,6 +3433,8 @@ def provision_agency(name, email, tier='solo', prompt=None, assistant_name=None,
     """
     if not name or not email:
         raise ValueError("name and email are required")
+    if not is_test and not site_host(website_url):
+        raise ValueError("a website address is required")
     if tier not in TIER_LIMITS:
         tier = 'solo'
     supplied_password = (password or '').strip()
@@ -3284,6 +3452,11 @@ def provision_agency(name, email, tier='solo', prompt=None, assistant_name=None,
         subscription_status=subscription_status,
         trial_ends_at=datetime.utcnow() + timedelta(days=trial_days),
         billing_email=billing_email or email,
+        # Stored as the registrable domain, not as the visitor typed it,
+        # so 'https://WWW.Acme.co.uk/contact' and 'acme.co.uk' are one
+        # value and a later comparison has nothing to normalise.
+        website_url=(None if is_test else (site_host(website_url) or None)),
+        is_test=bool(is_test),
     )
     agency.set_password(temp_password)
     db.session.add(agency)
@@ -3520,6 +3693,16 @@ def create_agency():
     if not data.get("name") or not data.get("email"):
         return jsonify({"error": "Name and email required"}), 400
 
+    # A test agency has no website and is never licence-checked, so the
+    # flag is honoured ONLY for the super admin. Both signup forms post
+    # to this same route; without this line a visitor could send
+    # is_test and licence themselves out of the one-site rule.
+    is_test = bool(data.get("is_test")) and bool(session.get('super_admin'))
+    website_url = data.get("website_url")
+    if not is_test and not site_host(website_url):
+        return jsonify({"error": "Please enter the website address where "
+                                 "the assistant will be used"}), 400
+
     # One door: the panel, both signup forms and (later) pilot onboarding
     # all create agencies through provision_agency().
     agency, temp_password = provision_agency(
@@ -3536,9 +3719,15 @@ def create_agency():
         # use it. Otherwise a random one-time password is generated - never
         # a shared hardcoded default like the old "admin123".
         password=data.get("password"),
+        website_url=website_url,
+        is_test=is_test,
     )
     if session.get('super_admin'):
-        record_admin_action('agency_created', f"#{agency.id} {agency.name}")
+        record_admin_action(
+            'agency_created',
+            f"#{agency.id} {agency.name}"
+            + (" (test agency, no website)" if is_test
+               else f" [{agency.website_url}]"))
     return jsonify({
         "agency_id": agency.id,
         "tier": agency.tier,
@@ -3606,8 +3795,65 @@ def get_agencies():
             "lead_count": Lead.query.filter_by(agency_id=a.id).count(),
             "appointment_count": Appointment.query.filter_by(agency_id=a.id).count(),
             "agent_count": Agent.query.filter_by(agency_id=a.id).count(),
+            "website_url": a.website_url,
+            "is_test": bool(a.is_test),
+            # The domains this agency's widget has actually answered on,
+            # newest first, with the ones it should not have been on
+            # first of all. This is what makes "warn" worth anything.
+            "seen_on": [
+                {"host": row.host, "allowed": bool(row.allowed),
+                 "hits": row.hits or 0,
+                 "last_seen": row.last_seen.isoformat() if row.last_seen else None}
+                for row in (WidgetOrigin.query
+                            .filter_by(agency_id=a.id)
+                            .order_by(WidgetOrigin.allowed.asc(),
+                                      WidgetOrigin.last_seen.desc())
+                            .limit(10).all())
+            ],
         })
     return jsonify(result)
+
+
+@app.route("/set-agency-website/<int:agency_id>", methods=["POST"])
+def set_agency_website(agency_id):
+    """The licensed website, and whether this is a test agency.
+
+    Super admin only, and deliberately not on the owner's own profile
+    screen: a client who could edit this could licence themselves a
+    second site, which is the whole thing being prevented.
+    """
+    if not session.get('super_admin'):
+        return jsonify({"error": "Unauthorized"}), 401
+    agency = db.session.get(Agency, agency_id)
+    if not agency:
+        return jsonify({"error": "Agency not found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    is_test = bool(data.get("is_test"))
+    given = data.get("website_url")
+    host = site_host(given)
+    if not is_test and not host:
+        return jsonify({"error": "Enter a website address, or tick test "
+                                 "agency"}), 400
+
+    before = {"website_url": agency.website_url, "is_test": bool(agency.is_test)}
+    agency.website_url = None if is_test else host
+    agency.is_test = is_test
+    db.session.commit()
+
+    # Re-judge what has already been seen, so the panel stops showing a
+    # warning the moment the website is corrected.
+    for row in WidgetOrigin.query.filter_by(agency_id=agency.id).all():
+        row.allowed = (not licence_is_checked(agency)
+                       or same_site(agency.website_url, row.host))
+    db.session.commit()
+
+    record_admin_action(
+        'agency_website_set',
+        f"#{agency.id} {agency.name}: {before['website_url'] or 'none'}"
+        f" -> {agency.website_url or 'test agency'}")
+    return jsonify({"success": True, "website_url": agency.website_url,
+                    "is_test": agency.is_test})
 
 
 @app.route("/platform-stats")
@@ -5237,6 +5483,12 @@ def chat():
         if not agency:
             return jsonify({"error": "Invalid agency ID"}), 400
 
+        # One subscription, one website. The visitor is answered either
+        # way - a client's live chatbot does not go silent over a rule -
+        # but where it answered is written down, and a domain that is
+        # not theirs is flagged for the super admin panel.
+        note_widget_origin(agency, origin_host(request))
+
         # An install check for a brand-new agency: everything above has run
         # (the agency exists, the request shape is right), and we stop here
         # rather than paying for an answer nobody reads.
@@ -6528,6 +6780,18 @@ with app.app_context():
         if 'webhook_url' not in agency_cols:
             db.session.execute(text("ALTER TABLE agency ADD COLUMN webhook_url VARCHAR(500);"))
             db.session.commit()
+        if 'website_url' not in agency_cols:
+            db.session.execute(text("ALTER TABLE agency ADD COLUMN website_url VARCHAR(300);"))
+            db.session.commit()
+            print("✅ Migration: agency.website_url added")
+        if 'is_test' not in agency_cols:
+            # No backfill on purpose. Every agency that exists today has
+            # no website, so the licence check already passes them by;
+            # flipping a flag under them would be a change they did not
+            # ask for. Tick the box on the ones that are tests.
+            db.session.execute(text("ALTER TABLE agency ADD COLUMN is_test BOOLEAN DEFAULT FALSE;"))
+            db.session.commit()
+            print("✅ Migration: agency.is_test added")
         if 'lead_status' not in lead_cols:
             db.session.execute(text("ALTER TABLE lead ADD COLUMN lead_status VARCHAR(20) DEFAULT 'new';"))
             db.session.commit()

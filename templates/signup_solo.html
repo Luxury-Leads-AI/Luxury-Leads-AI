@@ -160,6 +160,13 @@
     <input id="email" type="email" placeholder="your@email.com" required>
     <p class="helper-text">You'll receive lead notifications here</p>
 
+    <label>Your Website *</label>
+    <input id="website" type="text" placeholder="yourawebsite.com" required
+           autocomplete="url" inputmode="url">
+    <p class="helper-text">The website your assistant will live on. One
+       subscription covers one website &mdash; your own subdomains
+       (www, staging) are included.</p>
+
     <label>WhatsApp Number</label>
     <input id="whatsapp" placeholder="+92 300 1234567">
 
@@ -189,6 +196,7 @@ async function submitForm(event) {
     assistant_name: document.getElementById("assistant").value.trim(),
     owner_name: document.getElementById("owner").value.trim(),
     email: document.getElementById("email").value.trim(),
+    website_url: document.getElementById("website").value.trim(),
     whatsapp: document.getElementById("whatsapp").value.trim(),
     tier: TIER,
     subscription_type: TIER,

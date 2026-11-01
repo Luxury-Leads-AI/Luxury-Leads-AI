@@ -233,6 +233,17 @@
             <input id="whatsapp" placeholder="WhatsApp Number">
         </div>
         <div class="form-row">
+            <input id="website_url" type="text"
+                   placeholder="Client's website, e.g. acme.com">
+        </div>
+        <div class="form-row" style="align-items:center;">
+            <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text-dim);">
+                <input id="is_test" type="checkbox" style="width:auto; margin:0;"
+                       onchange="document.getElementById('website_url').disabled = this.checked;">
+                Test agency &mdash; no website, never licence-checked
+            </label>
+        </div>
+        <div class="form-row">
             <textarea id="prompt" placeholder="AI Prompt (Optional - Leave empty for default)">You are a luxury real estate assistant.</textarea>
         </div>
         <button class="btn-create" onclick="createAgency()">✨ Create Agency</button>
@@ -390,9 +401,17 @@ async function createAgency() {
     const email = document.getElementById("email").value.trim();
     const whatsapp = document.getElementById("whatsapp").value.trim();
     const prompt = document.getElementById("prompt").value.trim();
-    
+    const website_url = document.getElementById("website_url").value.trim();
+    const is_test = document.getElementById("is_test").checked;
+
     if (!name || !email) {
         alert("❌ Agency Name and Email are required!");
+        return;
+    }
+    if (!is_test && !website_url) {
+        alert("❌ A website is required.\n\nOne subscription covers one " +
+              "website. If this agency is only for testing, tick " +
+              "\"Test agency\" instead.");
         return;
     }
     
@@ -411,7 +430,9 @@ async function createAgency() {
                 email,
                 whatsapp,
                 prompt: prompt || "You are a luxury real estate assistant.",
-                subscription_type: "Basic"
+                subscription_type: "Basic",
+                website_url,
+                is_test
             })
         });
         

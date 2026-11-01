@@ -367,7 +367,8 @@ def test_agencies_created_and_deleted_from_the_panel_are_recorded(client, hashed
     with client.session_transaction() as sess:
         sess['super_admin'] = True
     created = client.post('/create-agency',
-                          json={'name': 'Audited Realty', 'email': 'audit@example.test'},
+                          json={'name': 'Audited Realty', 'email': 'audit@example.test',
+                          'website_url': 'shaperealty.test'},
                           headers=ip())
     agency_id = created.get_json()['agency_id']
     client.delete(f'/delete-agency/{agency_id}', headers=ip())
@@ -381,7 +382,8 @@ def test_a_public_signup_is_not_an_admin_action(client):
     """The audit log is about the panel. Every visitor signing up would
     drown it."""
     r = client.post('/create-agency',
-                    json={'name': 'Self Serve Realty', 'email': 'self@example.test'},
+                    json={'name': 'Self Serve Realty', 'email': 'self@example.test',
+                          'website_url': 'shaperealty.test'},
                     headers=ip('203.0.113.99'))
     agency = db.session.get(app_module.Agency, r.get_json()['agency_id'])
     db.session.delete(agency)
@@ -412,7 +414,8 @@ def test_an_audit_failure_never_breaks_the_thing_it_records(monkeypatch, client,
 
 def test_provision_agency_creates_a_usable_agency():
     agency, temp_password = app_module.provision_agency(
-        name='Pilot Realty', email='pilot@example.test', tier='agency')
+        name='Pilot Realty', email='pilot@example.test', tier='agency',
+        website_url='pilotrealty.test')
     try:
         assert agency.id and agency.tier == 'agency'
         assert agency.subscription_status == 'trialing'
@@ -428,7 +431,8 @@ def test_provision_agency_creates_a_usable_agency():
 
 def test_provision_agency_keeps_a_password_the_caller_chose():
     agency, temp_password = app_module.provision_agency(
-        name='Chosen Realty', email='chosen@example.test', password='their-own-password')
+        name='Chosen Realty', email='chosen@example.test', password='their-own-password',
+        website_url='chosenrealty.test')
     try:
         assert temp_password is None
         assert agency.check_password('their-own-password')
@@ -439,14 +443,17 @@ def test_provision_agency_keeps_a_password_the_caller_chose():
 
 def test_provision_agency_refuses_an_agency_with_no_name_or_email():
     with pytest.raises(ValueError):
-        app_module.provision_agency(name='', email='someone@example.test')
+        app_module.provision_agency(name='', email='someone@example.test',
+                                    website_url='x.test')
     with pytest.raises(ValueError):
-        app_module.provision_agency(name='No Email Realty', email='')
+        app_module.provision_agency(name='No Email Realty', email='',
+                                    website_url='x.test')
 
 
 def test_an_unknown_tier_falls_back_to_solo():
     agency, _ = app_module.provision_agency(
-        name='Odd Tier Realty', email='odd@example.test', tier='platinum')
+        name='Odd Tier Realty', email='odd@example.test', tier='platinum',
+        website_url='oddtier.test')
     try:
         assert agency.tier == 'solo'
     finally:
@@ -456,7 +463,8 @@ def test_an_unknown_tier_falls_back_to_solo():
 
 def test_the_signup_route_answers_exactly_as_it_did_before(client):
     r = client.post('/create-agency',
-                    json={'name': 'Shape Realty', 'email': 'shape@example.test'},
+                    json={'name': 'Shape Realty', 'email': 'shape@example.test',
+                          'website_url': 'shaperealty.test'},
                     headers=ip('203.0.113.120'))
     body = r.get_json()
     try:

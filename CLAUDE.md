@@ -44,6 +44,8 @@ SMOKE_TEST_TOKEN=      # Optional; with header `X-Smoke-Test: <token>`, /chat an
 SUPPORT_EMAIL=         # Optional; the address shown on the home, privacy and terms pages (falls back to SMTP_EMAIL, then DEFAULT_SUPPORT_EMAIL)
 REPLY_TO_EMAIL=        # Optional; where a client's reply lands (falls back to SUPPORT_EMAIL)
 EMAIL_FROM_NAME=       # Optional; the name beside the From address (default "Luxury Leads AI")
+# website_url and is_test are per-agency, set at signup or from the super
+# admin panel - not environment variables.
 SITE_BASE_URL=         # Optional; the address the PUBLIC pages claim as canonical, and the one in robots.txt and the sitemap. Falls back to PUBLIC_BASE_URL. Set it to the plain domain visitors arrive on (https://ailuxuryleads.com) - PUBLIC_BASE_URL stays on the app subdomain because the widget's script URL must never move
 BUSINESS_ADDRESS=      # Optional; the registered address in the public footer. Nothing is shown until it is set
 SHOW_STATS=            # Optional; "true" to show the four figures across the home page. Off by default - a tile renders only when its STAT_n_VALUE is also set
@@ -546,6 +548,49 @@ cannot produce proves nothing.
 `test_no_signal_anywhere_is_ever_read_as_a_yes` now sweeps every weighted field
 against every sentinel, and `NOTHING_REASONS` gives each blank a line a person
 can act on ("no prices published") instead of a shrug.
+
+### One subscription, one website
+
+`Agency.website_url` is the single site a subscription licenses, stored as the
+**registrable domain** (`site_host()` reduces `https://WWW.Acme.co.uk/contact`
+to `acme.co.uk`) so a later comparison has nothing to normalise.
+`same_site()` treats any subdomain as the same website — `acme.com`,
+`www.acme.com` and `staging.acme.com` are one site, because that is how an
+agency runs one, and a rule that trips a paying client on their own domain in
+week one generates tickets rather than revenue. `MULTI_LABEL_SUFFIXES` keeps
+`acme.co.uk` from matching `other.co.uk`; it is not the full public suffix list
+(a moving target and a dependency) but covers the markets in play.
+
+**Nothing is blocked.** `/chat` calls `note_widget_origin()`, which writes a
+`WidgetOrigin` row per agency per domain with a hit count and a last-seen, and
+marks it `allowed=False` when it is not their site. The visitor is answered
+either way: a client's live chatbot going silent over a rule we guessed at is
+worse than a fortnight of a second site. The ledger is what makes "warn"
+actionable — `/agencies` returns `seen_on` per agency, disallowed domains
+first, so the panel shows where each assistant is *really* being used.
+`note_widget_origin()` swallows its own exceptions: a licence ledger is not
+worth one lost lead.
+
+**Who is exempt.** `licence_is_checked()` is false for an agency with no
+`website_url` (every agency that existed when this shipped — the migration
+backfills nothing, so nobody's account changed under them) and for one with
+`is_test` set. A **test agency** is explicit and can be created *only* from the
+super admin panel: both signup forms POST to the same `/create-agency` route,
+so `is_test` is honoured only when `session['super_admin']` is set — without
+that line a visitor could send `is_test` and licence themselves out of the rule
+(`test_a_visitor_cannot_make_themselves_a_test_agency`).
+
+**The owner cannot edit it.** That is the feature: a lock the locked party can
+open is not a lock. `/update-agency-profile` works from an explicit field list
+and does not read `website_url` or `is_test`; a test asserts the route's source
+never mentions them. Changing it is `/set-agency-website`, super admin only,
+and it **re-judges existing `WidgetOrigin` rows** so correcting a typo at
+signup clears the warning rather than leaving a red mark on an innocent client.
+
+It is a **licence check, not a security control** — the domain comes from the
+browser's `Origin` header (falling back to `Referer`), which someone determined
+could forge from their own server. It catches the thing that actually happens:
+the same script tag pasted onto a second site.
 
 ## Architecture
 

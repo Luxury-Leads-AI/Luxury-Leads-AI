@@ -48,6 +48,7 @@ def test_backend_tier_logic_is_untouched_by_the_flag(client):
     create a corporation-tier agency (e.g. Moaz creating one manually) -
     only the signup/pricing pages change."""
     res = client.post("/create-agency", json={
+        "website_url": "example-agency.test",
         "name": "Manually Created Corp Agency",
         "email": "manualcorp@example.test",
         "tier": "corporation",
@@ -96,6 +97,7 @@ def test_signup_solo_page_renders(client):
 
 def test_signup_solo_creates_a_solo_tier_agency(client):
     res = client.post("/create-agency", json={
+        "website_url": "example-agency.test",
         "name": "Solo Test Biz", "email": "solotest1@example.test",
         "tier": "solo", "subscription_type": "solo",
     })
@@ -123,6 +125,7 @@ def test_signup_agency_page_renders(client):
 
 def test_signup_agency_creates_an_agency_tier_agency(client):
     res = client.post("/create-agency", json={
+        "website_url": "example-agency.test",
         "name": "Agency Test Biz", "email": "agencytest1@example.test",
         "tier": "agency", "subscription_type": "agency",
     })

@@ -545,6 +545,10 @@ GUIDES = {
         'notes': (
             'Your Agency ID is not on this page because it cannot be '
             'changed - it is what you sign in with.',
+            'Nor is your website address. One subscription covers one '
+            'website, so that address is what your subscription is '
+            'licensed against - email support if it needs to change. Your '
+            'own subdomains (www, staging) are already included.',
         ),
         'related': ('admin',),
     },
@@ -766,6 +770,15 @@ FAQS = (
      'Yes. Put your webhook address on the Analytics page and every '
      'qualifying lead is posted to it as JSON as it is captured. HubSpot, '
      'Follow Up Boss, Zapier and Make.com all accept one.'),
+    ('Can I use one subscription on two websites?',
+     'No - one subscription covers one website. Your own subdomains are '
+     'included, so acme.com, www.acme.com and staging.acme.com all count '
+     'as the same site. A second business or a second brand needs its own '
+     'subscription.'),
+    ('My website address has changed. What do I do?',
+     'Email support and we will update it. It is not editable from your '
+     'own dashboard, because it is what your subscription is licensed '
+     'against.'),
     ('Can I export my leads?',
      'Yes, to a spreadsheet, from the Export Excel button on your dashboard. '
      'It includes leads a filter is currently hiding.'),

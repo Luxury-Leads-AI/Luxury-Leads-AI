@@ -101,6 +101,7 @@ def test_owner_login_accepts_agencys_real_password(client, test_agency):
 
 def test_create_agency_no_longer_uses_shared_default_password(client):
     res = client.post("/create-agency", json={
+        "website_url": "example-agency.test",
         "name": "New Test Agency",
         "email": "newtestagency@example.test",
     })
@@ -120,8 +121,8 @@ def test_create_agency_no_longer_uses_shared_default_password(client):
 
 
 def test_two_new_agencies_get_different_passwords(client):
-    res1 = client.post("/create-agency", json={"name": "A1", "email": "a1@example.test"})
-    res2 = client.post("/create-agency", json={"name": "A2", "email": "a2@example.test"})
+    res1 = client.post("/create-agency", json={"website_url": "example-agency.test", "name": "A1", "email": "a1@example.test"})
+    res2 = client.post("/create-agency", json={"website_url": "example-agency.test", "name": "A2", "email": "a2@example.test"})
     d1, d2 = res1.get_json(), res2.get_json()
     try:
         assert d1["temp_password"] != d2["temp_password"]
