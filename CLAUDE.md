@@ -677,6 +677,83 @@ but **only once a figure exists to revise**.
 2026, verbatim, as the regression test. All 49 of its tests fail against the
 code that shipped before it.
 
+## The contact step: preference first, then the detail
+
+From a seller transcript of 9 November 2026. One conversation produced a lead,
+a pending listing and an approval email, and still got three things wrong.
+
+**The order was backwards.** The buyer and seller sequences both collected an
+email address and *then* asked "best way to reach you - WhatsApp, phone, or
+email?". The answer arrived after the only detail it could have changed, and
+nothing acted on it: the owner answered "WhatsApp" and was never asked for a
+number. The conversation closed with a channel chosen and no way to use it.
+
+The sequences now read **preference → the one detail that preference needs →
+the email address if it is still missing**, one question per message, on both
+sides of the transaction.
+
+A nine-point list buried in a 200-line prompt is a suggestion. `contact_plan()`
+computes the state in Python and `contact_context()` writes **one** next action
+into the prompt, with a close gate:
+
+> Do NOT end the conversation, thank them off, or send a closing recap until
+> the contact step above is finished.
+
+The gate is what fixes the empty-handed close. The step names are
+`ask_preference` → `ask_whatsapp` / `ask_phone` / `ask_email` → `done`.
+
+Three details worth keeping in mind when changing it:
+
+- **The stored preference cannot tell a real answer from a default.**
+  `extract_lead_data` returns `contact_preference='email'` whether or not
+  anybody asked, so `contact_plan` reads the visitor's reply itself through
+  `channel_in()`, which returns `None` for "whatever's easiest".
+- **"email and WhatsApp" still needs a number.** `CHANNEL_FOR_PREFERENCE` maps
+  the combined answers onto the detail that is still missing.
+- **A number is not a refusal.** The old decline check was a substring scan, and
+  `no` lives inside *number*, *now* and *nothing* — "my number is 555…" read as
+  a decline. `declines_to_share()` requires word boundaries and treats any digit
+  in the reply as an answer.
+
+Still open, and deliberately so: a lead is only created once there is an
+**email address**. `resolve_lead_identity`, the appointment rows and the
+customer-facing mail all key on it. Somebody who picks WhatsApp and then
+refuses an email is not saved. Changing that means changing the dedup key, not
+one condition.
+
+### The property facts the visitor already gave
+
+The owner's first answer was "I want to rent out my apartment", and two
+messages later the AI asked "what kind of property is it - a villa, a house,
+or an apartment?". `extract_lead_data` covers the *person* — name, email,
+budget, timeline — and nothing covered the *property*, so ALREADY CAPTURED
+never contained the answer he had already given.
+
+`property_facts_in()` reads the type, bedrooms and bathrooms out of the
+visitor's own messages and feeds them into ALREADY CAPTURED, along with the
+detected side of the transaction (`buy` / `rent` / owner), which was also being
+re-asked.
+
+It reads **user turns only**: the assistant's own question names all three
+types, so a scan that included its words would capture one of them and skip the
+question it had just asked. `real estate` is not a property type, the longest
+match wins so `town house` beats `house`, and `flat` and `plot` map onto
+`apartment` and `land` — the vocabulary the listing extractor returns.
+
+### Where a customer's reply lands
+
+`send_email_brevo` takes `reply_to=None`. Mail to an **agency** or its staff
+still replies to our support address — we are the people who can help them.
+Mail to their **customer** passes `reply_to=agency.email`: the approval email
+tells a seller "if anything above needs correcting, just reply to this email",
+and that reply was going to a platform inbox that has never seen his listing.
+The three customer-facing sends are the appointment confirmation, the
+post-viewing check-in and the seller approval notice.
+
+`tests/test_contact_sequence.py` holds all of it. Twenty-six of its 27 tests
+fail against the code that shipped before it; the one that passes asserts the
+unchanged behaviour, that platform mail still replies to support.
+
 ## Architecture
 
 **Single-file backend** — all Flask routes, DB models, AI logic, and email are in `app.py`. There are no blueprints. The one other module, `guides.py`, is pure content (the user guides as data) with no imports, no logic and no database access; `app.py` reads it and owns every route.

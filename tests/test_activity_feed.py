@@ -28,8 +28,9 @@ from test_route_guards import (make_agency, make_agent, make_lead,
 def spy_email(monkeypatch):
     sent = []
 
-    def fake(to_email, subject, body):
-        sent.append({"to": to_email, "subject": subject, "body": body})
+    def fake(to_email, subject, body, reply_to=None):
+        sent.append({"to": to_email, "subject": subject, "body": body,
+                     "reply_to": reply_to})
         return True
 
     monkeypatch.setattr(app_module, "send_email_brevo", fake)

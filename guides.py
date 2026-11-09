@@ -758,6 +758,17 @@ FAQS = (
     ('A visitor wants to sell me a property. What happens?',
      'They can submit it through the chat. It sits as Pending and is '
      'invisible to buyers until you approve it on the Listings page.'),
+    ('How does the assistant collect somebody\'s contact details?',
+     'It asks how they would like to be reached first - WhatsApp, phone or '
+     'email - and then asks only for that one detail, followed by an email '
+     'address so you have something in writing. If somebody would rather '
+     'not give a number, it accepts that and moves on instead of asking '
+     'again.'),
+    ('If a customer replies to one of these emails, where does it go?',
+     'To your agency email address, the one you signed up with. That covers '
+     'the booking confirmation, the note after a viewing and the message '
+     'telling an owner their property is live. Emails about your own '
+     'account - new lead alerts, password resets - still reply to us.'),
     ('What languages does it speak?',
      'Nine: English, French, Spanish, Portuguese, Brazilian Portuguese, '
      'German, Italian, Dutch and Arabic. The visitor does not have to '

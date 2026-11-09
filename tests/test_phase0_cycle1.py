@@ -145,12 +145,12 @@ def test_emails_use_the_setting_at_send_time(monkeypatch):
     sent = {}
     monkeypatch.setattr(app_module, 'PUBLIC_BASE_URL', 'https://app.example.com')
     monkeypatch.setattr(app_module, 'send_email_brevo',
-                        lambda to, subject, body: sent.update(body=body) or True)
+                        lambda to, subject, body, reply_to=None: sent.update(body=body) or True)
 
     class Obj:
         pass
     agency, appt = Obj(), Obj()
-    agency.name = 'Test Realty'
+    agency.name, agency.email = 'Test Realty', 'owner@testrealty.test'
     appt.customer_name, appt.customer_email = 'Sam', 'sam@example.test'
     appt.property_interest, appt.appointment_date, appt.appointment_time = 'Villa', '2026-10-01', '2:00 PM'
 

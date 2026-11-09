@@ -692,8 +692,15 @@ def clean_whatsapp_number(number):
     return cleaned if len(cleaned) >= 9 else None
 
 
-def send_email_brevo(to_email, subject, body):
-    """Central email sender via Brevo API. Returns True/False."""
+def send_email_brevo(to_email, subject, body, reply_to=None):
+    """Central email sender via Brevo API. Returns True/False.
+
+    reply_to overrides the platform support address for one message.
+    Mail to an AGENCY (or its staff) should reply to us - we are the
+    people who can help them. Mail to their CUSTOMER must reply to the
+    agency: a seller told "if anything needs correcting, just reply to
+    this email" was writing to our support inbox, which has never seen
+    their listing and cannot change it."""
     BREVO_API_KEY = os.getenv("BREVO_API_KEY")
     if not BREVO_API_KEY:
         print("⚠️ BREVO_API_KEY not set - email not sent")
@@ -713,7 +720,8 @@ def send_email_brevo(to_email, subject, body):
                 # Without this, a client who presses Reply is writing to
                 # whatever the sending service chose. With it, they are
                 # writing to a mailbox somebody reads.
-                **({"replyTo": {"email": REPLY_TO_EMAIL}} if REPLY_TO_EMAIL else {}),
+                **({"replyTo": {"email": reply_to or REPLY_TO_EMAIL}}
+                   if (reply_to or REPLY_TO_EMAIL) else {}),
                 "subject": subject,
                 "textContent": body
             },
@@ -1606,7 +1614,8 @@ New Appointment Booked!
 View all appointments:
 {PUBLIC_BASE_URL}/appointments/{agency.id}
 """
-    sent_customer = send_email_brevo(appointment.customer_email, customer_subject, customer_body)
+    sent_customer = send_email_brevo(appointment.customer_email, customer_subject,
+                                     customer_body, reply_to=agency.email)
     sent_agency = send_email_brevo(agency.email, agency_subject, agency_body)
     return sent_customer or sent_agency
 
@@ -2066,7 +2075,7 @@ We'd love to know how it went — just click whichever fits:
 Thanks!
 {agency.name}
 """
-    return send_email_brevo(appt.customer_email, subject, body)
+    return send_email_brevo(appt.customer_email, subject, body, reply_to=agency.email)
 
 
 def notify_agent_customer_wants_to_buy(agency, appt):
@@ -2916,6 +2925,228 @@ def contact_step_completed(conversation_history):
     user_msg_count = len([m for m in conversation_history if m['role'] == 'user'])
     if asked_contact_pref and user_msg_count >= 10: return True
     return False
+
+
+# ─────────────────────────────────────────────────────
+# THE CONTACT STEP - PREFERENCE FIRST, THEN THE DETAIL
+# ─────────────────────────────────────────────────────
+# The old order was: ask for an email, then ask "best way to reach you?".
+# That is backwards twice over. It collects a detail before finding out
+# whether the visitor wants to be contacted that way, and when the answer
+# came back "WhatsApp" nobody ever asked for the number - the conversation
+# closed with a channel chosen and no way to use it.
+
+CONTACT_DECLINES = ['no', 'nope', 'skip', 'pass', 'later', 'not now', "don't", 'dont',
+                    'prefer not', 'rather not', 'no thanks', 'nein', 'nie', 'non',
+                    'não', 'nao', 'hayır', 'hayir', 'nahi', 'nahin']
+
+
+def declines_to_share(user_text):
+    """True if the visitor turned the question down instead of answering.
+
+    Substring matching cannot be used here: 'no' lives inside 'number',
+    'now' and 'nothing', so "my number is 555..." read as a refusal. Any
+    digit in the reply means they answered, whatever words surround it."""
+    text = (user_text or '').strip().lower()
+    if re.search(r'\d', text):
+        return False
+    return any(re.search(r'\b' + re.escape(w) + r'\b', text) for w in CONTACT_DECLINES)
+
+
+# Which single detail a stated preference still needs. Somebody who said
+# "email and WhatsApp" has to be asked for the number too.
+CHANNEL_FOR_PREFERENCE = {
+    'whatsapp': 'whatsapp',
+    'email_and_whatsapp': 'whatsapp',
+    'phone': 'phone',
+    'email_and_phone': 'phone',
+    'email': 'email',
+}
+
+CHANNEL_EMAIL_WORDS = ['email', 'e-mail', 'mail', 'correo', 'courriel']
+CHANNEL_PHONE_WORDS = ['phone', 'call me', 'call', 'ring', 'sms', 'text me',
+                       'telefon', 'teléfono', 'telefono', 'téléphone', 'telefone']
+CHANNEL_WHATSAPP_WORDS = ['whatsapp', 'whats app', 'whatsap', 'watsapp', 'wapp']
+
+
+def contact_channel(preference):
+    return CHANNEL_FOR_PREFERENCE.get((preference or '').strip().lower())
+
+
+def channel_in(user_text):
+    """Which channel the visitor named in their answer, or None if their
+    reply named none ("whatever's easiest"). Returning None matters: the
+    stored preference defaults to 'email' whether or not anyone asked, so
+    reading that field alone cannot tell a real answer from a default."""
+    text = (user_text or '').lower()
+    if any(w in text for w in CHANNEL_WHATSAPP_WORDS) or 'wa' in text.split():
+        return 'whatsapp'
+    if any(w in text for w in CHANNEL_PHONE_WORDS):
+        return 'phone'
+    if any(w in text for w in CHANNEL_EMAIL_WORDS):
+        return 'email'
+    return None
+
+
+CONTACT_ASKS = {
+    'ask_preference': ('Ask this and nothing else, in its own message: "Best way to reach you '
+                       '- WhatsApp, phone, or email?" Do NOT ask for an email address or a '
+                       'number in the same message, and never before this question is answered.'),
+    'ask_whatsapp': 'They chose WhatsApp. Ask only for their WhatsApp number, in its own message.',
+    'ask_phone': 'They chose a phone call. Ask only for the best phone number, in its own message.',
+    'ask_email': 'Ask only for their email address, in its own message.',
+}
+
+
+def contact_plan(conversation_history, known=None):
+    """Which contact detail to ask for next, and in what order.
+
+    Preference first, then the one detail that preference needs, then the
+    email address if it is still missing. Returns the next step by name so
+    the prompt can state one instruction instead of a nine-point list the
+    model is free to reorder."""
+    history = conversation_history or []
+    known = known or {}
+
+    asked_preference = False
+    declined_number = False
+    channel = None
+    for i, msg in enumerate(history):
+        if msg.get('role') != 'assistant':
+            continue
+        content = msg.get('content') or ''
+        reply = history[i + 1] if i + 1 < len(history) else None
+        answered = reply.get('content') if reply and reply.get('role') == 'user' else None
+        if is_contact_question(content):
+            asked_preference = True
+            if answered and channel is None:
+                channel = channel_in(answered)
+        if is_number_question(content) and answered and declines_to_share(answered):
+            declined_number = True
+
+    has_email = bool(known.get('email'))
+    has_number = bool(known.get('whatsapp_number') or known.get('phone'))
+
+    if not asked_preference:
+        step = 'ask_preference'
+    elif channel in ('whatsapp', 'phone') and not has_number and not declined_number:
+        step = 'ask_' + channel
+    elif not has_email:
+        step = 'ask_email'
+    else:
+        step = 'done'
+
+    return {
+        'asked_preference': asked_preference,
+        'channel': channel,
+        'has_email': has_email,
+        'has_number': has_number,
+        'declined_number': declined_number,
+        'step': step,
+        'instruction': CONTACT_ASKS.get(step, ''),
+    }
+
+
+def contact_context(plan):
+    """The contact step written out for the model as one next action.
+
+    Deliberately phrased as "when you reach it" rather than "do this now":
+    a buyer who has not seen a property yet, and an owner who has not
+    described theirs, should not be asked how to be reached. The hard part
+    is the last line - the close gate - which is what stopped the AI
+    wrapping up a conversation with no number in it."""
+    if plan['step'] == 'done':
+        return ("\n\nCONTACT DETAILS: complete. Never ask for an email address, a number, "
+                "or a contact preference again - not to confirm, not in a closing recap.")
+    lines = ["\n\nTHE CONTACT STEP - when you reach it (after the items above, never before):",
+             "- " + plan['instruction']]
+    if plan['step'] in ('ask_whatsapp', 'ask_phone') and not plan['has_email']:
+        lines.append("- Once they give it, ask for their email address in a SEPARATE message, "
+                     "so the team can send them a written confirmation.")
+    if plan['step'] == 'ask_preference':
+        lines.append("- Then ask only for the detail their answer needs: WhatsApp chosen -> their "
+                     "WhatsApp number. Phone chosen -> their phone number. Email chosen -> their "
+                     "email address. One per message.")
+        lines.append("- If they chose WhatsApp or phone, ask for their email address afterwards "
+                     "as well, in its own message.")
+    lines.append("- A declined number is a complete answer. Accept it once, say that is no "
+                 "problem, and never ask for it again.")
+    lines.append("- Do NOT end the conversation, thank them off, or send a closing recap until "
+                 "the contact step above is finished.")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────
+# WHAT THE VISITOR ALREADY TOLD US ABOUT THE PROPERTY
+# ─────────────────────────────────────────────────────
+# extract_lead_data covers the person - name, email, budget, timeline.
+# Nothing covered the property, so an owner who opened with "I want to
+# rent out my apartment" was asked, two messages later, "what kind of
+# property is it - villa, house, or apartment?". Their own first sentence
+# answered it.
+#
+# Scanned in the VISITOR's messages only. The assistant's own question
+# names all three types, so reading its words would capture nonsense.
+PROPERTY_TYPE_WORDS = {
+    'villa': 'villa', 'apartment': 'apartment', 'flat': 'apartment',
+    'condo': 'condo', 'condominium': 'condo', 'house': 'house',
+    'townhouse': 'townhouse', 'town house': 'townhouse', 'penthouse': 'penthouse',
+    'duplex': 'duplex', 'studio': 'studio', 'bungalow': 'bungalow',
+    'cottage': 'cottage', 'chalet': 'chalet', 'mansion': 'mansion',
+    'loft': 'loft', 'farmhouse': 'farmhouse', 'estate': 'estate',
+    'land': 'land', 'plot': 'land',
+}
+
+COUNT_WORDS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+               'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10}
+_COUNT = r'(\d{1,2}(?:\.5)?|one|two|three|four|five|six|seven|eight|nine|ten)'
+BEDROOM_COUNT = re.compile(r'\b' + _COUNT + r'[\s-]*(?:bed|beds|bedroom|bedrooms|br|bhk)\b',
+                           re.IGNORECASE)
+BATHROOM_COUNT = re.compile(r'\b' + _COUNT + r'[\s-]*(?:bath|baths|bathroom|bathrooms|'
+                            r'washroom|washrooms)\b', re.IGNORECASE)
+
+
+def count_in(pattern, text):
+    match = pattern.search(text or '')
+    if not match:
+        return None
+    raw = match.group(1).lower()
+    if raw in COUNT_WORDS:
+        return COUNT_WORDS[raw]
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return int(value) if value == int(value) else value
+
+
+def property_type_in(text):
+    """The most specific type word in one message. Longest match wins, so
+    "town house" beats "house" and "studio apartment" is not read as a
+    bare studio. "real estate" is not a property type."""
+    found = None
+    for word, canonical in PROPERTY_TYPE_WORDS.items():
+        pattern = (r'(?<!real )\bestate\b' if word == 'estate'
+                   else r'\b' + re.escape(word) + r'\b')
+        if re.search(pattern, text or '') and (found is None or len(word) > len(found[0])):
+            found = (word, canonical)
+    return found[1] if found else None
+
+
+def property_facts_in(conversation_history):
+    """Property details the visitor has already stated, in their own words."""
+    facts = {'property_type': None, 'bedrooms': None, 'bathrooms': None}
+    for msg in (conversation_history or []):
+        if msg.get('role') != 'user':
+            continue
+        text = (msg.get('content') or '').lower()
+        if facts['property_type'] is None:
+            facts['property_type'] = property_type_in(text)
+        if facts['bedrooms'] is None:
+            facts['bedrooms'] = count_in(BEDROOM_COUNT, text)
+        if facts['bathrooms'] is None:
+            facts['bathrooms'] = count_in(BATHROOM_COUNT, text)
+    return facts
 
 
 def detect_objection(user_message):
@@ -5590,8 +5821,10 @@ def review_seller_listing(listing_id):
                 f"{agency.name}, and we'll start matching it to buyers straight away.\n\n"
                 f"Location: {listing.location or '—'}\n"
                 f"Asking: {listing.price_raw or '—'}\n\n"
-                f"If anything above needs correcting, just reply to this email.\n\n"
-                f"{agency.name}")
+                f"If anything above needs correcting, just reply to this email and it "
+                f"will reach the {agency.name} team.\n\n"
+                f"{agency.name}",
+                reply_to=agency.email)
     return jsonify({"success": True, "status": listing.status})
 
 
@@ -5722,14 +5955,16 @@ skipping anything already in ALREADY CAPTURED):
 5. Standout features and amenities ("Anything that makes it stand out - pool, garden, solar, parking?")
 6. The {money} ("What {'price are you hoping for' if chat_intent == 'sell' else 'monthly rent are you asking'}?")
 7. Timeline ("How soon are you hoping to {'sell' if chat_intent == 'sell' else 'have it rented out'}?") - ask this every time, in its own message. "No particular rush" is a complete answer; accept it and move on. Never press for a firmer date and never imply urgency they didn't express.
-8. Email address
-9. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
+8. Contact preference FIRST: "Best way to reach you - WhatsApp, phone, or email?" - never ask for an email address or a number before this question has been answered.
+9. The one detail their answer needs: WhatsApp chosen -> their WhatsApp number. Phone chosen -> their phone number. Email chosen -> their email address. One per message. If they decline a number, accept it once and move on.
+10. Email address, if you still do not have it - in its own message, after the number.
 
 If they volunteer several of these at once, accept all of it and move to the next MISSING one.
 Acknowledge what they describe warmly and specifically ("A pool and a home cinema - that will
 appeal to the right buyer") without valuing the property or promising a price.
 
-ONCE YOU HAVE ALL OF THE ABOVE, close the conversation like this and then STOP asking questions:
+ONCE YOU HAVE ALL OF THE ABOVE - including the contact details in items 8 to 10 - close the
+conversation like this and then STOP asking questions:
 tell them their property details have been passed to the {agency.name} team, that an agent will
 review and get in touch about next steps, and thank them. Do not invent timelines, valuations,
 commission rates, or contract terms - an agent handles all of that."""
@@ -5752,9 +5987,29 @@ commission rates, or contract terms - an agent handles all of that."""
             known_bits.append(f"Budget: {known['budget']}")
         if known.get('timeline'):
             known_bits.append(f"Timeline: {timeline_label(known['timeline'])} (ALREADY ANSWERED)")
-        if contact_step_completed(history):
+        plan = contact_plan(history, known)
+        if plan['channel']:
+            known_bits.append(f"Contact preference: {plan['channel']} (ALREADY ANSWERED)")
+        elif plan['asked_preference']:
+            known_bits.append("Contact preference: already asked once - do not ask again")
+        # What they told us about the property itself, in their own words.
+        described = property_facts_in(history)
+        if described.get('property_type'):
             known_bits.append(
-                f"Contact preference: {(known.get('contact_preference') or 'email').replace('_', ' ')} (ALREADY ANSWERED)")
+                f"Property type: {described['property_type']} (ALREADY ANSWERED - never ask "
+                f"what kind of property it is)")
+        if described.get('bedrooms') is not None:
+            known_bits.append(f"Bedrooms: {described['bedrooms']} (ALREADY ANSWERED)")
+        if described.get('bathrooms') is not None:
+            known_bits.append(f"Bathrooms: {format_num(described['bathrooms'])} (ALREADY ANSWERED)")
+        if chat_intent in ('buy', 'rent'):
+            known_bits.append(
+                f"They are looking to {'buy' if chat_intent == 'buy' else 'rent'} "
+                f"(ALREADY ANSWERED - never ask whether they want to buy or rent)")
+        elif seller_mode:
+            known_bits.append(
+                f"They own the property and want to {'sell' if chat_intent == 'sell' else 'rent it out'} "
+                f"(ALREADY ANSWERED - never ask what brings them in)")
         already_known_context = ""
         if known_bits:
             already_known_context = (
@@ -5768,7 +6023,7 @@ commission rates, or contract terms - an agent handles all of that."""
 
         system_prompt = f"""You are {agency.assistant_name}, a real estate consultant at {agency.name}.
 {listings_context}
-{already_known_context}
+{already_known_context}{contact_context(plan)}
 
 GOLDEN RULE - ONE QUESTION PER MESSAGE:
 - Never ask two questions in one response. Ever.
@@ -5809,8 +6064,8 @@ VIEWING FLOW - ONE PROPERTY AT A TIME, ONE STEP AT A TIME:
   3. Once they pick a time, confirm that ONE property's booking by name: "You're booked for [Property Name] on [full date] at [Time]."
 - NEVER list multiple days' worth of time slots in a single message. NEVER dump every day and every time slot together - this is overwhelming and error-prone. One day list, then later one time list, per property.
 - If the customer wants to view MORE THAN ONE property, handle them ONE AT A TIME, start to finish (day, then time, then confirm) before starting the next property's day/time from step 1. Never mix days or times for two different properties in the same message.
-- After the LAST property's time is confirmed, ask for email if you don't have it yet. Then a short recap of all bookings together, each naming its property.
-- If client wants to view a property NOT in the listings: say "Unfortunately we don't currently have a property matching your requirements. I'll find suitable options and get back to you to plan a viewing." Do NOT offer any dates or time slots in this case. Just collect their email and contact preference so the agency can follow up.
+- After the LAST property's time is confirmed, work through the contact step (preference first, then the detail it needs) if you have not already. Then a short recap of all bookings together, each naming its property.
+- If client wants to view a property NOT in the listings: say "Unfortunately we don't currently have a property matching your requirements. I'll find suitable options and get back to you to plan a viewing." Do NOT offer any dates or time slots in this case. Just work through the contact step - preference first, then the detail their answer needs - so the agency can follow up.
 
 INFORMATION TO COLLECT FROM A BUYER OR RENTER (strictly one at a time, in this order):
 1. Name (at the very start)
@@ -5819,9 +6074,9 @@ INFORMATION TO COLLECT FROM A BUYER OR RENTER (strictly one at a time, in this o
 4. Location ONLY ("Any particular area in mind?") - do NOT mention budget yet
 5. Budget ONLY (after location is answered: "And what budget are you working with?")
 6. Timeline ONLY ("How soon are you looking to move?") - ask this every time, in its own message, right after the budget. It is never optional and never combined with another question. If they have booked a viewing and you never asked it, ask it once straight after the booking is confirmed.
-7. Email (after they're satisfied or a viewing is planned)
-8. Contact preference: "Best way to reach you - WhatsApp, phone, or email?"
-9. If WhatsApp/phone chosen: ask for the number. If they decline or say email only, that's fine.
+7. Contact preference FIRST (after they're satisfied or a viewing is planned): "Best way to reach you - WhatsApp, phone, or email?" - never ask for an email address or a number before this question has been answered.
+8. The one detail their answer needs: WhatsApp chosen -> their WhatsApp number. Phone chosen -> their phone number. Email chosen -> their email address. One per message. If they decline a number, accept it once and move on.
+9. Email address, if you still do not have it - in its own message, after the number.
 
 WHY THE TIMELINE MATTERS - accept any answer, never push:
 - "Just looking for now" is a complete, acceptable answer. Thank them and move on to the next item.

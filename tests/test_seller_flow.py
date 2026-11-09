@@ -255,7 +255,7 @@ def _pending_listing(agency_id, seller_lead_id=None):
 def test_approving_publishes_the_listing_to_buyers(client, monkeypatch):
     sent = []
     monkeypatch.setattr(app_module, "send_email_brevo",
-                        lambda to, s, b: sent.append(to) or True)
+                        lambda to, s, b, reply_to=None: sent.append((to, reply_to)) or True)
     agency = make_agency()
     seller = make_lead(agency.id)
     listing = _pending_listing(agency.id, seller.id)
@@ -271,7 +271,8 @@ def test_approving_publishes_the_listing_to_buyers(client, monkeypatch):
         ctx = app_module.get_listings_context(agency.id, _user_turns("show me a villa"))
         assert "Pending Villa" in ctx
         # The owner who submitted it gets told it's live.
-        assert seller.email in sent
+        # ...and the reply goes to the agency, not to our support inbox.
+        assert (seller.email, agency.email) in sent
     finally:
         app_module.db.session.delete(listing)
         app_module.db.session.delete(seller)
