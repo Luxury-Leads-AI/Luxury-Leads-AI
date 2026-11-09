@@ -2453,6 +2453,214 @@ def extract_name_from_context(conversation_history):
     return None
 
 
+# -------------------------
+# WHAT A PERSON SAYS WHEN THEY SAY MONEY
+# -------------------------
+# The old patterns were written for luxury SALE prices - "2.5M", "$1.8
+# million" - and missed most of the ways a real person states a number.
+# "2000$" missed. "my budget is 2000" missed. "2000 usd" missed. Every
+# currency except a dollar sign in front missed. Since `budget` is
+# REQUIRED by both the buyer gate and the seller gate, each miss is a
+# whole lead silently thrown away - and rent is almost always a plain
+# number, so the entire rental side of the business was failing.
+# Moaz found it by renting out an apartment to his own chatbot.
+#
+# Two sources of truth, in order:
+#   1. money stated explicitly - a symbol, a currency word, or a scale
+#      word like "k"/"million" makes it unambiguous;
+#   2. a bare number in reply to a question about money. If the
+#      assistant has just asked "what monthly rent are you asking?",
+#      then "2000" is the rent. This is the one that matters most,
+#      because it is how people actually answer, and no amount of regex
+#      on the user's words alone can tell 2000-the-rent from
+#      2000-the-square-feet. The question is the context.
+
+CURRENCY_SIGNS = {
+    '$': 'USD', '£': 'GBP', '€': 'EUR', '₹': 'INR', '₨': 'PKR',
+    '¥': 'JPY', '₺': 'TRY', 'R$': 'BRL', '₽': 'RUB', 'د.إ': 'AED',
+}
+CURRENCY_WORDS = {
+    'usd': 'USD', 'dollar': 'USD', 'dollars': 'USD', 'dolar': 'USD',
+    'dólar': 'USD', 'aed': 'AED', 'dirham': 'AED', 'dirhams': 'AED',
+    'eur': 'EUR', 'euro': 'EUR', 'euros': 'EUR', 'gbp': 'GBP',
+    'pound': 'GBP', 'pounds': 'GBP', 'pkr': 'PKR', 'rupees': 'INR',
+    'inr': 'INR', 'rs': 'INR', 'sar': 'SAR', 'riyal': 'SAR',
+    'try': 'TRY', 'lira': 'TRY', 'pln': 'PLN', 'zloty': 'PLN',
+    'chf': 'CHF', 'cad': 'CAD', 'aud': 'AUD', 'sgd': 'SGD',
+    'myr': 'MYR', 'thb': 'THB', 'brl': 'BRL', 'mxn': 'MXN',
+}
+SCALE_WORDS = {
+    'k': 1_000, 'thousand': 1_000, 'tys': 1_000,
+    'm': 1_000_000, 'mm': 1_000_000, 'million': 1_000_000, 'mln': 1_000_000,
+    'mio': 1_000_000, 'millones': 1_000_000, 'millionen': 1_000_000,
+    'milioni': 1_000_000, 'milhões': 1_000_000, 'milhoes': 1_000_000,
+    'miljoen': 1_000_000, 'milyon': 1_000_000, 'milionów': 1_000_000,
+    'milionow': 1_000_000, 'crore': 10_000_000, 'lakh': 100_000,
+    'lac': 100_000, 'b': 1_000_000_000, 'billion': 1_000_000_000,
+}
+
+# A question from the assistant that makes a bare number in the reply a
+# price. Kept broad on purpose: the assistant's wording changes with the
+# agency's own prompt, so this matches the idea, not a fixed sentence.
+MONEY_QUESTION = re.compile(
+    r"\b(budget|price|asking|rent|afford|per month|monthly|how much|"
+    r"price range|spend|looking to pay|rate)\b", re.I)
+
+# A correction to a figure already given. "make that 3000" only means
+# anything as a revision of a number, so it is safe to read without a
+# question in front of it - but only once a figure exists to revise.
+MONEY_CORRECTION = re.compile(
+    r"\b(actually|make (?:that|it)|change (?:that|it) to|i meant|"
+    r"sorry,? ?(?:i mean)?|let'?s say|rather)\b", re.I)
+
+# A bare number that is NOT money, because the sentence says what it is.
+# "2 beds 3 baths", "1500 sq ft", "3 bedrooms" - every one of these is a
+# number a naive reader would bank as a budget.
+NOT_MONEY_NEARBY = re.compile(
+    r"\b(bed|beds|bedroom|bedrooms|bath|baths|bathroom|bathrooms|br|ba|"
+    r"sq\.?\s?(ft|m)|sqft|sqm|square|metre|meter|feet|foot|floor|floors|"
+    r"storey|storeys|story|stories|year|years|old|km|miles|minutes|"
+    r"am|pm|o'clock)\b", re.I)
+
+# 2,500,000 / 2.5 / 2500
+NUMBER = r"\d{1,3}(?:[,\s]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+
+
+def _clean_number(text):
+    try:
+        return float(text.replace(',', '').replace(' ', ''))
+    except ValueError:
+        return None
+
+
+def _format_money(amount, currency):
+    """Back to the shape the rest of the app already stores and shows."""
+    if amount is None:
+        return ''
+    if amount >= 1_000_000 and amount % 100_000 == 0:
+        value = amount / 1_000_000
+        head = f"{value:.1f}".rstrip('0').rstrip('.') + " million"
+    elif amount >= 1_000 and amount % 1_000 == 0 and amount < 1_000_000:
+        head = f"{int(amount):,}"
+    else:
+        head = f"{amount:,.0f}" if amount == int(amount) else f"{amount:,.2f}"
+    return f"{head} {currency}".strip()
+
+
+def money_in(text):
+    """Money stated explicitly. Returns (amount, currency) or (None, '').
+
+    Explicit means one of: a currency sign, a currency word, or a scale
+    word. A bare number is NOT explicit - that is what the question
+    context below is for.
+    """
+    if not text:
+        return None, ''
+    lowered = text.lower()
+
+    # A scale word binds tightest: "2.5M", "500k", "1.2 million".
+    scale = re.search(
+        rf"({NUMBER})\s*({'|'.join(sorted(SCALE_WORDS, key=len, reverse=True))})"
+        r"(?![a-z])", lowered, re.I)
+    if scale:
+        amount = _clean_number(scale.group(1))
+        if amount is not None:
+            amount *= SCALE_WORDS[scale.group(2).lower()]
+            return amount, _currency_in(text)
+
+    # A sign, either side: "$2000" and "2000$" are the same thing.
+    for sign, code in CURRENCY_SIGNS.items():
+        hit = re.search(rf"{re.escape(sign)}\s*({NUMBER})", text) or \
+              re.search(rf"({NUMBER})\s*{re.escape(sign)}", text)
+        if hit:
+            amount = _clean_number(hit.group(1))
+            if amount is not None:
+                return amount, code
+
+    # A currency word, either side: "2000 usd", "USD 2000", "AED 7000".
+    words = '|'.join(sorted(CURRENCY_WORDS, key=len, reverse=True))
+    hit = re.search(rf"({NUMBER})\s*({words})\b", lowered) or \
+          re.search(rf"\b({words})\.?\s*({NUMBER})", lowered)
+    if hit:
+        groups = hit.groups()
+        number = groups[0] if re.match(rf"^{NUMBER}$", groups[0]) else groups[1]
+        word = groups[1] if number == groups[0] else groups[0]
+        amount = _clean_number(number)
+        if amount is not None:
+            return amount, CURRENCY_WORDS.get(word.lower().rstrip('.'), '')
+    return None, ''
+
+
+def _currency_in(text):
+    for sign, code in CURRENCY_SIGNS.items():
+        if sign in text:
+            return code
+    lowered = text.lower()
+    for word, code in CURRENCY_WORDS.items():
+        if re.search(rf"\b{re.escape(word)}\b", lowered):
+            return code
+    return ''
+
+
+def bare_number_answering_money(user_text, assistant_question):
+    """A plain number, where the question it answers was about money.
+
+    "What monthly rent are you asking?" -> "2000" is two thousand of
+    whatever they deal in. Without the question there is no honest way
+    to read that number, which is why this takes both halves.
+    """
+    if not (user_text and assistant_question):
+        return None, ''
+    if not MONEY_QUESTION.search(assistant_question):
+        return None, ''
+    if NOT_MONEY_NEARBY.search(user_text):
+        return None, ''
+    # The reply has to be mostly the number - "2000" or "about 2000 a
+    # month", not a paragraph that happens to contain a digit.
+    if len(user_text.split()) > 8:
+        return None, ''
+    numbers = [n for n in (_clean_number(m) for m in
+                           re.findall(rf"\b({NUMBER})\b", user_text))
+               if n is not None and n >= 100]
+    if not numbers:
+        return None, ''          # "2 beds", "3 baths", a floor number
+    # A range is a ceiling: somebody who says "between 1500 and 2000"
+    # can afford 2000, and showing them nothing above 1500 hides half
+    # of what they asked for.
+    return max(numbers), _currency_in(user_text)
+
+
+def budget_from_conversation(conversation_history):
+    """What this person said about money, from the whole conversation.
+
+    Walks forwards and keeps the LAST thing they said, because a person
+    who corrects themselves means the correction.
+    """
+    found_amount, found_currency = None, ''
+    previous_assistant = ''
+    for message in conversation_history or []:
+        if message.get('role') == 'assistant':
+            previous_assistant = message.get('content') or ''
+            continue
+        if message.get('role') != 'user':
+            continue
+        text = message.get('content') or ''
+
+        amount, currency = money_in(text)
+        if amount is None:
+            amount, currency = bare_number_answering_money(
+                text, previous_assistant)
+        if amount is None and found_amount is not None \
+                and MONEY_CORRECTION.search(text):
+            # They are revising the figure they already gave.
+            amount, currency = bare_number_answering_money(text, 'budget')
+        if amount is not None:
+            found_amount, found_currency = amount, currency or found_currency
+    if found_amount is None:
+        return ''
+    return _format_money(found_amount, found_currency)
+
+
 def extract_lead_data(agency_id, conversation_history):
     full_conversation_user = " ".join([
         msg['content'] for msg in conversation_history if msg['role'] == 'user'
@@ -2513,34 +2721,12 @@ def extract_lead_data(agency_id, conversation_history):
                     print(f"✅ Phone: {phone}")
                 break
 
-    budget_patterns = [
-        r"(\d+(?:\.\d+)?)\s*([MmKk])(?![a-zA-Z])\s*(?:\$|dollars?)?",
-        r"[\$]\s*(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand|mln|mio)?",
-        r"(\d+(?:\.\d+)?)\s*(million|thousand|lakh|crore|mln|milionów|milionow|mio|millones|millionen|milioni|milhões|milhoes|miljoen|milyon)\s*(?:\$|dollars?|usd|aed|eur|pln)?",
-        r"(?:budget|price|around|afford)\s*[\$]?(\d+(?:\.\d+)?)\s*([MmKk](?![a-zA-Z])|million|thousand|mln)?",
-    ]
-    million_units = ['mln', 'milionów', 'milionow', 'mio', 'millones', 'millionen',
-                      'milioni', 'milhões', 'milhoes', 'miljoen', 'milyon']
-    for pattern in budget_patterns:
-        budget_match = re.search(pattern, full_conversation_user, re.IGNORECASE)
-        if budget_match:
-            amount = budget_match.group(1)
-            unit = budget_match.group(2) if len(budget_match.groups()) > 1 and budget_match.group(2) else ''
-            if unit:
-                unit = unit.lower()
-                if unit in ['m', 'million']: unit = 'million'
-                elif unit in ['k', 'thousand']: unit = 'thousand'
-            currency = ''
-            low_all = full_conversation_user.lower()
-            if '$' in full_conversation_user or 'dollar' in low_all or 'dólar' in low_all or 'dolar' in low_all:
-                currency = 'USD'
-            elif 'aed' in low_all:
-                currency = 'AED'
-            if unit in million_units:
-                unit = 'million'
-            lead_data['budget'] = f"{amount} {unit} {currency}".strip() if unit else f"{amount} {currency}".strip()
-            print(f"✅ Budget: {lead_data['budget']}")
-            break
+    # One place that understands money, and it reads the assistant's
+    # question as context so a bare "2000" in reply to "what rent are
+    # you asking?" is understood. See budget_from_conversation.
+    lead_data['budget'] = budget_from_conversation(conversation_history)
+    if lead_data['budget']:
+        print(f"✅ Budget: {lead_data['budget']}")
 
     # Fallback: no explicit number was ever stated - use the highest price
     # among listings actually named in the conversation as a reasonable

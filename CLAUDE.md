@@ -637,6 +637,46 @@ the reader's window and leaves the old breaks mid-sentence.
 Settings: `draft_ai` (the only paid part), `draft_sign_off`. Templates are
 versioned like score models, so a draft says which words it came from.
 
+### Money, and how people actually say it
+
+`budget` is **required by the buyer gate and the seller gate alike**, so a
+figure the engine cannot read is a whole lead thrown away. The old
+`budget_patterns` were written for luxury SALE prices — `2.5M`, `$1.8
+million` — and missed most of how a person states a number: `2000$` (sign
+after), `2000 usd`, `my budget is 2000`, and every currency except a dollar
+sign in front. **Rent is almost always a plain number**, so the entire rental
+side was failing in both directions. Moaz found it by renting out an apartment
+to his own chatbot: no lead, no email, no listing for approval, and a log
+saying `Budget=False` with no explanation of why.
+
+`budget_from_conversation()` replaced them, and reads two things:
+
+1. **Money stated explicitly** — a currency sign on *either* side, a currency
+   word on either side, or a scale word (`k`, `million`, `lakh`, `crore`).
+2. **A bare number answering a question about money.** This is the one that
+   matters. No regex over the user's words alone can tell 2000-the-rent from
+   2000-the-square-feet — but the assistant asked "what monthly rent are you
+   asking?" immediately before, and we have that question.
+   `MONEY_QUESTION` matches the idea rather than a fixed sentence, because the
+   wording changes with each agency's own prompt.
+
+The guards on the second half are what keep it honest: `NOT_MONEY_NEARBY`
+rejects a reply mentioning beds, baths, sq ft, floors or years; a reply longer
+than eight words is prose, not an answer; and anything under 100 is a bedroom
+count, not a price. `test_a_number_that_is_not_money_is_left_alone` holds all
+of it — "2 beds 3 baths" appearing two questions before the rent is exactly
+the trap a first-number-wins reader falls into.
+
+A stated **range takes its ceiling**: somebody who says "between 1500 and
+2000" can afford 2000, and showing them nothing above 1500 hides half of what
+they asked for. A later figure wins over an earlier one, and `MONEY_CORRECTION`
+("make that 3000", "actually 3000") is read without a question in front of it,
+but **only once a figure exists to revise**.
+
+`tests/test_money_extraction.py` opens with Jordan's conversation of 8 November
+2026, verbatim, as the regression test. All 49 of its tests fail against the
+code that shipped before it.
+
 ## Architecture
 
 **Single-file backend** — all Flask routes, DB models, AI logic, and email are in `app.py`. There are no blueprints. The one other module, `guides.py`, is pure content (the user guides as data) with no imports, no logic and no database access; `app.py` reads it and owns every route.
