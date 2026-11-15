@@ -758,6 +758,15 @@ FAQS = (
     ('A visitor wants to sell me a property. What happens?',
      'They can submit it through the chat. It sits as Pending and is '
      'invisible to buyers until you approve it on the Listings page.'),
+    ('What if a visitor wants two things - say, to rent out one property '
+     'and buy another?',
+     'The assistant takes them one at a time. It finishes the first, tells '
+     'the visitor that part has been passed to your team, and moves on to '
+     'the second without asking for their name or contact details again. '
+     'You get two leads for that person: a seller lead with its pending '
+     'listing, and a buyer lead with their budget. They are two separate '
+     'deals, so each keeps its own figures and can go to a different '
+     'agent.'),
     ('How does the assistant collect somebody\'s contact details?',
      'It asks how they would like to be reached first - WhatsApp, phone or '
      'email - and then asks only for that one detail, followed by an email '

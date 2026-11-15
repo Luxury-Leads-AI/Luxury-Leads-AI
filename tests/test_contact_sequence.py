@@ -205,15 +205,26 @@ def test_a_finished_step_tells_the_model_to_stop_asking():
 
 
 def test_the_buyer_sequence_puts_the_preference_before_the_email():
-    source = open(app_module.__file__, encoding="utf-8").read()
-    buyer = source.split("INFORMATION TO COLLECT FROM A BUYER OR RENTER")[1][:1600]
-    assert buyer.index("Contact preference FIRST") < buyer.index("Email address, if you still")
+    seq = app_module.buyer_sequence(False, {'step': 'ask_preference'})
+    contact = seq[seq.index('Contact details'):]
+    assert contact.index('FIRST') < contact.index('email address')
 
 
 def test_the_seller_sequence_puts_the_preference_before_the_email():
-    source = open(app_module.__file__, encoding="utf-8").read()
-    seller = source.split("INFORMATION TO COLLECT FROM THIS OWNER")[1][:2200]
-    assert seller.index("Contact preference FIRST") < seller.index("Email address, if you still")
+    seq = app_module.seller_sequence('rent_out', {'step': 'ask_preference'})
+    contact = seq[seq.index('Contact details'):]
+    assert contact.index('FIRST') < contact.index('email address')
+
+
+def test_a_finished_contact_step_is_not_in_the_sequence_at_all():
+    """15 Nov 2026: with her details already on file, Noor was asked how to
+    reach her a second time, because the numbered list still said to. An
+    item that is not in the list cannot be walked into."""
+    for seq in (app_module.buyer_sequence(True, {'step': 'done'}),
+                app_module.seller_sequence('rent_out', {'step': 'done'})):
+        assert 'Contact details' not in seq
+        assert 'email' not in seq.lower()
+        assert 'whatsapp' not in seq.lower()
 
 
 # ── 4. a reply from the seller must reach the agency ─────────────────

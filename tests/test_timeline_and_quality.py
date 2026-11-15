@@ -61,20 +61,19 @@ def score(**lead_data):
 # ── the bot has to ask ───────────────────────────────────────────────
 
 def test_the_buyer_question_sequence_includes_the_timeline():
-    """It sits after the budget and before the email: asking someone when
-    they want to move before knowing what they can spend is backwards."""
-    src = open(app_module.__file__, encoding='utf-8').read()
-    seq = src[src.index('INFORMATION TO COLLECT FROM A BUYER'):]
-    seq = seq[:seq.index('NEVER combine location and budget')]
+    """It sits after the budget and before the contact details: asking
+    someone when they want to move before knowing what they can spend is
+    backwards."""
+    seq = app_module.buyer_sequence(False, {'step': 'ask_preference'})
     assert 'Timeline' in seq, "buyer sequence still never asks about timing"
-    assert seq.index('Budget ONLY') < seq.index('Timeline ONLY') < seq.index('Email')
+    assert seq.index('Budget ONLY') < seq.index('Timeline ONLY') < seq.index('Contact details')
 
 
 def test_the_seller_question_sequence_includes_the_timeline():
-    src = open(app_module.__file__, encoding='utf-8').read()
-    seq = src[src.index('INFORMATION TO COLLECT FROM THIS OWNER'):]
-    seq = seq[:seq.index('If they volunteer several of these')]
-    assert 'Timeline' in seq, "seller sequence still never asks about timing"
+    for intent in ('sell', 'rent_out'):
+        seq = app_module.seller_sequence(intent, {'step': 'ask_preference'})
+        assert 'Timeline' in seq, "seller sequence still never asks about timing"
+        assert seq.index('Timeline') < seq.index('Contact details')
 
 
 def test_the_prompt_accepts_no_rush_as_a_complete_answer():

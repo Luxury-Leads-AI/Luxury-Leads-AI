@@ -1112,6 +1112,435 @@ def is_seller_intent(intent):
     return intent in ('sell', 'rent_out')
 
 
+# ─────────────────────────────────────────────────────
+# ONE VISITOR, TWO REQUESTS
+# ─────────────────────────────────────────────────────
+# detect_chat_intent reads the whole conversation as one request, and an
+# owner phrase anywhere in it wins for good. That is right for nearly
+# every chat and wrong for this one (15 November 2026): Noor wanted to
+# rent out her villa AND buy a townhouse. Once she had said "rent out",
+# every later message was read as an owner's. Her 7-8M buying budget
+# overwrote the villa's rent, the bot told her nothing matched before she
+# had said what she wanted, asked again for a number it already held,
+# closed with "your property details have been passed on" - and the
+# buying enquiry was never saved at all.
+#
+# So a conversation that states both is split by which request each
+# message belongs to. The PERSON - name, email, number, how to reach them
+# - is read from all of it. The money, the timeline and the property are
+# read only from the part that belongs to the request in hand.
+
+# Deliberately tight: first person, an explicit wish, and the verb. Once an
+# owner is describing their property loose words are everywhere - "I need
+# a tenant who will rent it for a year", "it has its own pool" ('own' is a
+# buy word). Only somebody saying THEY want a property changes sides.
+_I = r"\b(?:i|we)(?:\s*(?:['’]m|am|['’]re|are|['’]d|would))?"
+_ALSO = r"(?:\s+(?:also|really|just|now|actually|still|too))*"
+_WISH = (r"(?:want|wish|need|like|love|hope|plan|intend|looking|trying|hoping|"
+         r"planning|here|interested|keen)")
+_BUY = r"(?:buy|buying|purchase|purchasing)"
+# "rent" has to be followed by nothing, or by something indefinite. An
+# owner says "I want to rent IT for 2000 a month", "rent MY flat", "rent
+# TO students", "rent it OUT" - a definite object, or a tenant.
+_RENT = (r"(?:rent|renting|lease|leasing)\b"
+         r"(?=\s*(?:[.,!?;]|$|(?:and|or|too|also|as\s+well|a|an|another|some|something|"
+         r"somewhere|one|in|near|around|close|within|\d)\b))")
+_A_PROPERTY = (r"(?:(?!tenant|buyer|renter|agent|valuation|quote|estimate|"
+               r"(?:for|who|to|of|my|our|on|about|with)\b)[\w-]+\s+){0,3}"
+               r"(?:place|home|property|house|apartment|flat|villa|condo|"
+               r"townhouse|town\s+house|penthouse|studio|plot|land)\b")
+
+SEEK_PATTERNS = [
+    (_I + _ALSO + r"\s+" + _WISH + r"\s+(?:to|in)\s+(?:also\s+)?" + _BUY + r"\b", 'buy'),
+    (_I + _ALSO + r"\s+" + _WISH + r"\s+(?:to|in)\s+(?:also\s+)?" + _RENT, 'rent'),
+    (r"\b(?:can|could|may)\s+(?:i|we)\s+(?:also\s+)?" + _BUY + r"\b", 'buy'),
+    (r"\b(?:can|could|may)\s+(?:i|we)\s+(?:also\s+)?" + _RENT, 'rent'),
+    (_I + _ALSO + r"\s+(?:looking|searching|hunting)\s+for\s+(?:a|an|some)\s+" + _A_PROPERTY, None),
+    # Buying is one unambiguous verb in these languages. Renting is not -
+    # alquilar, louer and affittare mean both "rent" and "rent out" - so it
+    # is left to the owner patterns above.
+    (r"\b(?:quiero|queremos|busco|quisiera|me\s+gustar[ií]a)\s+comprar\b", 'buy'),
+    (r"\b(?:je\s+(?:veux|voudrais|souhaite|cherche\s+[àa])|nous\s+(?:voulons|souhaitons))\s+acheter\b", 'buy'),
+    (r"\bich\s+(?:m[öo]chte|will|w[üu]rde\s+gerne?)\b[^.?!]{0,50}\bkaufen\b", 'buy'),
+    (r"\b(?:quero|queremos|procuro|gostaria\s+de)\s+comprar\b", 'buy'),
+    (r"\b(?:voglio|vorrei|vogliamo)\s+(?:comprare|acquistare)\b", 'buy'),
+    (r"\b(?:ik|wij)\s+(?:wil|willen|zou\s+graag)\b[^.?!]{0,50}\bkopen\b", 'buy'),
+]
+
+# "...and also rent a property" - the second half of a sentence whose
+# first half already said who is wishing.
+_AND_ALSO = r"\b(?:and|also|plus|as\s+well\s+as)\s+(?:also\s+)?(?:to\s+)?"
+
+# Once a second request is on record, asking after it is enough to go
+# there: "and what about buying?", "can we move on to the other one?".
+# It has to read as a request to change subject - an owner who mentions
+# "the other property next door" is not asking for anything.
+def _asks_after(words):
+    return (r"\b(?:what|how)\s+about\b[^.?!]{0,60}\b(?:" + words + r")\b"
+            r"|\b(?:let['’]?s|can\s+we|could\s+we|shall\s+we)\s+(?:now\s+)?"
+            r"(?:talk\s+about|move\s+(?:on\s+)?to|discuss|look\s+at|do|start(?:\s+on)?)\s+"
+            r"(?:the\s+|my\s+)?(?:" + words + r")\b")
+
+
+_BACK_TO_FINDING = _asks_after(r"other|second|buy|buying|purchase|purchasing")
+_BACK_TO_OWNING = _asks_after(r"other|second|sale|selling|listing|letting")
+
+# 'own' and 'ownership' sit in BUY_WORDS, which is fine for a visitor who
+# is plainly shopping and wrong for "my own property". Left out here.
+_LOOSE_BUY = [w for w in ('buy', 'buying', 'purchase', 'purchasing', 'comprar',
+                          'kaufen', 'acheter', 'acquistare', 'kupić', 'kupic')]
+
+
+def owner_intent_in(text):
+    """'sell' / 'rent_out' if this ONE message is an owner's, else None."""
+    for pattern in SELL_PATTERNS:
+        if re.search(pattern, text):
+            return 'sell'
+    for pattern in RENT_OUT_PATTERNS:
+        if re.search(pattern, text):
+            return 'rent_out'
+    return None
+
+
+def seeker_statements_in(text):
+    """Every wish to FIND a property this one message states, in order.
+
+    Returns a list of 'buy' / 'rent' / None (None: "I'm looking for a flat",
+    which does not say which). Empty when the message states none."""
+    found = []
+    for pattern, purpose in SEEK_PATTERNS:
+        if re.search(pattern, text) and purpose not in found:
+            found.append(purpose)
+    if found:
+        if 'buy' not in found and re.search(_AND_ALSO + _BUY + r"\b", text):
+            found.append('buy')
+        if 'rent' not in found and re.search(_AND_ALSO + _RENT, text):
+            found.append('rent')
+    return found
+
+
+def _loose_purpose_in(text):
+    wants_rent = any(re.search(r'\b' + w + r'\b', text) for w in RENT_WORDS)
+    wants_buy = any(re.search(r'\b' + w + r'\b', text) for w in _LOOSE_BUY)
+    if wants_rent and wants_buy:
+        return None
+    return 'rent' if wants_rent else ('buy' if wants_buy else None)
+
+
+EMAIL_IN_TEXT = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+NUMBER_IN_TEXT = re.compile(r"\+?\d[\d\s\-]{7,17}\d")
+
+
+def reachable_details(conversation_history):
+    """The email and the number, and nothing else.
+
+    extract_lead_data answers the same question but also looks names up,
+    reads listings from the database and writes to the log - too heavy to
+    run once per message, which is what "is this request finished yet?"
+    needs."""
+    said = " ".join(m.get('content') or '' for m in (conversation_history or [])
+                    if m.get('role') == 'user')
+    email = EMAIL_IN_TEXT.search(said)
+    number = None
+    for match in NUMBER_IN_TEXT.finditer(said):
+        if len(re.sub(r'\D', '', match.group(0))) >= 9:
+            number = match.group(0).strip()
+            break
+    return {'email': email.group(0) if email else None, 'whatsapp_number': number}
+
+
+# The assistant asking for the figure itself. MONEY_QUESTION is broader on
+# purpose - it only has to say "a bare number here is probably money" -
+# and matches "I can help you buy, sell or rent".
+ASKS_THE_MONEY = re.compile(
+    r"\b(?:budget|asking price|price range|monthly rent|how much|"
+    r"what (?:price|rent)|(?:price|rent) are you)\b", re.IGNORECASE)
+
+
+def _money_settled(part):
+    """A figure is on record for this request, or the question was put and
+    answered. "I don't know yet, what would you suggest?" settles it: an
+    owner without a price must not hold the second request up for ever."""
+    if budget_from_conversation(part):
+        return True
+    for i, msg in enumerate(part[:-1]):
+        if (msg.get('role') == 'assistant' and '?' in (msg.get('content') or '')
+                and ASKS_THE_MONEY.search(msg['content'])
+                and part[i + 1].get('role') == 'user'):
+            return True
+    return False
+
+
+def _request_finished(side, history, side_at):
+    """Has this request been asked everything it needs?
+
+    The contact step is the last thing either sequence asks for, so once
+    it is done and the money has been dealt with there is nothing left to
+    collect. A request with no email is never finished: nothing can be
+    saved for it, so the conversation must not move on as though it had
+    been. The money matters as a second signal because a second request
+    STARTS with the contact step already done."""
+    part = [m for m, s in zip(history, side_at) if s == side]
+    if not _money_settled(part):
+        return False
+    person = reachable_details(history)
+    if not person['email']:
+        return False
+    return contact_plan(history, person)['step'] == 'done'
+
+
+def conversation_view(conversation_history):
+    """Which request is in hand, and which messages belong to it.
+
+    Returns a dict:
+      side      'owner' / 'seeker' / None  - who the visitor is being, now
+      intent    'sell' / 'rent_out' / 'buy' / 'rent' / None
+      messages  the part of the conversation that belongs to this request
+      several   True when the visitor has stated two requests
+      other     the other request (side, intent, messages, finished), or None
+      moved_on  True when the first request was completed by the visitor's
+                latest message, so this reply is the one that turns to the
+                second
+
+    A conversation with one request comes back exactly as before: the
+    intent detect_chat_intent has always returned, and every message."""
+    history = conversation_history or []
+    side_at = [None] * len(history)
+    active = None
+    owner_intent, owner_first = None, None
+    seeker_said = []          # (index, purpose, was it an explicit statement)
+    moved_at = None
+
+    def surviving():
+        # "I want to rent a property" followed by "I mean rent OUT my own"
+        # was a correction, not a second request.
+        return [(i, purpose, tight) for i, purpose, tight in seeker_said
+                if not (owner_intent == 'rent_out' and purpose == 'rent'
+                        and owner_first is not None and i < owner_first)]
+
+    def two_requests():
+        return owner_intent is not None and any(tight for _, _, tight in surviving())
+
+    for i, msg in enumerate(history):
+        if msg.get('role') != 'user':
+            side_at[i] = active
+            continue
+        text = (msg.get('content') or '').lower()
+        owner = owner_intent_in(text)
+        stated = seeker_statements_in(text)
+
+        # With a second request already on record, asking after it is the
+        # visitor wanting to go there now.
+        asked_to_go_back = False
+        if not stated and not owner and two_requests():
+            if active == 'owner' and re.search(_BACK_TO_FINDING, text):
+                stated = [None]
+            elif active == 'seeker' and re.search(_BACK_TO_OWNING, text):
+                asked_to_go_back = True
+
+        if owner:
+            owner_intent = owner
+            if owner_first is None:
+                owner_first = i
+        for purpose in stated:
+            seeker_said.append((i, purpose, True))
+        if not stated and not owner and active != 'owner':
+            loose = _loose_purpose_in(text)
+            if loose:
+                seeker_said.append((i, loose, False))
+
+        if active is None:
+            if owner:
+                active = 'owner'
+            elif seeker_said and seeker_said[-1][0] == i:
+                active = 'seeker'
+        elif active == 'seeker' and ((owner and not stated) or asked_to_go_back):
+            active = 'owner'
+        elif active == 'owner' and stated and not owner:
+            active = 'seeker'
+        side_at[i] = active
+
+        # Everything for this request is in, and another is waiting: the
+        # reply to this message is where the conversation turns to it.
+        if active and two_requests():
+            other = 'seeker' if active == 'owner' else 'owner'
+            so_far, sides = history[:i + 1], side_at[:i + 1]
+            if (_request_finished(active, so_far, sides)
+                    and not _request_finished(other, so_far, sides)):
+                active = other
+                moved_at = i
+
+    if not two_requests():
+        intent = detect_chat_intent(history)
+        side = 'owner' if is_seller_intent(intent) else ('seeker' if intent else None)
+        return {'side': side, 'intent': intent, 'messages': history,
+                'several': False, 'other': None, 'moved_on': False}
+
+    seeker_purpose = None
+    for _, purpose, _tight in reversed(surviving()):
+        if purpose:
+            seeker_purpose = purpose
+            break
+    intents = {'owner': owner_intent, 'seeker': seeker_purpose}
+    other = 'seeker' if active == 'owner' else 'owner'
+
+    def part(side):
+        return [m for m, s in zip(history, side_at) if s == side]
+
+    return {
+        'side': active,
+        'intent': intents[active],
+        'messages': part(active),
+        'several': True,
+        'other': {'side': other, 'intent': intents[other], 'messages': part(other),
+                  'finished': _request_finished(other, history, side_at)},
+        'moved_on': moved_at is not None and moved_at == len(history) - 1,
+    }
+
+
+def lead_data_for(agency_id, conversation_history, request_messages=None):
+    """extract_lead_data, scoped to one request when there are two.
+
+    The person - name, email, number, preference - always comes from the
+    whole conversation. With request_messages given, the money and the
+    timeline come only from that request's part of it, so a 10K asking
+    rent and an 8M buying budget each stay with the enquiry they belong
+    to. Without it this is extract_lead_data and nothing else."""
+    data = extract_lead_data(agency_id, conversation_history)
+    if request_messages is None:
+        return data
+    data['budget'] = budget_from_conversation(request_messages)
+    data['budget_inferred'] = False
+    if not data['budget']:
+        data['budget'] = infer_budget_from_discussed_listings(agency_id, request_messages)
+        data['budget_inferred'] = bool(data['budget'])
+    data['timeline'], data['timeline_raw'] = extract_timeline(request_messages)
+    return data
+
+
+def purpose_is_clear(view):
+    """False when buying and renting were both mentioned.
+
+    "I am here to buy a property and also rent a property" does not say
+    which one is in hand, and telling the model the question is ALREADY
+    ANSWERED when it is not is worse than letting it ask."""
+    if view.get('several'):
+        return view['intent'] in ('buy', 'rent')
+    said = " ".join(m.get('content') or '' for m in view['messages']
+                    if m.get('role') == 'user').lower()
+    wants_rent = any(re.search(r'\b' + w + r'\b', said) for w in RENT_WORDS)
+    wants_buy = any(re.search(r'\b' + w + r'\b', said) for w in _LOOSE_BUY)
+    return not (wants_rent and wants_buy)
+
+
+# The contact step is written once, in contact_context, as ONE next
+# action. These lists used to repeat it as three numbered items, and when
+# the step was already finished the list still said to ask: on her second
+# request Noor was asked how to reach her, said she had already told us,
+# and was asked for her WhatsApp number "again, just to confirm". An item
+# that is not in the list cannot be walked into.
+CONTACT_ITEM = ("Contact details - follow THE CONTACT STEP near the top of these "
+                "instructions exactly: how they want to be reached FIRST, then the one "
+                "detail their answer needs, then their email address if you still do "
+                "not have it. One question per message.")
+
+
+def numbered(steps):
+    return "\n".join(f"{n}. {step}" for n, step in enumerate(steps, 1))
+
+
+def buyer_sequence(purpose_known, plan, name_known=False):
+    """What to collect from somebody looking for a property, in order."""
+    steps = [] if name_known else ['Name (at the very start)']
+    steps.append('Property type ("What kind of property are you looking for?")')
+    if not purpose_known:
+        steps.append('Buying or renting? ("Are you looking to buy or rent?")')
+    steps += [
+        'Location ONLY ("Any particular area in mind?") - do NOT mention budget yet',
+        'Budget ONLY (after location is answered: "And what budget are you working with?")',
+        'Timeline ONLY ("How soon are you looking to move?") - ask this every time, in its '
+        'own message, right after the budget. It is never optional and never combined with '
+        'another question. If they have booked a viewing and you never asked it, ask it '
+        'once straight after the booking is confirmed.',
+    ]
+    if plan['step'] != 'done':
+        steps.append("After they're satisfied or a viewing is planned: " + CONTACT_ITEM)
+    return ("INFORMATION TO COLLECT FROM A BUYER OR RENTER (strictly one at a time, in this order):\n"
+            + numbered(steps))
+
+
+def seller_sequence(intent, plan):
+    """What to collect from an owner, in order."""
+    selling = intent == 'sell'
+    steps = [
+        'Where the property is located ("Whereabouts is the property?")',
+        'What type of property it is ("What kind of property is it - villa, house, apartment?")',
+        'How many bedrooms ("How many bedrooms does it have?")',
+        'How many bathrooms',
+        'Standout features and amenities ("Anything that makes it stand out - pool, garden, '
+        'solar, parking?")',
+        f'The {"asking price" if selling else "monthly rent they want"} '
+        f'("What {"price are you hoping for" if selling else "monthly rent are you asking"}?")',
+        f'Timeline ("How soon are you hoping to {"sell" if selling else "have it rented out"}?") '
+        '- ask this every time, in its own message. If they say there is no particular rush, '
+        "accept that and move on. Never press for a firmer date and never imply urgency they "
+        "didn't express.",
+    ]
+    if plan['step'] != 'done':
+        steps.append(CONTACT_ITEM)
+    return ("INFORMATION TO COLLECT FROM THIS OWNER (strictly one at a time, in this order,\n"
+            "skipping anything already in ALREADY CAPTURED):\n" + numbered(steps))
+
+
+REQUEST_WORDS = {
+    'sell': 'sell a property they own',
+    'rent_out': 'rent out a property they own',
+    'buy': 'buy a property',
+    'rent': 'rent a property to live in',
+    None: 'find a property',
+}
+
+
+def two_requests_context(view, agency_name):
+    """What the model is told when the visitor wants two things.
+
+    The decision about WHEN to move from one to the other is made in
+    conversation_view, not by the model. Left to itself it either said
+    goodbye after the first, or drifted into the second while this code
+    still believed it was on the first - and then every instruction it was
+    given described the wrong request."""
+    if not view.get('several'):
+        return ""
+    now = REQUEST_WORDS.get(view['intent'], REQUEST_WORDS[None])
+    other = view['other']
+    then = REQUEST_WORDS.get(other['intent'], REQUEST_WORDS[None])
+
+    if view['moved_on']:
+        return f"""
+
+YOU HAVE JUST FINISHED THIS VISITOR'S FIRST REQUEST (to {then}). In THIS reply do two things, in this order:
+1. In one short sentence, tell them those details have been passed to the {agency_name} team and that an agent will be in touch about it.
+2. Then, in the same reply, turn to their second request - they also want to {now} - and ask the first question for it from the list further down.
+Do not say goodbye. Do not ask for their name, their email, a number or a contact preference - you have all of it.
+Nothing they told you for the first request describes the second. Start it from the beginning."""
+
+    if other['finished']:
+        return f"""
+
+EARLIER IN THIS CONVERSATION this visitor also asked to {then}. That request is FINISHED and is already with the {agency_name} team.
+- You are now dealing ONLY with their other request: to {now}.
+- Everything they said for the finished one - the property type, the bedrooms, the location, the price - belongs to THAT request. Never carry it over to this one and never go back over it.
+- Never ask again for their name, email, number or contact preference.
+- When this request is complete, do not repeat the closing line you used for the first one. Say what happens next for THIS request."""
+
+    return f"""
+
+THIS VISITOR HAS TWO REQUESTS. Deal with them one at a time.
+- Now: they want to {now}. Everything below is about that.
+- Waiting: they ALSO want to {then}. Do not ask about it yet, and do not start on it yourself - you will be told when.
+- When you have everything for the first request, do NOT say goodbye and do NOT close the conversation. The second request comes next."""
+
+
 GENERIC_PROPERTY_TYPES =['villa', 'condo', 'condominium', 'apartment', 'house', 'home', 'townhouse',
                            'town house', 'single family', 'mansion', 'estate', 'loft', 'penthouse',
                            'duplex', 'bungalow', 'cottage']
@@ -1313,21 +1742,32 @@ def detect_bed_bath_requirements(conversation_history):
     return min_beds, min_baths
 
 
-def get_listings_context(agency_id, conversation_history=None):
+def get_listings_context(agency_id, conversation_history=None, purpose=None, budget=None):
     """Filters and ranks listings by the customer's stated budget, property
     type, buy/rent purpose, AND bedroom/bathroom requirements BEFORE handing
     anything to the AI - so the model only ever sees relevant, correctly-
-    scoped options and never has to eyeball a bed/bath match itself."""
+    scoped options and never has to eyeball a bed/bath match itself.
+
+    purpose and budget are for a visitor with two requests, where the
+    caller already knows both for the request in hand and the conversation
+    passed in is only that request's part of it. purpose is 'sale', 'rent'
+    or 'any' (not said yet - do not filter). Left as None, both are worked
+    out from the conversation exactly as before."""
     try:
         listings = Listing.query.filter_by(agency_id=agency_id, status='available').all()
         if not listings:
             return ""
 
+        stated_purpose, stated_budget = purpose, budget
         budget_val, purpose, prop_type, min_beds, min_baths, location_val = None, None, None, None, None, []
         if conversation_history:
-            lead_snapshot = extract_lead_data(agency_id, conversation_history)
-            budget_val = budget_string_to_numeric(lead_snapshot.get('budget'))
-            purpose = detect_purpose(conversation_history)
+            if stated_budget is None:
+                stated_budget = extract_lead_data(agency_id, conversation_history).get('budget')
+            budget_val = budget_string_to_numeric(stated_budget)
+            if stated_purpose is None:
+                purpose = detect_purpose(conversation_history)
+            elif stated_purpose != 'any':
+                purpose = stated_purpose
             prop_type = detect_property_type(agency_id, conversation_history)
             min_beds, min_baths = detect_bed_bath_requirements(conversation_history)
             location_val = detect_location(agency_id, conversation_history)
@@ -1636,6 +2076,22 @@ def get_related_appointments(agency_id, customer_email):
     matched = [a for a in appts if (a.customer_email or '').strip().lower() == email_lower]
     matched.sort(key=lambda a: a.created_at or datetime.min, reverse=True)
     return matched
+
+
+def lead_on_file(agency_id, email, lead_type):
+    """The lead this person already has on THIS side of the market.
+
+    One email can now carry two: somebody who wants to rent out a villa
+    and buy a townhouse is a seller lead with a listing AND a buyer lead
+    with a budget. They are different deals, often for different agents.
+    The old lookup found "a lead with this email" and stopped, so the
+    second enquiry was logged as a duplicate of the first and lost."""
+    if not email:
+        return None
+    for row in Lead.query.filter_by(agency_id=agency_id, email=email).order_by(Lead.id).all():
+        if (row.lead_type or 'buyer') == lead_type:
+            return row
+    return None
 
 
 def resolve_lead_identity(agency_id, email, new_name):
@@ -3069,11 +3525,135 @@ def contact_context(plan):
                      "email address. One per message.")
         lines.append("- If they chose WhatsApp or phone, ask for their email address afterwards "
                      "as well, in its own message.")
-    lines.append("- A declined number is a complete answer. Accept it once, say that is no "
-                 "problem, and never ask for it again.")
+    lines.append("- If they decline to give a number, accept that once, say it is no problem, "
+                 "and never ask for it again.")
     lines.append("- Do NOT end the conversation, thank them off, or send a closing recap until "
                  "the contact step above is finished.")
     return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────
+# WHAT THE MODEL SAID, BEFORE THE VISITOR SEES IT
+# ─────────────────────────────────────────────────────
+# A prompt is a request. These three are the parts of it that are checked.
+
+# A QUESTION that asks for an email, a number or how to be reached. Kept
+# apart from is_number_question, which also matches "what's your" - fine
+# for reading a transcript afterwards, far too loose for deciding to make
+# the model answer again ("And what's your budget?").
+CONTACT_REASK = re.compile(
+    r"(?:whatsapp|phone|mobile|contact|cell)\s+number|your\s+number|"
+    r"e-?mail(?:\s+address)?\b|"
+    r"best\s+way\s+to\s+(?:reach|contact)\s+you|"
+    r"how\s+(?:can|should|do|would)\s+(?:i|we|you\s+like\s+(?:us|me)\s+to)\s+(?:reach|contact)|"
+    r"whatsapp,\s*phone",
+    re.IGNORECASE)
+
+
+def asks_for_contact_details(reply):
+    """True if this reply asks for contact details, as a question."""
+    for sentence in re.split(r'(?<=[.!?])\s+', reply or ''):
+        if '?' in sentence and CONTACT_REASK.search(sentence):
+            return True
+    return False
+
+
+def reply_without_contact_question(messages, first_reply):
+    """One more attempt at a reply that asked for details already on file.
+
+    "If the customer has to tell you something twice, you have failed" has
+    been in the prompt for months and Noor was still asked for her WhatsApp
+    number "again, just to confirm". Returns the first reply unchanged if
+    the second try fails or asks the same thing."""
+    try:
+        retry = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages + [
+                {"role": "assistant", "content": first_reply},
+                {"role": "system", "content": (
+                    "That reply asks the visitor for contact details you already hold. They "
+                    "gave them once and must never be asked again - not to confirm, not to "
+                    "check. Write the reply again without asking for an email address, a "
+                    "number, or how to reach them. If there is nothing else left to ask, say "
+                    "what happens next and stop.")},
+            ],
+            temperature=0.3,
+            max_tokens=350,
+        )
+        second = (retry.choices[0].message.content or '').strip()
+        if second and not asks_for_contact_details(second):
+            print("↩️  Reply rewritten: it asked for contact details already on file")
+            return second
+    except Exception as e:
+        print(f"⚠️ Reply rewrite failed: {e}")
+    return first_reply
+
+
+# Openers that say nothing. "Got it!" after "It's a villa", "That's
+# impressive!" after "6". One is harmless; one on every single reply is
+# what Moaz called insincere flattery, and he was right.
+STOCK_OPENER = re.compile(
+    r"^\s*(?:"
+    r"thank(?:s| you)(?: so much| very much)? for (?:sharing |providing )?"
+    r"(?:that|this|the)(?: (?:information|info|details?|update))?|"
+    r"thank(?:s| you) for (?:sharing|clarifying|letting me know|confirming)(?: that)?|"
+    r"that(?:['’]s| is| sounds) (?:impressive|great|wonderful|fantastic|amazing|"
+    r"perfect|lovely|good|helpful|excellent)|"
+    r"(?:great|good|excellent|nice|lovely|wonderful|perfect) choice|"
+    r"sounds (?:good|great|perfect|lovely)|"
+    r"no pressure(?: at all)?|"
+    r"got it|perfect|awesome|wonderful|excellent|fantastic|amazing|lovely|great|"
+    r"noted|understood|thank you|thanks"
+    r")(?:,\s*[^\W\d_][\w'’-]{0,30})?\s*[!.,;:—–-]+\s*",
+    re.IGNORECASE)
+
+# Sentences that are the prompt talking. The instructions used to say a
+# vague timeline "is a complete answer"; the model said so to the visitor.
+PROMPT_LEAKS = ('complete answer', 'acceptable answer')
+
+
+def tidy_reply(reply, conversation_history):
+    """Take the empty opener off a reply that goes on to ask something.
+
+    An opener is kept only when the visitor has just said something long
+    enough to be worth a reaction (more than a dozen words) AND neither of
+    the last two replies had one. It is never taken off a reply to somebody who hesitated or
+    objected (there the warmth is the point), nor off a reply with no
+    question after it - "Thank you, Noor. Your details have been passed
+    on" is a goodbye, not filler.
+
+    English only. A reply in another language passes through untouched."""
+    text = (reply or '').strip()
+    if not text:
+        return reply
+
+    kept = [s for s in re.split(r'(?<=[.!?;])\s+', text)
+            if not any(leak in s.lower() for leak in PROMPT_LEAKS)]
+    if kept and len(kept) < len(re.split(r'(?<=[.!?;])\s+', text)):
+        text = " ".join(kept)
+
+    history = conversation_history or []
+    last_user = next((m.get('content') or '' for m in reversed(history)
+                      if m.get('role') == 'user'), '')
+    if detect_objection(last_user):
+        return text
+
+    earlier = [m.get('content') or '' for m in history if m.get('role') == 'assistant'][-2:]
+    had_one_recently = any(STOCK_OPENER.match(e) for e in earlier)
+    said_little = len(last_user.split()) <= 12
+
+    for _ in range(3):            # "Great, thanks! Got it. Where is it?"
+        match = STOCK_OPENER.match(text)
+        if not match:
+            break
+        rest = text[match.end():].lstrip()
+        if not rest or '?' not in rest:
+            break
+        empty_reassurance = match.group(0).lower().lstrip().startswith('no pressure')
+        if not (said_little or had_one_recently or empty_reassurance):
+            break
+        text = rest[0].upper() + rest[1:]
+    return text
 
 
 # ─────────────────────────────────────────────────────
@@ -3209,7 +3789,7 @@ TIMELINE_PHRASES = [
                   'no hurry', 'not in a hurry', 'no timeline', 'no specific time',
                   'no particular time', 'just exploring', 'just researching',
                   'someday', 'some day', 'no fixed', 'whenever']),
-    ('immediate', ['as soon as possible', 'asap', 'a.s.a.p', 'immediately',
+    ('immediate', ['as soon as', 'asap', 'a.s.a.p', 'immediately',
                    'right away', 'straight away', 'right now', 'this week',
                    'next week', 'within a week', 'within days', 'urgently',
                    'very urgent', 'urgent', 'this month', 'within a month',
@@ -3307,7 +3887,10 @@ def extract_timeline(conversation_history):
         reply = conversation_history[i + 1]
         if reply['role'] != 'user':
             continue
-        bucket = classify(reply['content'])
+        # In a direct answer to "how soon?", "a weak or 2" can only be a
+        # misspelt week. Anywhere else it might be a weak market.
+        answer = re.sub(r'\bweak(s?)\b', r'week\1', reply['content'], flags=re.IGNORECASE)
+        bucket = classify(answer)
         if bucket:
             return bucket, reply['content'].strip()[:200]
 
@@ -5878,6 +6461,191 @@ def get_listings_api(agency_id):
 
 # ─────────────────────────────────────────────────────
 
+def capture_seller_lead(agency, lead_data, history, chat_intent, request_messages=None):
+    """Save an owner's enquiry as a seller lead with its pending listing.
+
+    request_messages is this request's part of the conversation when the
+    visitor has two - so the listing is built from what they said about the
+    property they OWN, not the one they went on to ask about buying."""
+    agency_id = agency.id
+    described = history if request_messages is None else request_messages
+    try:
+        canonical_name, _ = resolve_lead_identity(
+            agency_id, lead_data['email'], lead_data.get('name'))
+        existing_seller = lead_on_file(agency_id, lead_data['email'], 'seller')
+        if existing_seller:
+            print(f"⚠️ Seller lead already recorded: {lead_data['email']}")
+        else:
+            ai_summary = generate_lead_summary(described, agency.name)
+            # Sellers are routed by where their PROPERTY is.
+            seller_property = extract_seller_property(described, chat_intent)
+            assigned = assign_next_agent(agency, seller_property.get('location'))
+            seller_score, seller_reasons = score_lead_quality(
+                lead_data, history, lead_type='seller',
+                seller_property=seller_property)
+            seller_lead = Lead(
+                agency_id=agency_id,
+                agent_id=assigned.id if assigned else None,
+                name=canonical_name,
+                email=lead_data['email'],
+                phone=lead_data.get('phone'),
+                whatsapp_number=lead_data.get('whatsapp_number'),
+                contact_preference=lead_data.get('contact_preference', 'email'),
+                budget=lead_data['budget'],          # their asking price
+                message=ai_summary,
+                intent_score=seller_score,
+                quality_reasons=json.dumps(seller_reasons),
+                timeline=lead_data.get('timeline'),
+                timeline_raw=lead_data.get('timeline_raw'),
+                lead_status='new',
+                lead_type='seller',
+                notes='[]',
+            )
+            db.session.add(seller_lead)
+            db.session.commit()
+
+            listing = None
+            if seller_property:
+                price_raw = seller_property.get('price_raw') or seller_lead.budget or ''
+                listing = Listing(
+                    agency_id=agency_id,
+                    title=(seller_property.get('title') or f"{canonical_name}'s property")[:200],
+                    location=(seller_property.get('location') or '')[:200] or None,
+                    price_raw=str(price_raw)[:100] or None,
+                    price=parse_price(price_raw),
+                    price_numeric=parse_price(price_raw),
+                    bedrooms=seller_property.get('bedrooms'),
+                    bathrooms=seller_property.get('bathrooms'),
+                    property_type=(seller_property.get('property_type') or '')[:50] or None,
+                    listing_purpose='rent' if chat_intent == 'rent_out' else 'sale',
+                    features=(seller_property.get('features') or '')[:500] or None,
+                    description=seller_property.get('description'),
+                    status='pending',        # invisible to buyers until approved
+                    source='seller_chat',
+                    seller_lead_id=seller_lead.id,
+                )
+                db.session.add(listing)
+                db.session.commit()
+                print(f"🏠 Pending listing #{listing.id} from seller lead {seller_lead.id}")
+
+            record_activity(
+                agency_id, 'seller_lead',
+                f"New {seller_score}-star seller lead: {seller_lead.name or 'unnamed'} wants to "
+                f"{'sell' if chat_intent == 'sell' else 'rent out'} "
+                f"{listing.title if listing else 'a property'}"
+                + (f" — awaiting your approval" if listing else ""),
+                actor_type='system', actor_name='Chatbot',
+                subject_type='lead', subject_id=seller_lead.id,
+                subject_name=seller_lead.name,
+                agent_id=seller_lead.agent_id, notify=False)
+            notify_owner_of_seller_lead(agency, seller_lead, listing, chat_intent)
+            if assigned:
+                notify_agent(assigned,
+                             f"🏠 New Seller Lead Assigned - {seller_lead.name}",
+                             f"Hi {assigned.name},\n\nA property owner wants to "
+                             f"{'sell' if chat_intent == 'sell' else 'rent out'} their property "
+                             f"and has been assigned to you:\n\n"
+                             f"Name: {seller_lead.name}\nEmail: {seller_lead.email}\n"
+                             f"Property: {listing.title if listing else '—'}\n"
+                             f"Location: {listing.location if listing else '—'}\n"
+                             f"Asking: {listing.price_raw if listing else seller_lead.budget or '—'}\n\n"
+                             f"Login: {PUBLIC_BASE_URL}/agent-login")
+            print(f"✅ SELLER LEAD #{seller_lead.id} captured: {seller_lead.name}")
+    except Exception as seller_err:
+        print(f"⚠️ Seller lead error: {seller_err}")
+        db.session.rollback()
+
+
+def capture_buyer_lead(agency, lead_data, history, booked_slots, request_messages=None):
+    """Save somebody looking for a property as a buyer lead, or bring the
+    one they already have up to date.
+
+    request_messages is this request's part of the conversation when the
+    visitor has two - so the summary an agent reads is about what they
+    want to FIND, and they are routed by where they want to live."""
+    agency_id = agency.id
+    described = history if request_messages is None else request_messages
+    try:
+        canonical_name, _ = resolve_lead_identity(
+            agency_id, lead_data['email'], lead_data.get('name'))
+        existing_lead = lead_on_file(agency_id, lead_data['email'], 'buyer')
+        if existing_lead:
+            updated = False
+            if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
+                existing_lead.whatsapp_number = lead_data['whatsapp_number']
+                existing_lead.contact_preference = lead_data['contact_preference']
+                updated = True
+            if not existing_lead.phone and lead_data.get('phone'):
+                existing_lead.phone = lead_data['phone']
+                existing_lead.contact_preference = lead_data['contact_preference']
+                updated = True
+            # A returning customer who finally names a date is a
+            # different lead to the agent than the one who didn't.
+            if not existing_lead.timeline and lead_data.get('timeline'):
+                existing_lead.timeline = lead_data['timeline']
+                existing_lead.timeline_raw = lead_data.get('timeline_raw')
+                updated = True
+            if updated:
+                rescore, rereasons = score_lead_quality(
+                    lead_data, history, has_booking=bool(booked_slots),
+                    lead_type=existing_lead.lead_type or 'buyer')
+                existing_lead.intent_score = rescore
+                existing_lead.quality_reasons = json.dumps(rereasons)
+            if updated:
+                db.session.commit()
+                print(f"✅ Lead {existing_lead.id} silently updated")
+            else:
+                print(f"⚠️ Duplicate: {lead_data['email']}")
+        else:
+            ai_summary = generate_lead_summary(described, agency.name)
+            quality_score, quality_reasons = score_lead_quality(
+                lead_data, history, has_booking=bool(booked_slots))
+            # Route to an agent who covers the area this customer
+            # actually asked about, before falling back to round-robin.
+            wanted_cities = detect_location(agency_id, described)
+            assigned = assign_next_agent(
+                agency, ", ".join(wanted_cities) if wanted_cities else None)
+            lead = Lead(
+                agency_id=agency_id,
+                agent_id=assigned.id if assigned else None,
+                name=canonical_name,
+                email=lead_data['email'],
+                phone=lead_data.get('phone'),
+                whatsapp_number=lead_data.get('whatsapp_number'),
+                contact_preference=lead_data.get('contact_preference', 'email'),
+                budget=lead_data['budget'],
+                message=ai_summary,
+                intent_score=quality_score,
+                quality_reasons=json.dumps(quality_reasons),
+                timeline=lead_data.get('timeline'),
+                timeline_raw=lead_data.get('timeline_raw'),
+                lead_status='new',
+                lead_type='buyer',
+                notes='[]'
+            )
+            db.session.add(lead)
+            db.session.commit()
+            print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
+            record_activity(
+                agency_id, 'lead_new',
+                f"New {quality_score}-star buyer lead: {lead.name or 'unnamed'}"
+                + (f", timeline {timeline_label(lead.timeline)}" if lead.timeline else "")
+                + (f", assigned to {db.session.get(Agent, lead.agent_id).name}" if lead.agent_id and db.session.get(Agent, lead.agent_id) else ""),
+                actor_type='system', actor_name='Chatbot',
+                subject_type='lead', subject_id=lead.id, subject_name=lead.name,
+                agent_id=lead.agent_id, notify=False)
+            send_lead_email(agency, lead)
+            send_crm_webhook(agency, lead)
+            if lead.agent_id:
+                assigned_agent = db.session.get(Agent, lead.agent_id)
+                notify_agent(assigned_agent,
+                    f"🎯 New Lead Assigned - {lead.name}",
+                    f"Hi {assigned_agent.name},\n\nA new lead was assigned to you:\n\nName: {lead.name}\nEmail: {lead.email}\nBudget: {lead.budget}\n\nLogin: {PUBLIC_BASE_URL}/agent-login")
+    except Exception as save_err:
+        print(f"❌ Lead save error: {save_err}")
+        db.session.rollback()
+
+
 @app.route("/chat", methods=["POST", "OPTIONS"])
 @limiter.limit(CHAT_LIMIT, methods=["POST"])
 def chat():
@@ -5919,20 +6687,54 @@ def chat():
         history.append({"role": "user", "content": user_message})
 
         max_slot = get_slot_capacity(agency)
-        chat_intent = detect_chat_intent(history)
-        seller_mode = is_seller_intent(chat_intent)
+        # Which request is in hand. For a visitor with one, this is the
+        # whole conversation and the intent it has always been. For one
+        # with two - "rent out my villa AND buy a townhouse" - `scope` is
+        # only the messages that belong to the request being dealt with.
+        view = conversation_view(history)
+        chat_intent = view['intent']
+        seller_mode = view['side'] == 'owner'
+        scope = view['messages']
+
+        # What we already know. The person comes from the whole
+        # conversation; the money and the timeline from this request only.
+        known = lead_data_for(agency_id, history, scope if view['several'] else None)
 
         # A seller is not shopping. Showing them the buyer inventory (and
         # the viewing calendar) is how the AI ended up asking an owner for
         # their "budget" and offering to find them properties.
-        listings_context = "" if seller_mode else get_listings_context(agency_id, history)
+        if seller_mode:
+            listings_context = ""
+        elif view['several']:
+            listings_context = get_listings_context(
+                agency_id, scope,
+                purpose={'buy': 'sale', 'rent': 'rent'}.get(chat_intent, 'any'),
+                budget=known.get('budget') or '')
+        else:
+            listings_context = get_listings_context(agency_id, history)
         availability_context = ("" if seller_mode
                                 else get_availability_context(agency_id, max_slot, booked_slots))
+
+        plan = contact_plan(history, known)
+        second_waiting = bool(view['several'] and not view['other']['finished'])
 
         seller_context = ""
         if seller_mode:
             what = "sell" if chat_intent == 'sell' else "rent out"
-            money = "asking price" if chat_intent == 'sell' else "monthly rent they want"
+            if second_waiting:
+                owner_close = (
+                    "ONCE YOU HAVE ALL OF THE ABOVE, do NOT close the conversation - this visitor "
+                    "has a second request waiting (see THIS VISITOR HAS TWO REQUESTS). Do not "
+                    "invent timelines, valuations, commission rates, or contract terms - an agent "
+                    "handles all of that.")
+            else:
+                owner_close = (
+                    "ONCE YOU HAVE ALL OF THE ABOVE - including their contact details - close the\n"
+                    "conversation like this and then STOP asking questions:\n"
+                    f"tell them their property details have been passed to the {agency.name} team, "
+                    "that an agent will\nreview and get in touch about next steps, and thank them. "
+                    "Do not invent timelines, valuations,\ncommission rates, or contract terms - "
+                    "an agent handles all of that.")
             seller_context = f"""
 
 ⚠️ THIS VISITOR IS A PROPERTY OWNER WHO WANTS TO {what.upper()} THEIR PROPERTY.
@@ -5946,34 +6748,20 @@ NEVER do any of these with an owner:
 - Offer a viewing, a date, or a time slot.
 - Promise to "find them a buyer soon" with a timeline you cannot keep.
 
-INFORMATION TO COLLECT FROM THIS OWNER (strictly one at a time, in this order,
-skipping anything already in ALREADY CAPTURED):
-1. Where the property is located ("Whereabouts is the property?")
-2. What type of property it is ("What kind of property is it - villa, house, apartment?")
-3. How many bedrooms ("How many bedrooms does it have?")
-4. How many bathrooms
-5. Standout features and amenities ("Anything that makes it stand out - pool, garden, solar, parking?")
-6. The {money} ("What {'price are you hoping for' if chat_intent == 'sell' else 'monthly rent are you asking'}?")
-7. Timeline ("How soon are you hoping to {'sell' if chat_intent == 'sell' else 'have it rented out'}?") - ask this every time, in its own message. "No particular rush" is a complete answer; accept it and move on. Never press for a firmer date and never imply urgency they didn't express.
-8. Contact preference FIRST: "Best way to reach you - WhatsApp, phone, or email?" - never ask for an email address or a number before this question has been answered.
-9. The one detail their answer needs: WhatsApp chosen -> their WhatsApp number. Phone chosen -> their phone number. Email chosen -> their email address. One per message. If they decline a number, accept it once and move on.
-10. Email address, if you still do not have it - in its own message, after the number.
+{seller_sequence(chat_intent, plan)}
 
 If they volunteer several of these at once, accept all of it and move to the next MISSING one.
-Acknowledge what they describe warmly and specifically ("A pool and a home cinema - that will
-appeal to the right buyer") without valuing the property or promising a price.
+When they describe what makes the property stand out, you may answer THAT one message
+specifically and briefly ("A pool and a home cinema - that will appeal to the right
+{'buyer' if chat_intent == 'sell' else 'tenant'}"), without valuing the property or promising a price.
+Every other answer needs no comment at all: go straight to the next question.
 
-ONCE YOU HAVE ALL OF THE ABOVE - including the contact details in items 8 to 10 - close the
-conversation like this and then STOP asking questions:
-tell them their property details have been passed to the {agency.name} team, that an agent will
-review and get in touch about next steps, and thank them. Do not invent timelines, valuations,
-commission rates, or contract terms - an agent handles all of that."""
+{owner_close}"""
 
         # What we already know, stated plainly for the model. Relying on it to
         # re-read 20 messages and notice it already has an email is how
         # customers ended up being asked for the same email and the same
         # contact preference twice in one conversation.
-        known = extract_lead_data(agency_id, history)
         known_bits = []
         if known.get('name'):
             known_bits.append(f"Name: {known['name']}")
@@ -5984,16 +6772,15 @@ commission rates, or contract terms - an agent handles all of that."""
         if known.get('phone'):
             known_bits.append(f"Phone: {known['phone']}")
         if known.get('budget'):
-            known_bits.append(f"Budget: {known['budget']}")
+            known_bits.append(f"{'Asking price' if seller_mode else 'Budget'}: {known['budget']}")
         if known.get('timeline'):
             known_bits.append(f"Timeline: {timeline_label(known['timeline'])} (ALREADY ANSWERED)")
-        plan = contact_plan(history, known)
         if plan['channel']:
             known_bits.append(f"Contact preference: {plan['channel']} (ALREADY ANSWERED)")
         elif plan['asked_preference']:
             known_bits.append("Contact preference: already asked once - do not ask again")
         # What they told us about the property itself, in their own words.
-        described = property_facts_in(history)
+        described = property_facts_in(scope)
         if described.get('property_type'):
             known_bits.append(
                 f"Property type: {described['property_type']} (ALREADY ANSWERED - never ask "
@@ -6002,7 +6789,8 @@ commission rates, or contract terms - an agent handles all of that."""
             known_bits.append(f"Bedrooms: {described['bedrooms']} (ALREADY ANSWERED)")
         if described.get('bathrooms') is not None:
             known_bits.append(f"Bathrooms: {format_num(described['bathrooms'])} (ALREADY ANSWERED)")
-        if chat_intent in ('buy', 'rent'):
+        purpose_known = chat_intent in ('buy', 'rent') and purpose_is_clear(view)
+        if purpose_known:
             known_bits.append(
                 f"They are looking to {'buy' if chat_intent == 'buy' else 'rent'} "
                 f"(ALREADY ANSWERED - never ask whether they want to buy or rent)")
@@ -6023,7 +6811,7 @@ commission rates, or contract terms - an agent handles all of that."""
 
         system_prompt = f"""You are {agency.assistant_name}, a real estate consultant at {agency.name}.
 {listings_context}
-{already_known_context}{contact_context(plan)}
+{already_known_context}{contact_context(plan)}{two_requests_context(view, agency.name)}
 
 GOLDEN RULE - ONE QUESTION PER MESSAGE:
 - Never ask two questions in one response. Ever.
@@ -6045,14 +6833,14 @@ CONVERSATION START - GET NAME FIRST, ALWAYS, NO EXCEPTIONS:
 PACE - LET THE CLIENT LEAD:
 - The client came to ask questions. Answer them patiently and helpfully.
 - Do not rush to collect information. Help them think and decide first.
-- Only after they seem satisfied with a property choice, collect: email, then contact preference.
+- Only after they seem satisfied with a property choice, work through the contact step - how they want to be reached first, then the detail that needs.
 - Never interrogate. One relaxed question at a time.
 
 PROPERTY RECOMMENDATIONS:
 - The list below has ALREADY been filtered and ranked by the customer's stated budget, property type, bedroom/bathroom count, and buy/rent preference. Only recommend properties from THIS list - never invent or approximate one that isn't shown.
 - If the customer hasn't given a location yet, that's fine - go ahead and offer from the list, since it already reflects their budget and type across all locations.
 - Mention matches by name with price and key features in 1-2 sentences, then ask ONE question: "Would you like to know more?"
-- If the list is empty: "We don't have anything matching that combination right now, but I can keep an eye out and get back to you with options." Even with no match, STILL continue the normal information flow afterward - ask for budget if you don't have it yet, then email, then contact preference - so we can follow up once something becomes available. Do not end the conversation early just because nothing matched right now.
+- If the list is empty: "We don't have anything matching that combination right now, but I can keep an eye out and get back to you with options." Even with no match, STILL continue the normal information flow afterward - ask for budget if you don't have it yet, then work through the contact step - so we can follow up once something becomes available. Do not end the conversation early just because nothing matched right now.
 - If the customer broadens or changes their criteria, treat the next matching list as the new source of truth.
 
 VIEWING FLOW - ONE PROPERTY AT A TIME, ONE STEP AT A TIME:
@@ -6066,20 +6854,12 @@ VIEWING FLOW - ONE PROPERTY AT A TIME, ONE STEP AT A TIME:
 - If the customer wants to view MORE THAN ONE property, handle them ONE AT A TIME, start to finish (day, then time, then confirm) before starting the next property's day/time from step 1. Never mix days or times for two different properties in the same message.
 - After the LAST property's time is confirmed, work through the contact step (preference first, then the detail it needs) if you have not already. Then a short recap of all bookings together, each naming its property.
 - If client wants to view a property NOT in the listings: say "Unfortunately we don't currently have a property matching your requirements. I'll find suitable options and get back to you to plan a viewing." Do NOT offer any dates or time slots in this case. Just work through the contact step - preference first, then the detail their answer needs - so the agency can follow up.
+- Never tell them nothing matches before they have said what they are looking for. If you do not know their requirements yet, ask for them.
 
-INFORMATION TO COLLECT FROM A BUYER OR RENTER (strictly one at a time, in this order):
-1. Name (at the very start)
-2. Property type ("What kind of property are you looking for?")
-3. Buying or renting? ("Are you looking to buy or rent?")
-4. Location ONLY ("Any particular area in mind?") - do NOT mention budget yet
-5. Budget ONLY (after location is answered: "And what budget are you working with?")
-6. Timeline ONLY ("How soon are you looking to move?") - ask this every time, in its own message, right after the budget. It is never optional and never combined with another question. If they have booked a viewing and you never asked it, ask it once straight after the booking is confirmed.
-7. Contact preference FIRST (after they're satisfied or a viewing is planned): "Best way to reach you - WhatsApp, phone, or email?" - never ask for an email address or a number before this question has been answered.
-8. The one detail their answer needs: WhatsApp chosen -> their WhatsApp number. Phone chosen -> their phone number. Email chosen -> their email address. One per message. If they decline a number, accept it once and move on.
-9. Email address, if you still do not have it - in its own message, after the number.
+{buyer_sequence(purpose_known, plan, bool(known.get('name')))}
 
 WHY THE TIMELINE MATTERS - accept any answer, never push:
-- "Just looking for now" is a complete, acceptable answer. Thank them and move on to the next item.
+- If they say they are just looking for now, accept that and move on to the next item. Do not comment on their answer.
 - Never ask a second time, never rephrase it to get a firmer date, and never imply urgency they didn't express.
 - If they give a vague answer ("sometime this year"), that is enough - do not press for a month.
 {seller_context}
@@ -6088,7 +6868,7 @@ NEVER combine location and budget in one question.
 WRONG: "Could you share the location and your budget?"
 RIGHT: "Any particular area in mind?" → wait → "And what's your budget?"
 
-If customer volunteers multiple details in one message (e.g. "Miami, 10K per month"), accept ALL of it gracefully - acknowledge and move to the NEXT missing item. Never re-ask something they already told you.
+If customer volunteers multiple details in one message (e.g. "Miami, 10K per month"), accept ALL of it and move to the NEXT missing item. Never re-ask something they already told you.
 
 Skip any numbered item above that appears in ALREADY CAPTURED - that list is authoritative. If the customer has to tell you something twice, you have failed. This applies to the closing recap too: recap the bookings, do not re-collect the email or the contact preference.
 
@@ -6099,11 +6879,14 @@ FORMATTING RULES:
 - Use contractions: "it's", "that's", "you're"
 
 TONE:
-- Warm, natural, like a knowledgeable friend
-- Vary your acknowledgements - don't repeat "Perfect", "Great", "Awesome" more than once each
-- Acknowledge what they said before responding
+- Warm and natural, like a knowledgeable professional - not a cheerleader.
+- Go straight to your next question. Most replies need NO opening remark at all.
+- Do NOT open with a stock acknowledgement: "Got it", "Thanks for sharing that", "Thanks for that information", "Thank you for that", "Great choice", "Perfect", "Awesome", "That's impressive". Nobody thanks or praises every single answer, and doing it every time sounds insincere.
+- Never compliment a plain fact. "It's a villa", "5 bedrooms", "6", a budget, a location - none of these is an achievement.
+- React only when they have told you something worth reacting to - a long description, a worry, good or bad news - and then say something specific to it, in a few words.
 
 HANDLING HESITATION:
+- Use these ONLY when the visitor actually hesitates or objects. Someone who has just answered your question is not hesitating - never say "no pressure" to them.
 - Price concern: "I hear you - even a rough range helps. What feels comfortable?"
 - Not ready: "No pressure at all. What's holding you back right now?"
 - Indecisive: "If you had to pick just one thing that matters most, what would it be?"
@@ -6131,9 +6914,16 @@ Respond naturally in plain text only:"""
             frequency_penalty=0.5
         )
         ai_reply = response.choices[0].message.content.strip()
+        # Told not to ask for contact details it already holds, the model
+        # sometimes does anyway. It gets one chance to say it again.
+        if plan['step'] == 'done' and asks_for_contact_details(ai_reply):
+            ai_reply = reply_without_contact_question(messages, ai_reply)
+        ai_reply = tidy_reply(ai_reply, history)
         history.append({"role": "assistant", "content": ai_reply})
 
-        lead_data = extract_lead_data(agency_id, history)
+        view = conversation_view(history)
+        lead_data = lead_data_for(agency_id, history,
+                                  view['messages'] if view['several'] else None)
 
         # ─── Auto-appointment: books ALL requested slots (multi-property support) ───
         appt_data = extract_appointment_data(agency_id, history)
@@ -6169,6 +6959,11 @@ Respond naturally in plain text only:"""
                 try:
                     canonical_name, existing_lead_id = resolve_lead_identity(
                         agency_id, lead_data['email'], lead_data.get('name'))
+                    # A viewing is a buyer's business. If this person also has
+                    # a seller lead, the appointment belongs to the other one.
+                    buyer_row = lead_on_file(agency_id, lead_data['email'], 'buyer')
+                    if buyer_row:
+                        existing_lead_id = buyer_row.id
                     preferred_id = None
                     if existing_lead_id:
                         lead_row = db.session.get(Lead, existing_lead_id)
@@ -6225,173 +7020,25 @@ Respond naturally in plain text only:"""
                     print(f"⚠️ Auto-appointment error: {appt_err}")
                     db.session.rollback()
 
-        # ─── Seller lead: a property owner, not a shopper ───
-        if seller_mode and is_seller_lead_qualified(lead_data, history, chat_intent):
-            try:
-                canonical_name, existing_lead_id = resolve_lead_identity(
-                    agency_id, lead_data['email'], lead_data.get('name'))
-                existing_seller = db.session.get(Lead, existing_lead_id) if existing_lead_id else None
-                if existing_seller:
-                    print(f"⚠️ Seller lead already recorded: {lead_data['email']}")
-                else:
-                    ai_summary = generate_lead_summary(history, agency.name)
-                    # Sellers are routed by where their PROPERTY is.
-                    seller_property = extract_seller_property(history, chat_intent)
-                    assigned = assign_next_agent(agency, seller_property.get('location'))
-                    seller_score, seller_reasons = score_lead_quality(
-                        lead_data, history, lead_type='seller',
-                        seller_property=seller_property)
-                    seller_lead = Lead(
-                        agency_id=agency_id,
-                        agent_id=assigned.id if assigned else None,
-                        name=canonical_name,
-                        email=lead_data['email'],
-                        phone=lead_data.get('phone'),
-                        whatsapp_number=lead_data.get('whatsapp_number'),
-                        contact_preference=lead_data.get('contact_preference', 'email'),
-                        budget=lead_data['budget'],          # their asking price
-                        message=ai_summary,
-                        intent_score=seller_score,
-                        quality_reasons=json.dumps(seller_reasons),
-                        timeline=lead_data.get('timeline'),
-                        timeline_raw=lead_data.get('timeline_raw'),
-                        lead_status='new',
-                        lead_type='seller',
-                        notes='[]',
-                    )
-                    db.session.add(seller_lead)
-                    db.session.commit()
-
-                    listing = None
-                    if seller_property:
-                        price_raw = seller_property.get('price_raw') or seller_lead.budget or ''
-                        listing = Listing(
-                            agency_id=agency_id,
-                            title=(seller_property.get('title') or f"{canonical_name}'s property")[:200],
-                            location=(seller_property.get('location') or '')[:200] or None,
-                            price_raw=str(price_raw)[:100] or None,
-                            price=parse_price(price_raw),
-                            price_numeric=parse_price(price_raw),
-                            bedrooms=seller_property.get('bedrooms'),
-                            bathrooms=seller_property.get('bathrooms'),
-                            property_type=(seller_property.get('property_type') or '')[:50] or None,
-                            listing_purpose='rent' if chat_intent == 'rent_out' else 'sale',
-                            features=(seller_property.get('features') or '')[:500] or None,
-                            description=seller_property.get('description'),
-                            status='pending',        # invisible to buyers until approved
-                            source='seller_chat',
-                            seller_lead_id=seller_lead.id,
-                        )
-                        db.session.add(listing)
-                        db.session.commit()
-                        print(f"🏠 Pending listing #{listing.id} from seller lead {seller_lead.id}")
-
-                    record_activity(
-                        agency_id, 'seller_lead',
-                        f"New {seller_score}-star seller lead: {seller_lead.name or 'unnamed'} wants to "
-                        f"{'sell' if chat_intent == 'sell' else 'rent out'} "
-                        f"{listing.title if listing else 'a property'}"
-                        + (f" — awaiting your approval" if listing else ""),
-                        actor_type='system', actor_name='Chatbot',
-                        subject_type='lead', subject_id=seller_lead.id,
-                        subject_name=seller_lead.name,
-                        agent_id=seller_lead.agent_id, notify=False)
-                    notify_owner_of_seller_lead(agency, seller_lead, listing, chat_intent)
-                    if assigned:
-                        notify_agent(assigned,
-                                     f"🏠 New Seller Lead Assigned - {seller_lead.name}",
-                                     f"Hi {assigned.name},\n\nA property owner wants to "
-                                     f"{'sell' if chat_intent == 'sell' else 'rent out'} their property "
-                                     f"and has been assigned to you:\n\n"
-                                     f"Name: {seller_lead.name}\nEmail: {seller_lead.email}\n"
-                                     f"Property: {listing.title if listing else '—'}\n"
-                                     f"Location: {listing.location if listing else '—'}\n"
-                                     f"Asking: {listing.price_raw if listing else seller_lead.budget or '—'}\n\n"
-                                     f"Login: {PUBLIC_BASE_URL}/agent-login")
-                    print(f"✅ SELLER LEAD #{seller_lead.id} captured: {seller_lead.name}")
-            except Exception as seller_err:
-                print(f"⚠️ Seller lead error: {seller_err}")
-                db.session.rollback()
-
-        elif is_lead_qualified(lead_data, history, has_booking=bool(booked_slots)):
-            try:
-                canonical_name, existing_lead_id = resolve_lead_identity(
-                    agency_id, lead_data['email'], lead_data.get('name'))
-                existing_lead = db.session.get(Lead, existing_lead_id) if existing_lead_id else None
-                if existing_lead:
-                    updated = False
-                    if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
-                        existing_lead.whatsapp_number = lead_data['whatsapp_number']
-                        existing_lead.contact_preference = lead_data['contact_preference']
-                        updated = True
-                    if not existing_lead.phone and lead_data.get('phone'):
-                        existing_lead.phone = lead_data['phone']
-                        existing_lead.contact_preference = lead_data['contact_preference']
-                        updated = True
-                    # A returning customer who finally names a date is a
-                    # different lead to the agent than the one who didn't.
-                    if not existing_lead.timeline and lead_data.get('timeline'):
-                        existing_lead.timeline = lead_data['timeline']
-                        existing_lead.timeline_raw = lead_data.get('timeline_raw')
-                        updated = True
-                    if updated:
-                        rescore, rereasons = score_lead_quality(
-                            lead_data, history, has_booking=bool(booked_slots),
-                            lead_type=existing_lead.lead_type or 'buyer')
-                        existing_lead.intent_score = rescore
-                        existing_lead.quality_reasons = json.dumps(rereasons)
-                    if updated:
-                        db.session.commit()
-                        print(f"✅ Lead {existing_lead.id} silently updated")
-                    else:
-                        print(f"⚠️ Duplicate: {lead_data['email']}")
-                else:
-                    ai_summary = generate_lead_summary(history, agency.name)
-                    quality_score, quality_reasons = score_lead_quality(
-                        lead_data, history, has_booking=bool(booked_slots))
-                    # Route to an agent who covers the area this customer
-                    # actually asked about, before falling back to round-robin.
-                    wanted_cities = detect_location(agency_id, history)
-                    assigned = assign_next_agent(
-                        agency, ", ".join(wanted_cities) if wanted_cities else None)
-                    lead = Lead(
-                        agency_id=agency_id,
-                        agent_id=assigned.id if assigned else None,
-                        name=canonical_name,
-                        email=lead_data['email'],
-                        phone=lead_data.get('phone'),
-                        whatsapp_number=lead_data.get('whatsapp_number'),
-                        contact_preference=lead_data.get('contact_preference', 'email'),
-                        budget=lead_data['budget'],
-                        message=ai_summary,
-                        intent_score=quality_score,
-                        quality_reasons=json.dumps(quality_reasons),
-                        timeline=lead_data.get('timeline'),
-                        timeline_raw=lead_data.get('timeline_raw'),
-                        lead_status='new',
-                        notes='[]'
-                    )
-                    db.session.add(lead)
-                    db.session.commit()
-                    print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
-                    record_activity(
-                        agency_id, 'lead_new',
-                        f"New {quality_score}-star buyer lead: {lead.name or 'unnamed'}"
-                        + (f", timeline {timeline_label(lead.timeline)}" if lead.timeline else "")
-                        + (f", assigned to {db.session.get(Agent, lead.agent_id).name}" if lead.agent_id and db.session.get(Agent, lead.agent_id) else ""),
-                        actor_type='system', actor_name='Chatbot',
-                        subject_type='lead', subject_id=lead.id, subject_name=lead.name,
-                        agent_id=lead.agent_id, notify=False)
-                    send_lead_email(agency, lead)
-                    send_crm_webhook(agency, lead)
-                    if lead.agent_id:
-                        assigned_agent = db.session.get(Agent, lead.agent_id)
-                        notify_agent(assigned_agent,
-                            f"🎯 New Lead Assigned - {lead.name}",
-                            f"Hi {assigned_agent.name},\n\nA new lead was assigned to you:\n\nName: {lead.name}\nEmail: {lead.email}\nBudget: {lead.budget}\n\nLogin: {PUBLIC_BASE_URL}/agent-login")
-            except Exception as save_err:
-                print(f"❌ Lead save error: {save_err}")
-                db.session.rollback()
+        # ─── Leads ───
+        # One lead per request. A visitor with a single request goes through
+        # the same one check as always. One with two gets each looked at on
+        # its own part of the conversation, the finished one first.
+        if not view['several']:
+            if seller_mode and is_seller_lead_qualified(lead_data, history, chat_intent):
+                capture_seller_lead(agency, lead_data, history, chat_intent)
+            elif is_lead_qualified(lead_data, history, has_booking=bool(booked_slots)):
+                capture_buyer_lead(agency, lead_data, history, booked_slots)
+        else:
+            other = view['other']
+            for side, intent, part in ((other['side'], other['intent'], other['messages']),
+                                       (view['side'], view['intent'], view['messages'])):
+                data = lead_data_for(agency_id, history, part)
+                if side == 'owner':
+                    if is_seller_lead_qualified(data, history, intent):
+                        capture_seller_lead(agency, data, history, intent, part)
+                elif is_lead_qualified(data, history, has_booking=bool(booked_slots)):
+                    capture_buyer_lead(agency, data, history, booked_slots, part)
 
         save_session(session_key, history, booked_slots)
         return jsonify({"reply": ai_reply})

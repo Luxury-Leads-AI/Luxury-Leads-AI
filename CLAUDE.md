@@ -754,6 +754,169 @@ post-viewing check-in and the seller approval notice.
 fail against the code that shipped before it; the one that passes asserts the
 unchanged behaviour, that platform mail still replies to support.
 
+## One visitor, two requests
+
+From Noor's conversation of 15 November 2026. She wanted to rent out her villa
+**and** buy a townhouse. The first half was faultless. The second half was
+answered as though she were still an owner:
+
+- "now what about the property I want to buy?" → "we don't currently have a
+  property matching your requirements", before she had given any;
+- "are you looking to buy or rent?", after she had said buy twice;
+- asked how to reach her with her email and WhatsApp number on file, then asked
+  for the number "again, just to confirm";
+- closed with "your property details have been passed on" — the owner's line;
+- **the buying enquiry — 7 to 8 million dollars, within two weeks — was never
+  saved.** The log said `Seller lead already recorded`.
+
+One cause. `detect_chat_intent` reads the whole conversation as one request, and
+an owner phrase anywhere in it wins for good.
+
+### `conversation_view(history)`
+
+Splits a conversation by which request each message belongs to, and returns the
+one in hand: `side` (`owner` / `seeker`), `intent`, `messages` (only that
+request's part), `several`, `other` (the other request, with `finished`) and
+`moved_on`.
+
+**The person is read from the whole conversation; the money, the timeline and
+the property only from the request's own part.** `lead_data_for()` does the
+first two, `property_facts_in(scope)` the third, and `get_listings_context`
+takes `purpose=` and `budget=` so the buyer half is not filtered by the villa.
+
+A conversation with **one** request comes back exactly as before — the intent
+`detect_chat_intent` has always returned, and every message. Nothing about a
+single-request chat changed, and `test_a_single_request_is_read_exactly_as_before`
+holds that.
+
+What makes it two requests is an owner phrase (`SELL_PATTERNS`,
+`RENT_OUT_PATTERNS`) **and** an explicit statement of wanting a property
+(`SEEK_PATTERNS`). The second list is tight on purpose — first person, a wish,
+the verb — because once an owner is describing a property loose words are
+everywhere:
+
+| Said by an owner | Why it must not change sides |
+|---|---|
+| "I need a tenant who will rent it for a year" | `rent` |
+| "it has its own pool" | `own` is in `BUY_WORDS` |
+| "I want to rent it for 2000 a month" | a definite object — `_RENT` needs an indefinite one or none |
+| "I'm looking for a valuation of my house" | `_A_PROPERTY` excludes it |
+
+Three rules worth knowing before changing it:
+
+- **A correction is not a second request.** "I want to rent a property" followed
+  by "I mean rent *out* my own" is one request stated twice; a `rent` statement
+  made *before* a `rent_out` one is discounted. Said in the same breath ("rent a
+  flat near work and rent out my house") it is two.
+- **The code decides when to move on, not the model.** Left to itself the model
+  either said goodbye after the first request, or drifted into the second while
+  this code still believed it was on the first — and then every instruction it
+  was given described the wrong request. `_request_finished()` is true once the
+  contact step is done, an email is on file and the money has been dealt with;
+  the reply to the message that makes it true is the one that turns
+  (`moved_on`), and `two_requests_context()` tells the model exactly that.
+- **"Dealt with" is not "stated".** An owner who answers the price question with
+  "no idea, what would you suggest?" has settled it (`_money_settled`). Otherwise
+  the first request could never finish, the model was told not to close until it
+  had, and the second would never start. A request with **no email** is never
+  finished — nothing can be saved for it.
+
+The visitor can always go there themselves: an explicit statement switches at
+once, in either direction, and nothing said for the other request is lost
+because messages are partitioned by side rather than cut at a point.
+
+### Two leads, one person
+
+`lead_on_file(agency_id, email, lead_type)` replaced "is there a lead with this
+email". One email can now carry a **seller** lead with its pending listing and a
+**buyer** lead with a budget: different deals, different figures, often
+different agents. Lead saving moved out of the route into `capture_seller_lead`
+and `capture_buyer_lead` so each request can be saved from its own part of the
+conversation. A viewing booked by somebody with both is attached to the buyer
+lead.
+
+### Limits
+
+- Buying is recognised in English, Spanish, French, German, Portuguese, Italian
+  and Dutch. **Renting is English only**: *alquilar*, *louer* and *affittare*
+  mean both "rent" and "rent out". In another language a two-request
+  conversation behaves as it did before.
+- One owner request and one seeker request. Two properties to sell, or buying
+  one and renting another, are still read as one.
+
+`tests/test_two_requests.py` runs her conversation, verbatim, through the real
+`/chat` route with a scripted model. 101 of its 104 tests fail against the code
+that shipped before it; the three that pass describe things that were already
+right.
+
+## What the model said, before the visitor sees it
+
+A prompt is a request. Three parts of it are now checked in code.
+
+**Empty openers.** "Got it!" after "It's a villa", "That's impressive!" after
+"6". The old TONE section *asked* for this — "Acknowledge what they said before
+responding" — so the model did it on every reply. The section now says the
+opposite, and `tidy_reply()` takes a stock opener off any reply that goes on to
+ask something, unless the visitor has just said more than a dozen words **and**
+neither of the last two replies had one. It is never taken off a reply to
+somebody who hesitated (there the warmth is the point) or off a goodbye. English
+only; anything else passes through untouched.
+
+**The prompt's own words.** "No pressure at all; that's a complete answer!" was
+the instructions leaking: three lines told the model a vague timeline "is a
+complete answer", and it said so to visitors. Those lines are reworded, a
+sentence containing the phrase is dropped from any reply, and a test asserts the
+phrase is nowhere in the prompt. **Do not write a quotable verdict into the
+prompt** — describe what to do instead.
+
+**Asking again.** With the contact step done, the contact item is no longer in
+either numbered sequence at all — `buyer_sequence()` and `seller_sequence()`
+build the lists, and an item that is not in the list cannot be walked into. If
+the model still asks (`asks_for_contact_details`), `reply_without_contact_question`
+gives it one more attempt and keeps the first reply if that fails.
+`CONTACT_REASK` is deliberately separate from `is_number_question`, which
+matches "what's your" and would send "And what's your budget?" back.
+
+## The tests must not depend on the machine they run on
+
+15 November 2026: 1353 passed in the cloud, 23 failed on Moaz's laptop. The code
+was fine. `app.py` calls `load_dotenv()` as it is imported, and his `.env` holds
+the Gmail address he logs in to Brevo with as `SMTP_EMAIL` — which becomes the
+public contact address when `SUPPORT_EMAIL` is not set. Every public page then
+showed a personal address, and the 23 tests that guard against exactly that
+said so.
+
+`tests/conftest.py` now makes `load_dotenv` a no-op, clears every setting
+`app.py` reads from the environment, and replaces the model call with one that
+fails on the spot unless a test fakes it. Two things turned up while
+reproducing it:
+
+- With a real `BREVO_API_KEY` in that file, **eight tests were posting to the
+  live Brevo account** — to addresses like `35c04dd8@example.test`.
+- Five tests in `test_one_site_licence.py` post to `/chat` without faking the
+  model, and each opened a real connection to OpenAI with the dummy key.
+
+Reproduce the laptop with a `.env` containing `SMTP_EMAIL=...@gmail.com` beside
+`app.py`; `tests/test_hermetic_environment.py` is what fails.
+
+## Pending
+
+Kept here so a parked item is not a forgotten one. The live copy is the project
+doc `claude/pending-tasks.md`.
+
+- **A visitor who refuses to give an email address.** A lead is only created
+  once there is one; `resolve_lead_identity`, `lead_on_file`, the appointment
+  rows and the customer-facing mail all key on it. Somebody who chooses WhatsApp
+  and declines an email is not saved, the contact step never reaches `done`, and
+  a waiting second request is never moved on to. Parked by Moaz on 15 November
+  2026, to be addressed at an appropriate time.
+- The chat resets when the page is refreshed (`static/widget.js` makes a new
+  session id per page load).
+- The super admin panel only creates Solo-tier agencies.
+- Country and city dropdowns when creating a market.
+- Research and training for every customer type.
+- An owner with no asking price is never saved as a seller lead.
+
 ## Architecture
 
 **Single-file backend** — all Flask routes, DB models, AI logic, and email are in `app.py`. There are no blueprints. The one other module, `guides.py`, is pure content (the user guides as data) with no imports, no logic and no database access; `app.py` reads it and owns every route.

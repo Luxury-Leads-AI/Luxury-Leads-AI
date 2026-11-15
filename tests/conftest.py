@@ -25,6 +25,35 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# A developer's own .env must not decide what the tests see - or do.
+#
+# app.py calls load_dotenv() as it is imported, so on a laptop the .env
+# sitting beside it was quietly feeding the test run. Two things followed.
+# SMTP_EMAIL in that file became the public contact address, so 23 tests
+# that check no page shows a personal address failed on the laptop and
+# passed everywhere else. Worse, a real BREVO_API_KEY in that file meant
+# eight tests that reach the email sender were posting to the live Brevo
+# account, to addresses like 35c04dd8@example.test.
+#
+# So the file is not read at all here, and every setting app.py takes from
+# the environment starts from its default. A test that needs one sets it
+# itself, with monkeypatch.
+import dotenv  # noqa: E402
+
+dotenv.load_dotenv = lambda *args, **kwargs: False
+
+SETTINGS_A_LAPTOP_MIGHT_CARRY = (
+    "BREVO_API_KEY", "SMTP_EMAIL", "SUPPORT_EMAIL", "REPLY_TO_EMAIL",
+    "EMAIL_FROM_NAME", "PUBLIC_BASE_URL", "SITE_BASE_URL", "RENDER",
+    "BUSINESS_NAME", "BUSINESS_ADDRESS", "SHOW_STATS", "SHOW_TIER_3",
+    "SMOKE_TEST_TOKEN", "SUPER_ADMIN_PASSWORD_HASH",
+    "PADDLE_PRICE_SOLO", "PADDLE_PRICE_AGENCY", "PADDLE_PRICE_CORP",
+)
+for _name in SETTINGS_A_LAPTOP_MIGHT_CARRY:
+    os.environ.pop(_name, None)
+for _name in [n for n in os.environ if n.startswith("STAT_")]:
+    os.environ.pop(_name, None)
+
 import pytest  # noqa: E402
 import app as app_module  # noqa: E402  (import triggers db.create_all())
 
@@ -35,6 +64,22 @@ def _fresh_rate_limits():
     from one address (127.0.0.1) in one process, so without this the login
     tests would eventually lock each other out."""
     app_module.limiter.reset()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_model(monkeypatch):
+    """No test talks to OpenAI by accident.
+
+    Five tests that post to /chat without faking the model were each
+    opening a real connection to api.openai.com with the dummy key - three
+    tries apiece, because the SDK retries. Harmless to the bill, but it
+    made the run slower and dependent on a network. Now the call fails on
+    the spot, which is what those tests already expected of it. A test
+    that needs an answer supplies one with monkeypatch, as before."""
+    def unreachable(**kwargs):
+        raise RuntimeError("a test reached the model without faking it")
+    monkeypatch.setattr(app_module.client.chat.completions, "create", unreachable)
     yield
 
 
