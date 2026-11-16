@@ -568,6 +568,12 @@ WEEKDAY_WORDS = {
 
 AFFIRMATIVE_WORDS = [
     'yes', 'sure', 'sounds good', 'definitely', 'absolutely', "let's", 'ok', 'okay', 'yeah', 'yep', 'of course',
+    'i would love to', "i'd love to", 'i would love', "i'd love", 'love to', 'would love to', 'ya', 'yah',
+    'yup', 'please', 'why not', 'i would like that', "i'd like that", 'that would be great', 'go ahead',
+    # The reply is compared with its punctuation stripped, so "I'd" arrives as "id".
+    'id love', 'id like that', 'lets',
+    'me encantaría', 'me encantaria', "j'adorerais", 'avec plaisir', 'sehr gerne', 'mi piacerebbe',
+    'adoraria', 'eu adoraria', 'heel graag', 'نعم', 'أكيد', 'اكيد', 'بالتأكيد', 'طبعا', 'حسنا',
     'si', 'sí', 'claro', 'por supuesto', 'vale', 'perfecto', 'genial',
     'ja', 'sicher', 'klar', 'natürlich', 'natuerlich', 'na klar', 'gerne', 'gut', 'passt',
     'oui', 'bien sûr', 'bien sur', "d'accord", 'daccord', 'volontiers', 'parfait',
@@ -602,30 +608,36 @@ NUMBER_WORDS = {
     'een': 1, 'twee': 2, 'drie': 3, 'vijf': 5, 'zes': 6, 'zeven': 7, 'negen': 9, 'tien': 10,
     # Turkish
     'bir': 1, 'iki': 2, 'üç': 3, 'uc': 3, 'dört': 4, 'dort': 4, 'beş': 5, 'bes': 5, 'altı': 6, 'alti': 6, 'yedi': 7, 'sekiz': 8, 'dokuz': 9,
+    # Arabic
+    'واحد': 1, 'واحدة': 1, 'اثنان': 2, 'اثنين': 2, 'ثلاث': 3, 'ثلاثة': 3, 'أربع': 4, 'اربع': 4,
+    'أربعة': 4, 'اربعة': 4, 'خمس': 5, 'خمسة': 5, 'ست': 6, 'ستة': 6, 'سبع': 7, 'سبعة': 7,
+    'ثمان': 8, 'ثماني': 8, 'ثمانية': 8, 'تسع': 9, 'تسعة': 9, 'عشر': 10, 'عشرة': 10,
 }
 
 BEDROOM_WORDS = [
     'bed', 'beds', 'bedroom', 'bedrooms',
     'habitacion', 'habitación', 'habitaciones', 'dormitorio', 'dormitorios', 'recamara', 'recamaras',
-    'schlafzimmer',
+    'schlafzimmer', 'schlafzimmern',
     'chambre', 'chambres',
     'camera da letto', 'camere da letto',
     'quarto', 'quartos',
     'sypialnia', 'sypialnie', 'sypialni',
     'slaapkamer', 'slaapkamers',
     'yatak odası', 'yatak odasi', 'yatak odaları', 'yatak odalari',
+    'غرف نوم', 'غرفة نوم', 'غرف', 'غرفة',
 ]
 
 BATHROOM_WORDS = [
     'bath', 'baths', 'bathroom', 'bathrooms',
     'baño', 'baños', 'bano', 'banos', 'aseo', 'aseos',
-    'badezimmer', 'bad',
+    'badezimmer', 'badezimmern', 'bad',
     'salle de bain', 'salles de bain',
     'bagno', 'bagni',
-    'banheiro', 'banheiros', 'casa de banho',
+    'banheiro', 'banheiros', 'casa de banho', 'casas de banho',
     'łazienka', 'łazienki', 'lazienka', 'lazienki',
     'badkamer', 'badkamers',
     'banyo', 'banyolar',
+    'حمامات', 'حمام', 'دورات مياه', 'دورة مياه',
 ]
 
 NAME_INTRO_PREFIXES = [
@@ -752,10 +764,11 @@ def is_contact_question(ai_text):
     ]
     if any(p in ai_lower for p in english_patterns):
         return True
-    if 'whatsapp' in ai_lower:
+    if any(w in ai_lower for w in ('whatsapp', 'واتساب', 'واتس')):
         contact_words = ['email', 'e-mail', 'mail', 'correo', 'phone', 'telefon',
                           'teléfono', 'telefono', 'téléphone', 'telephone', 'telefone',
-                          'telefoon', 'numer', 'número', 'numero']
+                          'telefoon', 'numer', 'número', 'numero', 'بريد', 'إيميل',
+                          'ايميل', 'هاتف', 'اتصال', 'رقم']
         if any(w in ai_lower for w in contact_words):
             return True
     return False
@@ -768,8 +781,11 @@ def is_number_question(ai_text):
                          "share your number", "what's your"]
     if any(p in ai_lower for p in english_patterns):
         return True
-    number_words = ['nummer', 'número', 'numero', 'numéro', 'numer', 'numara']
-    if any(w in ai_lower for w in number_words) and ('whatsapp' in ai_lower or 'telefon' in ai_lower or 'phone' in ai_lower):
+    number_words = ['nummer', 'número', 'numero', 'numéro', 'numer', 'numara', 'رقم']
+    phone_words = ['whatsapp', 'telefon', 'phone', 'teléfono', 'telefono', 'telefone',
+                   'telefoon', 'móvil', 'movil', 'celular', 'cellulare', 'handy', 'mobiel',
+                   'portable', 'واتساب', 'واتس', 'هاتف', 'جوال', 'موبايل']
+    if any(w in ai_lower for w in number_words) and any(w in ai_lower for w in phone_words):
         return True
     return False
 
@@ -789,12 +805,25 @@ def is_timeline_question(ai_text):
     ]
     if any(pat in ai_lower for pat in english_patterns):
         return True
-    # Other languages: a "when" word next to a move/buy/sell verb.
+    # "How soon" and "time frame" in the other widget languages.
+    how_soon = ['qué tan pronto', 'que tan pronto', 'cuán pronto', 'en cuánto tiempo',
+                'en cuanto tiempo', 'plazo', 'dans combien de temps', 'délai', 'delai',
+                'wie schnell', 'wie bald', 'zeitrahmen', 'zeitraum', 'entro quando',
+                'tempistica', 'em quanto tempo', 'prazo', 'hoe snel', 'hoe spoedig',
+                'termijn', 'الإطار الزمني', 'الجدول الزمني', 'كم من الوقت', 'في أي وقت',
+                'متى تريد', 'متى ترغب', 'متى تخطط']
+    if any(p in ai_lower for p in how_soon):
+        return True
+    # Other languages: a "when" word next to a move/buy/sell/let verb.
     when_words = ['cuándo', 'cuando', 'quand', 'wann', 'quando', 'wanneer',
-                  'ne zaman', 'kiedy', 'kogda']
+                  'ne zaman', 'kiedy', 'kogda', 'متى']
     move_words = ['mudar', 'mudanza', 'umziehen', 'déménager', 'verhuizen',
                   'comprar', 'kaufen', 'acheter', 'vender', 'verkaufen', 'vendre',
-                  'taşın', 'przeprowad', 'kupi']
+                  'taşın', 'przeprowad', 'kupi',
+                  'alquil', 'arrend', 'louer', 'emménager', 'vermiet', 'einziehen',
+                  'vendere', 'affitt', 'trasferir', 'traslocare', 'comprare', 'alugar',
+                  'verkopen', 'verhuren', 'kopen', 'huren', 'بيع', 'تأجير', 'الانتقال',
+                  'تنتقل', 'شراء', 'استئجار']
     if any(w in ai_lower for w in when_words) and any(w in ai_lower for w in move_words):
         return True
     return False
@@ -1067,23 +1096,86 @@ def detect_purpose(conversation_history):
 # Checked before the buy/rent words, and deliberately tighter: "I want to
 # rent out my flat" contains "rent" and would otherwise read as a renter
 # looking for a place.
+# The widget speaks nine languages (static/widget.js: en, fr, es, pt,
+# pt-br, de, it, nl, ar), so an owner can arrive in any of them. Until
+# November 2026 this list knew a handful of non-English phrases and an
+# owner writing "Je veux vendre ma maison" was treated as a buyer.
+#
+# Where the verb itself says which side the visitor is on - verkaufen,
+# vermieten, verkopen, verhuren, بيع, تأجير - the verb is enough. Where
+# it does not - alquilar, louer, affittare, alugar mean both "rent" and
+# "rent out" - it takes MY: "alquilar mi piso" is an owner, "alquilar un
+# piso" is somebody looking for one.
+_MY = {
+    'es': r"(?:mi|mis|nuestr[oa]s?)",
+    'fr': r"(?:ma|mon|mes|notre|nos)",
+    'it': r"(?:(?:la|il|i|le)\s+)?(?:mia|mio|miei|mie|nostra|nostro|nostri|nostre)",
+    'pt': r"(?:(?:a|o|as|os)\s+)?(?:minha|meu|minhas|meus|nossa|nosso|nossas|nossos)",
+}
+
 SELL_PATTERNS = [
-    r'\b(?:want|wish|would like|looking|trying|need|like)\s+to\s+sell\b',
+    r'\b(?:want|wish|would like|looking|trying|need|like|wanna|planning|going)\s+(?:to\s+)?sell\b',
     r'\bsell(?:ing)?\s+(?:my|our|a|the|this)\b',
     r'\bput\s+(?:my|our|the)\s+[\w\s]{0,20}?on\s+the\s+market\b',
     r'\blist\s+(?:my|our)\s+(?:property|house|home|villa|apartment|condo|flat)\b',
     r'\bfor\s+sale\s+by\s+owner\b',
-    r'\bvender\s+mi\b', r'\bverkaufen\b', r'\bvendre\s+m',
-    r'\bvendere\s+la\s+mia\b', r'\bsprzeda',
+    r'\bfind\s+(?:a\s+)?buyers?\s+for\s+(?:my|our)\b',
+    # Spanish
+    r'\b(?:quiero|queremos|quisiera|necesito|deseo|me\s+gustar[ií]a)\s+vender\b',
+    r'\bvend(?:er|o|emos)\s+' + _MY['es'] + r'\b',
+    r'\bponer\s+' + _MY['es'] + r'\s+[\w\s]{0,25}?en\s+venta\b',
+    # French
+    r'\b(?:je\s+(?:veux|voudrais|souhaite|dois|vais|aimerais)|nous\s+(?:voulons|souhaitons|voudrions))\s+vendre\b',
+    r'\bvend(?:re|s|ons)\s+' + _MY['fr'] + r'\b',
+    r'\bmettre\s+' + _MY['fr'] + r'\s+[\w\s\'’]{0,25}?en\s+vente\b',
+    # German - verkaufen is only ever the owner's verb
+    r'(?<!zu )\bverkauf(?:en|e)\b',
+    # Italian
+    r'\b(?:voglio|vorrei|vogliamo|devo|dobbiamo)\s+vendere\b',
+    r'\bvend(?:ere|o|iamo)\s+' + _MY['it'] + r'\b',
+    r'\bmettere\s+in\s+vendita\b',
+    # Portuguese
+    r'\b(?:quero|queremos|preciso|gostaria\s+de|desejo)\s+vender\b',
+    r'\bvend(?:er|o|emos)\s+' + _MY['pt'] + r'\b',
+    r'\b(?:pôr|por|colocar)\s+[\w\s]{0,25}?(?:à|a)\s+venda\b',
+    # Dutch - verkopen is only ever the owner's verb
+    r'(?<!te )\bverkopen\b', r'\b(?:ik|wij|we)\s+verkop?(?:en)?\b', r'\bverkoop\s+(?:mijn|ons|onze)\b',
+    # Arabic - بيع is selling; أبيع / نبيع, "I / we sell"
+    r'(?:أريد|اريد|أرغب\s+في|ارغب\s+في|أود|اود|نريد|نرغب\s+في)\s+(?:أن\s+|ان\s+)?(?:أبيع|ابيع|نبيع|بيع)',
+    r'(?:^|\s)(?:أبيع|ابيع|نبيع)(?:\s|$)',
+    r'\bsprzeda',
 ]
 
 RENT_OUT_PATTERNS = [
-    r'\brent(?:ing)?\s+out\b',
+    r'\brent(?:ing)?\s+(?:it\s+|them\s+)?out\b',
     r'\blease\s+out\b',
     r'\blet\s+out\b',
-    r'\brent\s+(?:my|our)\s+(?:property|house|home|villa|apartment|condo|flat)\b',
+    r'\b(?:rent|let)\s+(?:my|our)\s+(?:property|house|home|villa|apartment|condo|flat)\b',
     r'\bi\s+am\s+(?:a\s+)?landlord\b',
-    r'\balquilar\s+mi\b', r'\bvermieten\b',
+    r'\bfind\s+(?:a\s+)?tenants?\s+for\s+(?:my|our)\b',
+    # Spanish
+    r'\b(?:alquil|arrend)(?:ar|o|amos)\s+' + _MY['es'] + r'\b',
+    r'\b(?:poner|dar)\s+(?:' + _MY['es'] + r'\s+[\w\s]{0,25}?)?en\s+alquiler\b',
+    r'\bbusco\s+inquilin[oa]s?\b',
+    # French
+    r'\blou(?:er|e|ons)\s+' + _MY['fr'] + r'\b',
+    r'\bmettre\s+(?:' + _MY['fr'] + r'\s+[\w\s\'’]{0,25}?)?en\s+location\b',
+    r'\b(?:cherche|trouver)\s+(?:un\s+|des\s+)?locataires?\b',
+    # German - vermieten is only ever the owner's verb
+    r'(?<!zu )\bvermiet(?:en|e)\b', r'\bmieter\s+(?:suchen|finden)\b',
+    # Italian
+    r'\baffitt(?:are|o|iamo)\s+' + _MY['it'] + r'\b',
+    r'\b(?:dare|mettere)\s+in\s+affitto\b',
+    r'\bcerco\s+inquilin[oi]\b',
+    # Portuguese
+    r'\b(?:alug|arrend)(?:ar|o|amos)\s+' + _MY['pt'] + r'\b',
+    r'\b(?:pôr|por|colocar)\s+[\w\s]{0,25}?para\s+(?:alugar|arrendar)\b',
+    r'\bprocuro\s+inquilin[oa]s?\b',
+    # Dutch - verhuren is only ever the owner's verb
+    r'(?<!te )\bverhuren\b', r'\b(?:ik|wij|we)\s+verhuur\b', r'\bverhuur\s+(?:mijn|ons|onze)\b',
+    # Arabic - تأجير is letting out; استئجار (renting as a tenant) is not
+    r'(?:تأجير|تاجير|أؤجر|اؤجر|نؤجر)',
+    r'\balquilar\s+mi\b',
 ]
 
 
@@ -1134,10 +1226,10 @@ def is_seller_intent(intent):
 # owner is describing their property loose words are everywhere - "I need
 # a tenant who will rent it for a year", "it has its own pool" ('own' is a
 # buy word). Only somebody saying THEY want a property changes sides.
-_I = r"\b(?:i|we)(?:\s*(?:['’]m|am|['’]re|are|['’]d|would))?"
+_I = r"\b(?:i|we)(?:\s+(?:i|we))?(?:\s*(?:['’]m|am|['’]re|are|['’]d|would))?"
 _ALSO = r"(?:\s+(?:also|really|just|now|actually|still|too))*"
-_WISH = (r"(?:want|wish|need|like|love|hope|plan|intend|looking|trying|hoping|"
-         r"planning|here|interested|keen)")
+_WISH = (r"(?:want|wanna|wish|need|like|love|hope|plan|intend|looking|trying|hoping|"
+         r"planning|here|interested|keen|gonna|going)")
 _BUY = r"(?:buy|buying|purchase|purchasing)"
 # "rent" has to be followed by nothing, or by something indefinite. An
 # owner says "I want to rent IT for 2000 a month", "rent MY flat", "rent
@@ -1151,20 +1243,40 @@ _A_PROPERTY = (r"(?:(?!tenant|buyer|renter|agent|valuation|quote|estimate|"
                r"townhouse|town\s+house|penthouse|studio|plot|land)\b")
 
 SEEK_PATTERNS = [
-    (_I + _ALSO + r"\s+" + _WISH + r"\s+(?:to|in)\s+(?:also\s+)?" + _BUY + r"\b", 'buy'),
-    (_I + _ALSO + r"\s+" + _WISH + r"\s+(?:to|in)\s+(?:also\s+)?" + _RENT, 'rent'),
+    # "to" optional: Fimi wrote "Actually I I want buy a villa" (16 Nov
+    # 2026), and because it did not match, her buying enquiry was never
+    # recognised as a request of its own.
+    (_I + _ALSO + r"\s+" + _WISH + r"\s+(?:(?:to|in)\s+)?(?:also\s+)?" + _BUY + r"\b", 'buy'),
+    (_I + _ALSO + r"\s+" + _WISH + r"\s+(?:(?:to|in)\s+)?(?:also\s+)?" + _RENT, 'rent'),
     (r"\b(?:can|could|may)\s+(?:i|we)\s+(?:also\s+)?" + _BUY + r"\b", 'buy'),
     (r"\b(?:can|could|may)\s+(?:i|we)\s+(?:also\s+)?" + _RENT, 'rent'),
     (_I + _ALSO + r"\s+(?:looking|searching|hunting)\s+for\s+(?:a|an|some)\s+" + _A_PROPERTY, None),
-    # Buying is one unambiguous verb in these languages. Renting is not -
-    # alquilar, louer and affittare mean both "rent" and "rent out" - so it
-    # is left to the owner patterns above.
+    # Buying is one unambiguous verb in these languages.
     (r"\b(?:quiero|queremos|busco|quisiera|me\s+gustar[ií]a)\s+comprar\b", 'buy'),
     (r"\b(?:je\s+(?:veux|voudrais|souhaite|cherche\s+[àa])|nous\s+(?:voulons|souhaitons))\s+acheter\b", 'buy'),
     (r"\bich\s+(?:m[öo]chte|will|w[üu]rde\s+gerne?)\b[^.?!]{0,50}\bkaufen\b", 'buy'),
     (r"\b(?:quero|queremos|procuro|gostaria\s+de)\s+comprar\b", 'buy'),
     (r"\b(?:voglio|vorrei|vogliamo)\s+(?:comprare|acquistare)\b", 'buy'),
     (r"\b(?:ik|wij)\s+(?:wil|willen|zou\s+graag)\b[^.?!]{0,50}\bkopen\b", 'buy'),
+    (r"(?:أريد|اريد|أرغب\s+في|ارغب\s+في|أبحث\s+عن|ابحث\s+عن|نريد|أود|اود)\s+(?:أن\s+|ان\s+)?(?:شراء|أشتري|اشتري|نشتري)", 'buy'),
+    # Renting, where the verb is shared with letting out: an indefinite
+    # object ("un piso", "une maison", "um apartamento") is somebody
+    # looking. "Mi piso", "ma maison" is an owner - see RENT_OUT_PATTERNS.
+    (r"\b(?:quiero|queremos|busco|buscamos|quisiera|necesito|me\s+gustar[ií]a)\s+"
+     r"(?:alquilar|arrendar|rentar)\s+(?:un|una|algo|alg[uú]n|alguna)\b", 'rent'),
+    (r"\bbusco\s+(?:un\s+piso|una\s+casa|un\s+apartamento|piso|casa)\s+(?:de|en|para)\s+alquil", 'rent'),
+    (r"\b(?:je\s+(?:veux|voudrais|souhaite|cherche\s+[àa])|nous\s+(?:voulons|cherchons\s+[àa]))\s+"
+     r"louer\s+(?:un|une|quelque)\b", 'rent'),
+    (r"\bje\s+cherche\s+(?:un|une)\s+\w+\s+[àa]\s+louer\b", 'rent'),
+    (r"\b(?:ich|wir)\s+(?:m[öo]chte|m[öo]chten|will|wollen|w[üu]rde\s+gerne?|suche|suchen)\b"
+     r"[^.?!]{0,50}\bmieten\b", 'rent'),
+    (r"\b(?:voglio|vorrei|cerco|cerchiamo|vogliamo)\s+(?:affittare|prendere\s+in\s+affitto)\s+"
+     r"(?:un|una|qualcosa)\b", 'rent'),
+    (r"\bcerco\s+(?:una\s+casa|un\s+appartamento|casa)\s+in\s+affitto\b", 'rent'),
+    (r"\b(?:quero|queremos|procuro|gostaria\s+de|preciso)\s+(?:alugar|arrendar)\s+"
+     r"(?:um|uma|algo|casa|apartamento)\b", 'rent'),
+    (r"\b(?:ik|wij)\s+(?:wil|willen|zoek|zoeken|zou\s+graag)\b[^.?!]{0,50}\bhuren\b", 'rent'),
+    (r"(?:أريد|اريد|أرغب\s+في|ارغب\s+في|أبحث\s+عن|ابحث\s+عن|نريد|أود|اود)\s+(?:أن\s+|ان\s+)?(?:استئجار|أستأجر|استأجر|نستأجر)", 'rent'),
 ]
 
 # "...and also rent a property" - the second half of a sentence whose
@@ -1188,7 +1300,8 @@ _BACK_TO_OWNING = _asks_after(r"other|second|sale|selling|listing|letting")
 # 'own' and 'ownership' sit in BUY_WORDS, which is fine for a visitor who
 # is plainly shopping and wrong for "my own property". Left out here.
 _LOOSE_BUY = [w for w in ('buy', 'buying', 'purchase', 'purchasing', 'comprar',
-                          'kaufen', 'acheter', 'acquistare', 'kupić', 'kupic')]
+                          'kaufen', 'acheter', 'acquistare', 'comprare', 'kopen',
+                          'kupić', 'kupic')]
 
 
 def owner_intent_in(text):
@@ -1254,7 +1367,11 @@ def reachable_details(conversation_history):
 # and matches "I can help you buy, sell or rent".
 ASKS_THE_MONEY = re.compile(
     r"\b(?:budget|asking price|price range|monthly rent|how much|"
-    r"what (?:price|rent)|(?:price|rent) are you)\b", re.IGNORECASE)
+    r"what (?:price|rent)|(?:price|rent) are you|"
+    r"precio|presupuesto|cu[aá]nto\s+pide|alquiler\s+mensual|prix|loyer|preis|kaufpreis|"
+    r"miete|prezzo|canone|affitto\s+mensile|pre[cç]o|or[cç]amento|valor\s+do\s+aluguel|"
+    r"renda\s+mensal|prijs|vraagprijs|huurprijs)\b|سعر|ميزانية|الإيجار الشهري",
+    re.IGNORECASE)
 
 
 def _money_settled(part):
@@ -1264,24 +1381,61 @@ def _money_settled(part):
     if budget_from_conversation(part):
         return True
     for i, msg in enumerate(part[:-1]):
-        if (msg.get('role') == 'assistant' and '?' in (msg.get('content') or '')
+        if (msg.get('role') == 'assistant' and ('?' in (msg.get('content') or '')
+                                                or '؟' in (msg.get('content') or ''))
                 and ASKS_THE_MONEY.search(msg['content'])
                 and part[i + 1].get('role') == 'user'):
             return True
     return False
 
 
-def _request_finished(side, history, side_at):
+# Viewing slots are always written "10:00 AM", "2:00 PM" - the prompt keeps
+# that format in every language - so a time picked from a list of them is
+# a booking whatever language the rest of the conversation is in.
+TIME_SLOT = re.compile(r"\b(?:1[0-2]|0?[1-9])(?:[:.][0-5]\d)?\s*(?:am|pm)\b", re.IGNORECASE)
+
+
+def _viewing_chosen(part):
+    for i, msg in enumerate(part[:-1]):
+        reply = part[i + 1]
+        if (msg.get('role') == 'assistant' and reply.get('role') == 'user'
+                and len(TIME_SLOT.findall(msg.get('content') or '')) >= 2
+                and TIME_SLOT.search(reply.get('content') or '')):
+            return True
+    return False
+
+
+def _timeline_settled(part):
+    """The timeline is on record for this request, or the question was put
+    and answered - "no idea yet" settles it as surely as a date does."""
+    if extract_timeline(part)[0]:
+        return True
+    for i, msg in enumerate(part[:-1]):
+        if (msg.get('role') == 'assistant'
+                and is_timeline_question(msg.get('content') or '')
+                and part[i + 1].get('role') == 'user'):
+            return True
+    return False
+
+
+def _request_finished(key, history, owner_of):
     """Has this request been asked everything it needs?
 
-    The contact step is the last thing either sequence asks for, so once
-    it is done and the money has been dealt with there is nothing left to
-    collect. A request with no email is never finished: nothing can be
+    The money (or, for somebody looking, a viewing they booked), the
+    timeline, and the contact step. Fimi (16 Nov 2026) is why the timeline
+    is on the list: her owner enquiry was taken as finished the moment she
+    gave her asking price, the conversation turned back to buying, and her
+    answer to "how soon do you want to sell?" was filed as the BUYER's
+    timeline. A request with no email is never finished: nothing can be
     saved for it, so the conversation must not move on as though it had
-    been. The money matters as a second signal because a second request
-    STARTS with the contact step already done."""
-    part = [m for m, s in zip(history, side_at) if s == side]
-    if not _money_settled(part):
+    been."""
+    part = [m for m, k in zip(history, owner_of) if k == key]
+    if key.startswith('owner'):
+        if not _money_settled(part):
+            return False
+    elif not (_money_settled(part) or _viewing_chosen(part)):
+        return False
+    if not _timeline_settled(part):
         return False
     person = reachable_details(history)
     if not person['email']:
@@ -1289,132 +1443,324 @@ def _request_finished(side, history, side_at):
     return contact_plan(history, person)['step'] == 'done'
 
 
+# ── telling one request from the next ───────────────────────────────
+
+# "I ALSO want to sell my flat" adds a request; "SORRY, I meant sell" corrects one.
+ADDITION_WORDS = re.compile(
+    r"\b(?:also|too|as\s+well|another|second|plus|besides|in\s+addition|"
+    r"tambi[eé]n|adem[aá]s|aussi|[ée]galement|auch|noch|anche|inoltre|tamb[eé]m|ook)\b"
+    r"|أيضا|أيضاً|كذلك", re.IGNORECASE)
+CORRECTION_WORDS = re.compile(
+    r"\b(?:i\s+mean|i\s+meant|sorry|instead|rather\s+than|correction|my\s+mistake|"
+    r"not\s+(?:to\s+)?(?:buy|rent|purchase)|quise\s+decir|perd[oó]n|je\s+voulais\s+dire|"
+    r"pardon|ich\s+meinte|entschuldigung|intendevo|scusa|quis\s+dizer|desculpe|"
+    r"ik\s+bedoel(?:de)?|sorry)\b|أقصد|اقصد|عفوا", re.IGNORECASE)
+
+# "Also" on its own, without "another": what turns "another villa" from a
+# description into a request when no owner phrase is said with it.
+ALSO_WORDS = re.compile(
+    r"\b(?:also|too|as\s+well|plus|besides|in\s+addition|tambi[eé]n|adem[aá]s|aussi|"
+    r"auch|anche|inoltre|tamb[eé]m|ook)\b|أيضا|أيضاً|كذلك", re.IGNORECASE)
+
+# Somebody naming a property they have, as opposed to one they want.
+_I_HAVE = re.compile(
+    r"\b(?:i|we)\s+(?:also\s+)?(?:have|own|got)\b|\btengo\b|\btenemos\b|\bj['’]ai\b|"
+    r"\bnous\s+avons\b|\bich\s+habe\b|\bwir\s+haben\b|\bho\b|\babbiamo\b|\btenho\b|"
+    r"\btemos\b|\bik\s+heb\b|\bwij\s+hebben\b|لدي|عندي|لدينا", re.IGNORECASE)
+
+ANOTHER_PROPERTY = re.compile(
+    r"\b(?:another|second|2nd|third|3rd|one\s+more|additional)\b[^.?!]{0,30}?"
+    r"\b(?:property|house|home|villa|apartment|flat|condo|townhouse|penthouse|studio|"
+    r"plot|land|unit|place|one)\b"
+    r"|\b(?:otr[oa]|segund[oa]|un[oa]?\s+m[aá]s)\b[^.?!]{0,30}?"
+    r"\b(?:propiedad|casa|piso|apartamento|villa|inmueble|chalet|terreno)\b"
+    r"|\b(?:une?\s+autre|deuxi[eè]me|seconde?|encore\s+une?)\b[^.?!]{0,30}?"
+    r"\b(?:propri[ée]t[ée]|maison|appartement|villa|bien|studio|terrain)\b"
+    r"|\b(?:noch\s+(?:ein|eine|einen)|weitere[ns]?|zweite[ns]?)\b[^.?!]{0,30}?"
+    r"\b(?:immobilie|haus|wohnung|villa|grundst[üu]ck|objekt)\b"
+    r"|\b(?:un\s+altr[oa]|un['’]altra|second[oa]|ancora\s+un[ao]?)\b[^.?!]{0,30}?"
+    r"\b(?:propriet[àa]|casa|appartamento|villa|immobile|terreno)\b"
+    r"|\b(?:outr[oa]|segund[oa]|mais\s+uma?)\b[^.?!]{0,30}?"
+    r"\b(?:propriedade|casa|apartamento|moradia|im[óo]vel|vivenda|terreno)\b"
+    r"|\b(?:nog\s+een|een\s+andere?|tweede)\b[^.?!]{0,30}?"
+    r"\b(?:woning|huis|appartement|villa|pand|object)\b"
+    r"|(?:عقار|شقة|فيلا|منزل|بيت|أرض)\s+(?:آخر|اخر|أخرى|اخرى|ثاني|ثانية|ثان)",
+    re.IGNORECASE)
+
+_HOW_MANY = {'two': 2, 'three': 3, 'four': 4, 'five': 5, 'both': 2, 'couple of': 2,
+             'several': 2, 'multiple': 2, 'a few': 2, 'dos': 2, 'tres': 3, 'cuatro': 4,
+             'deux': 2, 'trois': 3, 'quatre': 4, 'zwei': 2, 'drei': 3, 'vier': 4,
+             'due': 2, 'tre': 3, 'quattro': 4, 'duas': 2, 'dois': 2, 'três': 3,
+             'twee': 2, 'drie': 3}
+PROPERTY_COUNT = re.compile(
+    r"\b(\d|" + '|'.join(sorted(_HOW_MANY, key=len, reverse=True)) + r")\s+"
+    r"(?:of\s+(?:my|our)\s+)?(?:\w+\s+)?"
+    r"(?:properties|houses|homes|villas|apartments|flats|condos|units|plots|townhouses|"
+    r"penthouses|propiedades|casas|pisos|apartamentos|inmuebles|propri[ée]t[ée]s|maisons|"
+    r"appartements|biens|immobilien|h[äa]user|wohnungen|villen|objekte|case|appartamenti|"
+    r"ville|immobili|propriedades|moradias|im[óo]veis|woningen|huizen|appartementen|panden)\b",
+    re.IGNORECASE)
+ARABIC_TWO_PROPERTIES = re.compile(r"عقارين|عقاران|شقتين|شقتان|فيلتين|فيلتان|منزلين|بيتين")
+_AND = re.compile(r"\b(?:and|y|et|und|e|en|plus)\b|\bas\s+well\s+as\b|(?:^|\s)و", re.IGNORECASE)
+
+
+def properties_announced(text):
+    """How many properties this message says the visitor wants to list -
+    "I have two flats to rent out", "my villa and my apartment" - or 0."""
+    m = PROPERTY_COUNT.search(text)
+    if m:
+        word = m.group(1).lower()
+        return int(word) if word.isdigit() else _HOW_MANY.get(word, 0)
+    if ARABIC_TWO_PROPERTIES.search(text):
+        return 2
+    types = property_types_in(text)
+    if len(types) >= 2 and _AND.search(text):
+        return len(types)
+    return 0
+
+
+def another_property_in(text, owner_phrase, on_an_owner_request):
+    """True when this message raises a property BESIDES the one(s) already
+    on record. Said while describing one - "oh, and I have another flat to
+    rent out too" - or after it is finished."""
+    if not ANOTHER_PROPERTY.search(text):
+        return False
+    if owner_phrase or _I_HAVE.search(text):
+        return True
+    # "There's another villa next door" is a description, not a request.
+    return on_an_owner_request and bool(ALSO_WORDS.search(text))
+
+
 def conversation_view(conversation_history):
     """Which request is in hand, and which messages belong to it.
 
+    A visitor can have more than one request in a conversation: something
+    to find (buy or rent) and any number of properties to sell or rent
+    out. Each is a request of its own, asked its own questions and saved
+    as its own lead.
+
     Returns a dict:
-      side      'owner' / 'seeker' / None  - who the visitor is being, now
-      intent    'sell' / 'rent_out' / 'buy' / 'rent' / None
-      messages  the part of the conversation that belongs to this request
-      several   True when the visitor has stated two requests
-      other     the other request (side, intent, messages, finished), or None
-      moved_on  True when the first request was completed by the visitor's
-                latest message, so this reply is the one that turns to the
-                second
+      side, intent  the request in hand: 'owner'/'seeker',
+                    'sell'/'rent_out'/'buy'/'rent'/None
+      key, number   'owner2', 2 - which request, and which property
+      messages      the part of the conversation that belongs to it
+      several       True when there is more than one request
+      requests      every request: key, side, intent, number, messages,
+                    finished - in the order they were raised
+      other         the request most relevant beside this one (the one
+                    just finished when moved_on, else one still waiting)
+      previous      the request just finished, when moved_on
+      announced     properties the visitor said they have, in total
+      moved_on      True when the request in hand was finished by the
+                    visitor's latest message, so this reply is the one
+                    that turns to the next
 
     A conversation with one request comes back exactly as before: the
     intent detect_chat_intent has always returned, and every message."""
     history = conversation_history or []
-    side_at = [None] * len(history)
+    owner_of = [None] * len(history)
+    requests, by_key = [], {}
+    seeker_said = []           # (index, purpose, tight)
     active = None
-    owner_intent, owner_first = None, None
-    seeker_said = []          # (index, purpose, was it an explicit statement)
-    moved_at = None
+    announced = 0
+    announced_types = []
+    moved_at = moved_from = None
 
-    def surviving():
-        # "I want to rent a property" followed by "I mean rent OUT my own"
-        # was a correction, not a second request.
-        return [(i, purpose, tight) for i, purpose, tight in seeker_said
-                if not (owner_intent == 'rent_out' and purpose == 'rent'
-                        and owner_first is not None and i < owner_first)]
+    def owners():
+        return [r for r in requests if r['side'] == 'owner']
 
-    def two_requests():
-        return owner_intent is not None and any(tight for _, _, tight in surviving())
+    def start(side, intent, i):
+        number = len([r for r in requests if r['side'] == side]) + 1
+        key = f"{side}{number}"
+        by_key[key] = {'key': key, 'side': side, 'intent': intent, 'number': number}
+        requests.append(by_key[key])
+        return key
+
+    def drop(key):
+        requests.remove(by_key.pop(key))
+        for j, k in enumerate(owner_of):
+            if k == key:
+                owner_of[j] = None
+
+    def user_messages_in(key):
+        return sum(1 for m, k in zip(history, owner_of) if k == key and m.get('role') == 'user')
+
+    def unfinished_owner():
+        for r in owners():
+            if not _request_finished(r['key'], history[:i], owner_of[:i]):
+                return r['key']
+        return owners()[-1]['key']
 
     for i, msg in enumerate(history):
         if msg.get('role') != 'user':
-            side_at[i] = active
+            owner_of[i] = active
             continue
         text = (msg.get('content') or '').lower()
         owner = owner_intent_in(text)
         stated = seeker_statements_in(text)
+        on_owner = bool(active) and by_key[active]['side'] == 'owner'
 
-        # With a second request already on record, asking after it is the
-        # visitor wanting to go there now.
-        asked_to_go_back = False
-        if not stated and not owner and two_requests():
-            if active == 'owner' and re.search(_BACK_TO_FINDING, text):
-                stated = [None]
-            elif active == 'seeker' and re.search(_BACK_TO_OWNING, text):
-                asked_to_go_back = True
-
-        if owner:
-            owner_intent = owner
-            if owner_first is None:
-                owner_first = i
+        # ── wanting to find a property ──
         for purpose in stated:
             seeker_said.append((i, purpose, True))
-        if not stated and not owner and active != 'owner':
+        if stated and 'seeker1' not in by_key:
+            start('seeker', None, i)
+        if not stated and not owner and not on_owner:
             loose = _loose_purpose_in(text)
             if loose:
                 seeker_said.append((i, loose, False))
+                if 'seeker1' not in by_key and not owners():
+                    start('seeker', None, i)
 
+        # ── a property to sell or let ──
+        if owner and not owners():
+            if 'seeker1' in by_key:
+                adding = bool(ADDITION_WORDS.search(text))
+                correcting = bool(CORRECTION_WORDS.search(text)) and not adding
+                # "I want to rent a property" then "I mean rent OUT my own":
+                # the renting they mentioned earlier was this letting,
+                # stated twice. Said in the same breath it is two.
+                if owner == 'rent_out' and not adding:
+                    seeker_said = [x for x in seeker_said if not (x[1] == 'rent' and x[0] < i)]
+                # A loose "buy" with nothing after it is not a request
+                # until it has been acted on: two of their own messages.
+                weak = (not any(t for _j, _p, t in seeker_said)
+                        and user_messages_in('seeker1') < 2 and not adding)
+                if correcting or weak or not seeker_said:
+                    drop('seeker1')
+                    seeker_said = [x for x in seeker_said if x[0] == i]
+                    if active == 'seeker1':
+                        active = None
+            key = start('owner', owner, i)
+            if active is None or not stated:
+                active = key
+        elif owners() and (owner or on_owner) and another_property_in(text, owner, on_owner):
+            current = active if on_owner else None
+            done = current is None or _request_finished(current, history[:i], owner_of[:i])
+            if done:
+                active = start('owner', owner or owners()[-1]['intent'], i)
+            else:
+                announced = max(announced, len(owners()) + 1)
+        elif owner and (ADDITION_WORDS.search(text) or _I_HAVE.search(text)
+                        or property_types_in(text)) and \
+                (_request_finished(active, history[:i], owner_of[:i]) if on_owner else
+                 all(_request_finished(r['key'], history[:i], owner_of[:i]) for r in owners())):
+            # Every property so far is finished and they name one more to
+            # list: "I also have a townhouse I want to rent out", "and I
+            # want to sell my flat too" - said after the owner part, or
+            # from the buying side.
+            active = start('owner', owner, i)
+        elif owner:
+            if on_owner:
+                by_key[active]['intent'] = owner
+            elif not stated:
+                active = unfinished_owner()
+
+        counted = properties_announced(text) if (owner or on_owner) else 0
+        if counted > announced:
+            announced = counted
+            # "my villa and my apartment": the types, in the order given,
+            # are the types of the properties to come.
+            named = property_types_in(text)
+            if len(named) == counted:
+                announced_types = [None] * (len(owners()) - 1) + named
+
+        # ── moving between them on the visitor's say-so ──
+        if active and by_key[active]['side'] == 'owner' and not owner:
+            if stated or ('seeker1' in by_key and re.search(_BACK_TO_FINDING, text)):
+                active = 'seeker1' if 'seeker1' in by_key else start('seeker', None, i)
+        elif active == 'seeker1' and owners() and not stated and not owner \
+                and re.search(_BACK_TO_OWNING, text):
+            active = unfinished_owner()
         if active is None:
-            if owner:
-                active = 'owner'
-            elif seeker_said and seeker_said[-1][0] == i:
-                active = 'seeker'
-        elif active == 'seeker' and ((owner and not stated) or asked_to_go_back):
-            active = 'owner'
-        elif active == 'owner' and stated and not owner:
-            active = 'seeker'
-        side_at[i] = active
+            if owners():
+                active = owners()[-1]['key']
+            elif 'seeker1' in by_key:
+                active = 'seeker1'
+        owner_of[i] = active
 
-        # Everything for this request is in, and another is waiting: the
-        # reply to this message is where the conversation turns to it.
-        if active and two_requests():
-            other = 'seeker' if active == 'owner' else 'owner'
-            so_far, sides = history[:i + 1], side_at[:i + 1]
-            if (_request_finished(active, so_far, sides)
-                    and not _request_finished(other, so_far, sides)):
-                active = other
-                moved_at = i
+        # ── everything for this one is in: turn to the next ──
+        if active and (len(requests) > 1 or announced > len(owners())):
+            so_far, keys = history[:i + 1], owner_of[:i + 1]
+            if _request_finished(active, so_far, keys):
+                waiting = [r['key'] for r in requests
+                           if r['key'] != active and not _request_finished(r['key'], so_far, keys)]
+                target = waiting[0] if waiting else None
+                if target is None and announced > len(owners()):
+                    target = start('owner', owners()[-1]['intent'], i + 1)
+                if target:
+                    moved_from, active, moved_at = active, target, i
 
-    if not two_requests():
+    # The intent of the request to find a property: the last thing they
+    # said they want, from statements that survived.
+    seeker = by_key.get('seeker1')
+    if seeker:
+        for _j, purpose, _t in reversed(seeker_said):
+            if purpose:
+                seeker['intent'] = purpose
+                break
+
+    several = len(requests) > 1
+    if not several:
         intent = detect_chat_intent(history)
         side = 'owner' if is_seller_intent(intent) else ('seeker' if intent else None)
-        return {'side': side, 'intent': intent, 'messages': history,
-                'several': False, 'other': None, 'moved_on': False}
+        key = (requests[0]['key'] if requests else
+               ('owner1' if side == 'owner' else 'seeker1' if side else None))
+        lone = {'key': key, 'side': side, 'intent': intent, 'number': 1,
+                'messages': history, 'finished': False}
+        return {'side': side, 'intent': intent, 'key': key, 'number': 1, 'messages': history,
+                'several': False, 'requests': [lone] if side else [], 'other': None,
+                'previous': None, 'announced': max(announced, 1 if side == 'owner' else 0),
+                'announced_type': announced_types[0] if announced_types else None,
+                'moved_on': False}
 
-    seeker_purpose = None
-    for _, purpose, _tight in reversed(surviving()):
-        if purpose:
-            seeker_purpose = purpose
-            break
-    intents = {'owner': owner_intent, 'seeker': seeker_purpose}
-    other = 'seeker' if active == 'owner' else 'owner'
+    def part(key):
+        return [m for m, k in zip(history, owner_of) if k == key]
 
-    def part(side):
-        return [m for m, s in zip(history, side_at) if s == side]
+    listed = []
+    for r in requests:
+        listed.append(dict(r, messages=part(r['key']),
+                           finished=_request_finished(r['key'], history, owner_of)))
+    current = next(r for r in listed if r['key'] == active)
+    moved_on = moved_at is not None and moved_at == len(history) - 1
+    previous = next((r for r in listed if r['key'] == moved_from), None) if moved_on else None
+    others = [r for r in listed if r['key'] != active]
+    other = previous or next((r for r in others if not r['finished']), None) or \
+        (others[-1] if others else None)
+    number = current['number']
+    announced_type = (announced_types[number - 1]
+                      if current['side'] == 'owner' and 0 < number <= len(announced_types) else None)
+    return {'side': current['side'], 'intent': current['intent'], 'key': active,
+            'number': number, 'messages': current['messages'], 'several': True,
+            'requests': listed, 'other': other, 'previous': previous,
+            'announced': max(announced, len(owners())), 'announced_type': announced_type,
+            'moved_on': moved_on}
 
-    return {
-        'side': active,
-        'intent': intents[active],
-        'messages': part(active),
-        'several': True,
-        'other': {'side': other, 'intent': intents[other], 'messages': part(other),
-                  'finished': _request_finished(other, history, side_at)},
-        'moved_on': moved_at is not None and moved_at == len(history) - 1,
-    }
 
-
-def lead_data_for(agency_id, conversation_history, request_messages=None):
-    """extract_lead_data, scoped to one request when there are two.
+def lead_data_for(agency_id, conversation_history, request_messages=None, side=None):
+    """extract_lead_data, scoped to one request when there are several.
 
     The person - name, email, number, preference - always comes from the
     whole conversation. With request_messages given, the money and the
     timeline come only from that request's part of it, so a 10K asking
     rent and an 8M buying budget each stay with the enquiry they belong
-    to. Without it this is extract_lead_data and nothing else."""
+    to.
+
+    An OWNER's asking price is never inferred. The inference reads the
+    agency's own listings named in the conversation - a fair guess at what
+    a buyer can afford, and nonsense as what an owner is asking. Fimi's
+    townhouse (16 Nov 2026) was recorded at the 8M price of the villa she
+    had just booked a viewing of."""
     data = extract_lead_data(agency_id, conversation_history)
-    if request_messages is None:
-        return data
-    data['budget'] = budget_from_conversation(request_messages)
-    data['budget_inferred'] = False
-    if not data['budget']:
-        data['budget'] = infer_budget_from_discussed_listings(agency_id, request_messages)
-        data['budget_inferred'] = bool(data['budget'])
-    data['timeline'], data['timeline_raw'] = extract_timeline(request_messages)
+    if request_messages is not None:
+        data['budget'] = budget_from_conversation(request_messages)
+        data['budget_inferred'] = False
+        if not data['budget'] and side != 'owner':
+            data['budget'] = infer_budget_from_discussed_listings(agency_id, request_messages)
+            data['budget_inferred'] = bool(data['budget'])
+        data['timeline'], data['timeline_raw'] = extract_timeline(request_messages)
+    if side == 'owner' and data.get('budget_inferred'):
+        data['budget'], data['budget_inferred'] = None, False
     return data
 
 
@@ -1500,45 +1846,98 @@ REQUEST_WORDS = {
     None: 'find a property',
 }
 
+_NTH = {1: 'first', 2: 'second', 3: 'third', 4: 'fourth', 5: 'fifth'}
+
+
+def describe_request(request, several_properties=False):
+    """'rent out a property they own', or with more than one property on
+    record, 'sell their second property'."""
+    if request['side'] == 'owner' and several_properties:
+        verb = 'sell' if request['intent'] == 'sell' else 'rent out'
+        return f"{verb} their {_NTH.get(request['number'], 'next')} property"
+    return REQUEST_WORDS.get(request['intent'], REQUEST_WORDS[None])
+
+
+def requests_waiting(view):
+    """What is still to come after the request in hand: requests already
+    raised and not finished, plus properties announced but not started."""
+    if not view.get('several') and view.get('announced', 0) <= 1:
+        return []
+    started = [r for r in view.get('requests', []) if r['side'] == 'owner']
+    several = view.get('announced', 0) > 1 or len(started) > 1
+    waiting = [describe_request(r, several) for r in view.get('requests', [])
+               if r['key'] != view['key'] and not r['finished']]
+    owner_intent = started[-1]['intent'] if started else view.get('intent')
+    verb = 'sell' if owner_intent == 'sell' else 'rent out'
+    for n in range(len(started) + 1, view.get('announced', 0) + 1):
+        waiting.append(f"{verb} their {_NTH.get(n, 'next')} property")
+    return waiting
+
 
 def two_requests_context(view, agency_name):
-    """What the model is told when the visitor wants two things.
+    """What the model is told when the visitor wants more than one thing.
 
-    The decision about WHEN to move from one to the other is made in
+    The decision about WHEN to move from one request to the next is made in
     conversation_view, not by the model. Left to itself it either said
     goodbye after the first, or drifted into the second while this code
     still believed it was on the first - and then every instruction it was
     given described the wrong request."""
-    if not view.get('several'):
+    waiting = requests_waiting(view)
+    if not view.get('several') and not waiting:
         return ""
-    now = REQUEST_WORDS.get(view['intent'], REQUEST_WORDS[None])
-    other = view['other']
-    then = REQUEST_WORDS.get(other['intent'], REQUEST_WORDS[None])
+    owners = [r for r in view.get('requests', []) if r['side'] == 'owner']
+    several_properties = view.get('announced', 0) > 1 or len(owners) > 1
+    current = {'side': view['side'], 'intent': view['intent'], 'number': view.get('number', 1)}
+    now = describe_request(current, several_properties)
+    previous = view.get('previous')
 
-    if view['moved_on']:
+    if view['moved_on'] and previous:
+        then = describe_request(previous, several_properties)
+        same_kind = previous['side'] == 'owner' and view['side'] == 'owner'
+        # Worked on, not merely mentioned: "I want to buy and also rent out
+        # my flat" mentions buying; two answers about it is a start.
+        begun = sum(1 for m in view['messages'] if m.get('role') == 'user') >= 2
+        if same_kind:
+            step2 = ("Then, in the same reply, turn to their next property and ask the first "
+                     "question about it from the owner list further down (where it is).")
+            fresh = ("Nothing they told you about the previous property describes this one - its "
+                     "place, type, rooms and price are all still to be asked.")
+        elif begun:
+            step2 = (f"Then, in the same reply, go back to their other request - to {now} - and "
+                     "ask the first thing still missing for it from the list further down.")
+            fresh = "Do not ask again anything they already told you for that request."
+        else:
+            step2 = (f"Then, in the same reply, turn to their other request - they also want to "
+                     f"{now} - and ask the first question for it from the list further down.")
+            fresh = "Nothing they told you for the first request describes this one. Start it from the beginning."
         return f"""
 
-YOU HAVE JUST FINISHED THIS VISITOR'S FIRST REQUEST (to {then}). In THIS reply do two things, in this order:
+YOU HAVE JUST FINISHED ONE OF THIS VISITOR'S REQUESTS (to {then}). In THIS reply do two things, in this order:
 1. In one short sentence, tell them those details have been passed to the {agency_name} team and that an agent will be in touch about it.
-2. Then, in the same reply, turn to their second request - they also want to {now} - and ask the first question for it from the list further down.
+2. {step2}
 Do not say goodbye. Do not ask for their name, their email, a number or a contact preference - you have all of it.
-Nothing they told you for the first request describes the second. Start it from the beginning."""
+{fresh}"""
 
-    if other['finished']:
-        return f"""
-
-EARLIER IN THIS CONVERSATION this visitor also asked to {then}. That request is FINISHED and is already with the {agency_name} team.
-- You are now dealing ONLY with their other request: to {now}.
-- Everything they said for the finished one - the property type, the bedrooms, the location, the price - belongs to THAT request. Never carry it over to this one and never go back over it.
-- Never ask again for their name, email, number or contact preference.
-- When this request is complete, do not repeat the closing line you used for the first one. Say what happens next for THIS request."""
-
-    return f"""
-
-THIS VISITOR HAS TWO REQUESTS. Deal with them one at a time.
-- Now: they want to {now}. Everything below is about that.
-- Waiting: they ALSO want to {then}. Do not ask about it yet, and do not start on it yourself - you will be told when.
-- When you have everything for the first request, do NOT say goodbye and do NOT close the conversation. The second request comes next."""
+    finished = [describe_request(r, several_properties) for r in view.get('requests', [])
+                if r['key'] != view['key'] and r['finished']]
+    lines = ["", "", "THIS VISITOR HAS MORE THAN ONE REQUEST. Deal with them one at a time.",
+             f"- Now: they want to {now}. Everything below is about that."]
+    for item in finished:
+        lines.append(f"- Finished, already with the {agency_name} team: to {item}. Everything they "
+                     "said for it belongs to it - never carry it over to this one and never go "
+                     "back over it.")
+    for item in waiting:
+        lines.append(f"- Waiting: they ALSO want to {item}. Do not ask about it yet, and do not "
+                     "start on it yourself - you will be told when.")
+    lines.append("- Never ask again for their name, email, number or contact preference once "
+                 "you have them.")
+    if waiting:
+        lines.append("- When you have everything for this request, do NOT say goodbye and do NOT "
+                     "close the conversation. The next one comes after it.")
+    else:
+        lines.append("- When this request is complete, do not repeat a closing line you already "
+                     "used. Say what happens next for THIS request.")
+    return "\n".join(lines)
 
 
 GENERIC_PROPERTY_TYPES =['villa', 'condo', 'condominium', 'apartment', 'house', 'home', 'townhouse',
@@ -2647,6 +3046,32 @@ def load_session(session_key):
     return [], set()
 
 
+def captured_leads(session_key):
+    """{request key: lead id} for this conversation."""
+    row = db.session.get(ConversationSession, session_key) if session_key else None
+    try:
+        return json.loads((row.captured if row else None) or '{}')
+    except Exception:
+        return {}
+
+
+def remember_capture(session_key, request_key, lead_id):
+    if not (session_key and request_key and lead_id):
+        return
+    try:
+        row = db.session.get(ConversationSession, session_key)
+        if not row:
+            row = ConversationSession(session_key=session_key, history='[]', booked_slots='[]')
+            db.session.add(row)
+        mapping = captured_leads(session_key)
+        mapping[request_key] = lead_id
+        row.captured = json.dumps(mapping)
+        db.session.commit()
+    except Exception as e:
+        print(f"⚠️ Could not remember lead {lead_id} for {request_key}: {e}")
+        db.session.rollback()
+
+
 def save_session(session_key, history, booked_slots):
     """Persist conversation history + booked slots to DB."""
     try:
@@ -2751,7 +3176,8 @@ def is_seller_lead_qualified(lead_data, conversation_history, intent):
         return False
     # 'budget' is where the asking price lands for a seller - the same
     # money regex catches "5M $" whichever side of the deal they're on.
-    return bool(lead_data.get('budget'))
+    # Said by the owner, never inferred from listings they looked at.
+    return bool(lead_data.get('budget')) and not lead_data.get('budget_inferred')
 
 
 def create_listing_from_seller(agency, lead, conversation_history, intent):
@@ -2953,6 +3379,9 @@ CURRENCY_WORDS = {
     'try': 'TRY', 'lira': 'TRY', 'pln': 'PLN', 'zloty': 'PLN',
     'chf': 'CHF', 'cad': 'CAD', 'aud': 'AUD', 'sgd': 'SGD',
     'myr': 'MYR', 'thb': 'THB', 'brl': 'BRL', 'mxn': 'MXN',
+    'dólares': 'USD', 'dolares': 'USD', 'dollari': 'USD', 'dólares americanos': 'USD',
+    'reais': 'BRL', 'real': 'BRL', 'livres': 'GBP', 'sterline': 'GBP',
+    'دولار': 'USD', 'درهم': 'AED', 'يورو': 'EUR', 'ريال': 'SAR', 'جنيه': 'GBP',
 }
 SCALE_WORDS = {
     'k': 1_000, 'thousand': 1_000, 'tys': 1_000,
@@ -2962,14 +3391,37 @@ SCALE_WORDS = {
     'miljoen': 1_000_000, 'milyon': 1_000_000, 'milionów': 1_000_000,
     'milionow': 1_000_000, 'crore': 10_000_000, 'lakh': 100_000,
     'lac': 100_000, 'b': 1_000_000_000, 'billion': 1_000_000_000,
+    'millions': 1_000_000, 'millón': 1_000_000, 'millon': 1_000_000,
+    'milhão': 1_000_000, 'milhao': 1_000_000, 'milione': 1_000_000,
+    'mln.': 1_000_000, 'mio.': 1_000_000, 'mil.': 1_000,
+    'tausend': 1_000, 'mille': 1_000, 'mila': 1_000, 'duizend': 1_000,
+    'مليون': 1_000_000, 'ملايين': 1_000_000, 'ألف': 1_000, 'الف': 1_000, 'آلاف': 1_000,
 }
+
+# "6 mil" is six thousand in Spanish and Portuguese, and six MILLION in
+# English property slang. Only a figure of 100 or more is read as
+# thousands ("600 mil"); a small one is left to the question it answers.
+MIL_THOUSANDS_FROM = 100
 
 # A question from the assistant that makes a bare number in the reply a
 # price. Kept broad on purpose: the assistant's wording changes with the
 # agency's own prompt, so this matches the idea, not a fixed sentence.
 MONEY_QUESTION = re.compile(
     r"\b(budget|price|asking|rent|afford|per month|monthly|how much|"
-    r"price range|spend|looking to pay|rate)\b", re.I)
+    r"price range|spend|looking to pay|rate|"
+    # es / pt
+    r"precio|presupuesto|alquiler|renta|cu[aá]nto\s+(?:pide|pides|quiere|quieres|cobra|"
+    r"espera|esperas)|pre[cç]o|or[cç]amento|aluguel|aluguer|renda|mensalidade|"
+    # fr
+    r"prix|loyer|combien\s+(?:demandez|souhaitez|voulez)|"
+    # de
+    r"preis|kaufpreis|miete|budget|wie\s+viel\s+(?:m[öo]chten|wollen|verlangen)|"
+    # it
+    r"prezzo|affitto|canone|quanto\s+(?:chiede|chiedi|vuole|vuoi)|"
+    # nl
+    r"prijs|vraagprijs|huur|huurprijs|hoeveel\s+(?:vraagt|wilt))\b"
+    # ar - no word boundaries: the article and prepositions attach
+    r"|سعر|السعر|ميزانية|الميزانية|إيجار|ايجار|الإيجار|بكم", re.I)
 
 # A correction to a figure already given. "make that 3000" only means
 # anything as a revision of a number, so it is safe to read without a
@@ -2985,15 +3437,45 @@ NOT_MONEY_NEARBY = re.compile(
     r"\b(bed|beds|bedroom|bedrooms|bath|baths|bathroom|bathrooms|br|ba|"
     r"sq\.?\s?(ft|m)|sqft|sqm|square|metre|meter|feet|foot|floor|floors|"
     r"storey|storeys|story|stories|year|years|old|km|miles|minutes|"
-    r"am|pm|o'clock)\b", re.I)
+    r"am|pm|o'clock|"
+    r"m2|metros|mètres|metres|quadratmeter|qm|metri|vierkante|"
+    r"dormitorios?|habitaciones?|baños?|chambres?|salles?|schlafzimmern?|badezimmern?|"
+    r"camere|bagni|quartos|banheiros?|slaapkamers?|badkamers?|"
+    r"años|ans|jahre|anni|anos|jaar|plantas?|étages?|stockwerke?|piani|andares|verdiepingen)\b"
+    r"|غرف|غرفة|حمام|متر|سنة|سنوات|طابق", re.I)
 
-# 2,500,000 / 2.5 / 2500
-NUMBER = r"\d{1,3}(?:[,\s]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+# 2,500,000 / 2.500.000 / 600 000 / 2.5 / 1,5 / 2500
+NUMBER = (r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{1,3}(?:\.\d{3})+(?:,\d+)?"
+          r"|\d{1,3}(?:\s\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
+
+_ARABIC_DIGITS = str.maketrans('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789')
+
+
+def ascii_digits(text):
+    """"٦ مليون" -> "6 مليون". Arabic-Indic and Persian digits as ASCII."""
+    return (text or '').translate(_ARABIC_DIGITS)
 
 
 def _clean_number(text):
+    """'2,500,000', '2.500.000', '600 000', '2.5', '1,5' -> a float.
+
+    A comma or dot followed by exactly three digits groups thousands; any
+    other is the decimal mark. "1,5 millones" is one and a half million,
+    and "600.000 €" is six hundred thousand euros, not six hundred."""
+    t = ascii_digits(text).replace(' ', '').replace('\u00a0', '')
+    if ',' in t and '.' in t:
+        if t.rfind(',') > t.rfind('.'):
+            t = t.replace('.', '').replace(',', '.')
+        else:
+            t = t.replace(',', '')
+    elif ',' in t:
+        parts = t.split(',')
+        t = t.replace(',', '') if all(len(p) == 3 for p in parts[1:]) else t.replace(',', '.')
+    elif t.count('.') > 1 or (t.count('.') == 1 and len(t.split('.')[1]) == 3
+                              and not t.startswith('0')):
+        t = t.replace('.', '')
     try:
-        return float(text.replace(',', '').replace(' ', ''))
+        return float(t)
     except ValueError:
         return None
 
@@ -3021,17 +3503,21 @@ def money_in(text):
     """
     if not text:
         return None, ''
+    text = ascii_digits(text)
     lowered = text.lower()
 
     # A scale word binds tightest: "2.5M", "500k", "1.2 million".
-    scale = re.search(
-        rf"({NUMBER})\s*({'|'.join(sorted(SCALE_WORDS, key=len, reverse=True))})"
-        r"(?![a-z])", lowered, re.I)
-    if scale:
+    scale_words = '|'.join(re.escape(w) for w in sorted(SCALE_WORDS, key=len, reverse=True))
+    for scale in re.finditer(rf"({NUMBER})\s*({scale_words}|mil)(?![a-zà-ÿ])", lowered, re.I):
         amount = _clean_number(scale.group(1))
-        if amount is not None:
-            amount *= SCALE_WORDS[scale.group(2).lower()]
-            return amount, _currency_in(text)
+        word = scale.group(2).lower()
+        if amount is None:
+            continue
+        if word == 'mil':
+            if amount < MIL_THOUSANDS_FROM:
+                continue
+            return amount * 1_000, _currency_in(text)
+        return amount * SCALE_WORDS[word], _currency_in(text)
 
     # A sign, either side: "$2000" and "2000$" are the same thing.
     for sign, code in CURRENCY_SIGNS.items():
@@ -3076,6 +3562,7 @@ def bare_number_answering_money(user_text, assistant_question):
     """
     if not (user_text and assistant_question):
         return None, ''
+    user_text = ascii_digits(user_text)
     if not MONEY_QUESTION.search(assistant_question):
         return None, ''
     if NOT_MONEY_NEARBY.search(user_text):
@@ -3302,6 +3789,25 @@ def extract_appointment_data(agency_id, conversation_history):
     #    that time applies to ALL of them (e.g. customer replies just
     #    "2PM" intending it for both viewings - matches what the AI itself
     #    confirms back to the customer)
+    # Picking a day from the days the assistant offered IS the request, in
+    # any language. Fimi (16 Nov 2026) answered "Would you like to see it
+    # in person?" with "I would love to" - not on any list of yeses - then
+    # chose Tuesday and 4 PM. The assistant told her she was booked; no
+    # appointment was made and no confirmation was sent.
+    if not data['requested']:
+        for i, msg in enumerate(conversation_history[:-1]):
+            reply = conversation_history[i + 1]
+            if msg['role'] != 'assistant' or reply['role'] != 'user':
+                continue
+            offered = msg['content'].lower()
+            answer = reply['content'].lower()
+            days_offered = len(find_days_in_message(offered))
+            times_offered = len(find_all_times(offered))
+            if (days_offered >= 2 and find_days_in_message(answer)) or \
+                    (times_offered >= 2 and find_all_times(answer)):
+                data['requested'] = True
+                break
+
     pending_days = []
     pending_property = None
     for msg in conversation_history:
@@ -3394,7 +3900,10 @@ def contact_step_completed(conversation_history):
 
 CONTACT_DECLINES = ['no', 'nope', 'skip', 'pass', 'later', 'not now', "don't", 'dont',
                     'prefer not', 'rather not', 'no thanks', 'nein', 'nie', 'non',
-                    'não', 'nao', 'hayır', 'hayir', 'nahi', 'nahin']
+                    'não', 'nao', 'hayır', 'hayir', 'nahi', 'nahin',
+                    'nee', 'mejor no', 'prefiero no', 'lieber nicht', 'pas maintenant',
+                    'preferisco di no', 'prefiro não', 'liever niet', 'لا', 'لاحقا',
+                    'لاحقاً']
 
 
 def declines_to_share(user_text):
@@ -3419,10 +3928,15 @@ CHANNEL_FOR_PREFERENCE = {
     'email': 'email',
 }
 
-CHANNEL_EMAIL_WORDS = ['email', 'e-mail', 'mail', 'correo', 'courriel']
+CHANNEL_EMAIL_WORDS = ['email', 'e-mail', 'mail', 'correo', 'courriel', 'بريد', 'إيميل',
+                       'ايميل']
 CHANNEL_PHONE_WORDS = ['phone', 'call me', 'call', 'ring', 'sms', 'text me',
-                       'telefon', 'teléfono', 'telefono', 'téléphone', 'telefone']
-CHANNEL_WHATSAPP_WORDS = ['whatsapp', 'whats app', 'whatsap', 'watsapp', 'wapp']
+                       'telefon', 'teléfono', 'telefono', 'téléphone', 'telefone',
+                       'telefoon', 'llamada', 'llámame', 'llamame', 'llamar', 'appel',
+                       'appelez', 'anruf', 'anrufen', 'chiamata', 'chiamami', 'ligação',
+                       'ligacao', 'ligar', 'bellen', 'هاتف', 'اتصال', 'مكالمة', 'جوال']
+CHANNEL_WHATSAPP_WORDS = ['whatsapp', 'whats app', 'whatsap', 'watsapp', 'wapp', 'واتساب',
+                          'واتس']
 
 
 def contact_channel(preference):
@@ -3514,7 +4028,8 @@ def contact_context(plan):
     if plan['step'] == 'done':
         return ("\n\nCONTACT DETAILS: complete. Never ask for an email address, a number, "
                 "or a contact preference again - not to confirm, not in a closing recap.")
-    lines = ["\n\nTHE CONTACT STEP - when you reach it (after the items above, never before):",
+    lines = ["\n\nTHE CONTACT STEP - when you reach it (after the items above, the timeline question "
+             "included, never before):",
              "- " + plan['instruction']]
     if plan['step'] in ('ask_whatsapp', 'ask_phone') and not plan['has_email']:
         lines.append("- Once they give it, ask for their email address in a SEPARATE message, "
@@ -3583,6 +4098,72 @@ def reply_without_contact_question(messages, first_reply):
         second = (retry.choices[0].message.content or '').strip()
         if second and not asks_for_contact_details(second):
             print("↩️  Reply rewritten: it asked for contact details already on file")
+            return second
+    except Exception as e:
+        print(f"⚠️ Reply rewrite failed: {e}")
+    return first_reply
+
+
+# A question asking for an email address, in any widget language.
+EMAIL_ASK = re.compile(r"e-?mail|correo|courriel|البريد", re.IGNORECASE)
+
+
+def timeline_question_for(intent):
+    if intent == 'sell':
+        return "How soon are you hoping to sell?"
+    if intent == 'rent_out':
+        return "How soon are you hoping to have it rented out?"
+    return "How soon are you looking to move?"
+
+
+def skips_the_timeline(reply, view, plan):
+    """True when this reply starts the contact step, or wraps the request
+    up, and the timeline question has never been asked for it.
+
+    "Ask it every time, in its own message" has been in the prompt since
+    September. Fimi (16 Nov 2026) picked a viewing and the very next reply
+    was "You're booked... Best way to reach you?" - the timeline was never
+    asked, and her lead said "Timeline: not given"."""
+    if not view.get('side') or not reply:
+        return False
+    part = view['messages']
+    if _timeline_settled(part) or is_timeline_question(reply):
+        return False
+    if any(m.get('role') == 'assistant' and is_timeline_question(m.get('content') or '')
+           for m in part):
+        return False
+    # Not before the request has properly started: two answers about it.
+    if sum(1 for m in part if m.get('role') == 'user') < 2:
+        return False
+    asks = '?' in reply or '؟' in reply
+    starts_contact = is_contact_question(reply) or is_number_question(reply) or \
+        (asks and EMAIL_ASK.search(reply))
+    wraps_up = plan['step'] == 'done' and not asks
+    return bool(starts_contact or wraps_up)
+
+
+def reply_with_timeline_question(messages, first_reply, question):
+    """One more attempt, ending on the timeline question. Returns the first
+    reply unchanged if the second try fails or still does not ask it."""
+    try:
+        retry = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages + [
+                {"role": "assistant", "content": first_reply},
+                {"role": "system", "content": (
+                    "That reply moves on without asking how soon they want to act. The timeline "
+                    "question has not been asked for this request, and it comes before contact "
+                    "details and before any closing. Write the reply again, in the visitor's "
+                    "language: keep anything it confirms (a booking, a summary), leave out any "
+                    "request for contact details and any goodbye, and end with this one "
+                    f"question: \"{question}\"")},
+            ],
+            temperature=0.3,
+            max_tokens=350,
+        )
+        second = (retry.choices[0].message.content or '').strip()
+        if second and is_timeline_question(second):
+            print("↩️  Reply rewritten: the timeline question comes before the contact step")
             return second
     except Exception as e:
         print(f"⚠️ Reply rewrite failed: {e}")
@@ -3675,15 +4256,63 @@ PROPERTY_TYPE_WORDS = {
     'cottage': 'cottage', 'chalet': 'chalet', 'mansion': 'mansion',
     'loft': 'loft', 'farmhouse': 'farmhouse', 'estate': 'estate',
     'land': 'land', 'plot': 'land',
+    # Spanish
+    'casa': 'house', 'piso': 'apartment', 'apartamento': 'apartment',
+    'departamento': 'apartment', 'ático': 'penthouse', 'atico': 'penthouse',
+    'adosado': 'townhouse', 'terreno': 'land', 'parcela': 'land', 'estudio': 'studio',
+    'dúplex': 'duplex', 'finca': 'estate',
+    # French
+    'maison': 'house', 'appartement': 'apartment', 'terrain': 'land',
+    'maison de ville': 'townhouse',
+    # German - compounds named in full, because "Einfamilienhaus" has no
+    # word boundary in front of "haus"
+    'haus': 'house', 'einfamilienhaus': 'house', 'doppelhaus': 'house',
+    'doppelhaushälfte': 'house', 'wohnung': 'apartment', 'eigentumswohnung': 'apartment',
+    'reihenhaus': 'townhouse', 'stadthaus': 'townhouse', 'grundstück': 'land',
+    'grundstueck': 'land',
+    # Italian
+    'appartamento': 'apartment', 'attico': 'penthouse', 'villetta': 'villa',
+    'monolocale': 'studio', 'bilocale': 'apartment', 'trilocale': 'apartment',
+    # Portuguese
+    'moradia': 'house', 'vivenda': 'villa', 'cobertura': 'penthouse',
+    'sobrado': 'house', 'estúdio': 'studio', 'kitnet': 'studio',
+    # Dutch
+    'huis': 'house', 'woning': 'house', 'rijtjeshuis': 'townhouse',
+    'tussenwoning': 'townhouse', 'bouwgrond': 'land',
 }
 
-COUNT_WORDS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-               'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10}
-_COUNT = r'(\d{1,2}(?:\.5)?|one|two|three|four|five|six|seven|eight|nine|ten)'
-BEDROOM_COUNT = re.compile(r'\b' + _COUNT + r'[\s-]*(?:bed|beds|bedroom|bedrooms|br|bhk)\b',
-                           re.IGNORECASE)
-BATHROOM_COUNT = re.compile(r'\b' + _COUNT + r'[\s-]*(?:bath|baths|bathroom|bathrooms|'
-                            r'washroom|washrooms)\b', re.IGNORECASE)
+# Arabic attaches "my" and "the" to the noun itself - شقتي is "my flat",
+# الفيلا "the villa" - so these are matched as whole words that may carry
+# a prefix and the common possessive endings, not with \b.
+ARABIC_PROPERTY_WORDS = {
+    'فيلا': 'villa', 'فيلتي': 'villa', 'فيلتنا': 'villa', 'فلة': 'villa',
+    'شقة': 'apartment', 'شقتي': 'apartment', 'شقتنا': 'apartment',
+    'منزل': 'house', 'منزلي': 'house', 'بيت': 'house', 'بيتي': 'house',
+    'بنتهاوس': 'penthouse', 'دوبلكس': 'duplex', 'استوديو': 'studio',
+    'تاون هاوس': 'townhouse', 'أرض': 'land', 'ارض': 'land',
+}
+_AR_EDGE = r'(?:^|(?<=[\s،.,!?؟:;]))'
+_AR_END = r'(?=$|[\s،.,!?؟:;])'
+
+
+def _arabic_word(word):
+    return re.compile(_AR_EDGE + r'(?:و|ب|ل|ف)?(?:ال)?' + re.escape(word) + _AR_END)
+
+
+_ARABIC_PROPERTY_PATTERNS = [(w, t, _arabic_word(w)) for w, t in ARABIC_PROPERTY_WORDS.items()]
+
+COUNT_WORDS = dict(NUMBER_WORDS)
+_COUNT = (r'(\d{1,2}(?:[.,]5)?|'
+          + '|'.join(re.escape(w) for w in sorted(NUMBER_WORDS, key=len, reverse=True)) + ')')
+BEDROOM_COUNT = re.compile(
+    r'\b' + _COUNT + r'[\s-]*\+?\s*(?:'
+    + '|'.join(re.escape(w) for w in sorted(BEDROOM_WORDS + ['br', 'bhk'], key=len, reverse=True))
+    + r')(?!\w)', re.IGNORECASE)
+BATHROOM_COUNT = re.compile(
+    r'\b' + _COUNT + r'[\s-]*\+?\s*(?:'
+    + '|'.join(re.escape(w) for w in sorted(BATHROOM_WORDS + ['washroom', 'washrooms'],
+                                            key=len, reverse=True))
+    + r')(?!\w)', re.IGNORECASE)
 
 
 def count_in(pattern, text):
@@ -3694,7 +4323,7 @@ def count_in(pattern, text):
     if raw in COUNT_WORDS:
         return COUNT_WORDS[raw]
     try:
-        value = float(raw)
+        value = float(raw.replace(',', '.'))
     except ValueError:
         return None
     return int(value) if value == int(value) else value
@@ -3710,17 +4339,84 @@ def property_type_in(text):
                    else r'\b' + re.escape(word) + r'\b')
         if re.search(pattern, text or '') and (found is None or len(word) > len(found[0])):
             found = (word, canonical)
+    for word, canonical, pattern in _ARABIC_PROPERTY_PATTERNS:
+        if pattern.search(text or '') and (found is None or len(word) > len(found[0])):
+            found = (word, canonical)
     return found[1] if found else None
+
+
+def property_types_in(text):
+    """Every distinct type a message names, in order of appearance -
+    "my villa and my apartment" is two properties."""
+    hits = []
+    for word, canonical in PROPERTY_TYPE_WORDS.items():
+        pattern = (r'(?<!real )\bestate\b' if word == 'estate'
+                   else r'\b' + re.escape(word) + r'\b')
+        for m in re.finditer(pattern, text or ''):
+            hits.append((m.start(), m.end(), canonical))
+    for word, canonical, pattern in _ARABIC_PROPERTY_PATTERNS:
+        for m in pattern.finditer(text or ''):
+            hits.append((m.start(), m.end(), canonical))
+    # A word inside a longer one ("house" in "town house") is not a second type.
+    hits.sort(key=lambda h: (h[0], -(h[1] - h[0])))
+    kept, last_end = [], -1
+    for start, end, canonical in hits:
+        if start < last_end:
+            continue
+        kept.append(canonical)
+        last_end = end
+    seen = []
+    for canonical in kept:
+        if canonical not in seen:
+            seen.append(canonical)
+    return seen
+
+
+def _spaced(text):
+    """Arabic writes "and" (و) joined to the next word: "و٢ حمام" is
+    "and 2 bathrooms". Split it off so the number stands alone."""
+    return re.sub(r'(?:^|(?<=\s))و(?=[\d٠-٩])', 'و ', text or '')
+
+
+# Short Latin words ("bed", "bad") are too common to mark a question; the
+# Arabic ones are not.
+_BEDROOM_ASK = re.compile('|'.join(re.escape(w) for w in sorted(BEDROOM_WORDS, key=len, reverse=True)
+                                    if len(w) > 3 or not w.isascii()), re.IGNORECASE)
+_BATHROOM_ASK = re.compile('|'.join(re.escape(w) for w in sorted(BATHROOM_WORDS, key=len, reverse=True)
+                                     if len(w) > 3 or not w.isascii()), re.IGNORECASE)
+_BARE_COUNT = re.compile(r'^\s*' + _COUNT + r'\s*[.!]?\s*$', re.IGNORECASE)
+
+
+def _bare_count_answer(question, answer):
+    """"8", in reply to "How many bathrooms does it have?". A question about
+    both rooms at once, or an answer with more in it, is left alone."""
+    match = _BARE_COUNT.match(answer or '')
+    if not match:
+        return None, None
+    beds, baths = bool(_BEDROOM_ASK.search(question or '')), bool(_BATHROOM_ASK.search(question or ''))
+    if beds == baths:
+        return None, None
+    value = count_in(_BARE_COUNT, answer)
+    return ('bedrooms', value) if beds else ('bathrooms', value)
 
 
 def property_facts_in(conversation_history):
     """Property details the visitor has already stated, in their own words."""
     facts = {'property_type': None, 'bedrooms': None, 'bathrooms': None}
+    asked = ''
     for msg in (conversation_history or []):
+        if msg.get('role') == 'assistant':
+            asked = msg.get('content') or ''
+            continue
         if msg.get('role') != 'user':
             continue
-        text = (msg.get('content') or '').lower()
-        if facts['property_type'] is None:
+        text = _spaced((msg.get('content') or '').lower())
+        which, value = _bare_count_answer(asked, ascii_digits(text))
+        if which and facts[which] is None:
+            facts[which] = value
+        # "my villa and my apartment" names two properties; neither is
+        # THE property, so the question is left to be asked.
+        if facts['property_type'] is None and len(property_types_in(text)) == 1:
             facts['property_type'] = property_type_in(text)
         if facts['bedrooms'] is None:
             facts['bedrooms'] = count_in(BEDROOM_COUNT, text)
@@ -3788,24 +4484,76 @@ TIMELINE_PHRASES = [
     ('browsing', ['just looking', 'just browsing', 'just curious', 'no rush',
                   'no hurry', 'not in a hurry', 'no timeline', 'no specific time',
                   'no particular time', 'just exploring', 'just researching',
-                  'someday', 'some day', 'no fixed', 'whenever']),
+                  'someday', 'some day', 'no fixed', 'whenever',
+                  # es / fr / de / it / pt / nl / ar
+                  'solo mirando', 'sólo mirando', 'solo estoy mirando', 'sin prisa',
+                  'no tengo prisa', 'sin fecha', 'je regarde juste', 'juste regarder',
+                  'pas pressé', 'pas pressée', 'rien ne presse', 'sans urgence',
+                  'nur am schauen', 'nur schauen', 'keine eile', 'eilt nicht',
+                  'kein zeitdruck', 'irgendwann', 'sto solo guardando', 'solo guardando',
+                  'senza fretta', 'nessuna fretta', 'non ho fretta', 'prima o poi',
+                  'só a ver', 'só olhando', 'sem pressa', 'não tenho pressa',
+                  'nao tenho pressa', 'alleen kijken', 'ik kijk alleen', 'geen haast',
+                  'geen tijdsdruk', 'مجرد استكشاف', 'أتصفح فقط', 'لا عجلة',
+                  'غير مستعجل', 'لست مستعجلا', 'ليس مستعجلا']),
     ('immediate', ['as soon as', 'asap', 'a.s.a.p', 'immediately',
                    'right away', 'straight away', 'right now', 'this week',
                    'next week', 'within a week', 'within days', 'urgently',
                    'very urgent', 'urgent', 'this month', 'within a month',
                    'within the month', 'end of the month', 'ready now',
-                   'ready to move now', 'yesterday']),
+                   'ready to move now', 'yesterday',
+                   'lo antes posible', 'cuanto antes', 'lo más pronto posible',
+                   'lo mas pronto posible', 'inmediatamente', 'ya mismo', 'urgente',
+                   'esta semana', 'este mes', 'en cuanto encuentre',
+                   'dès que possible', 'des que possible', 'au plus vite',
+                   'le plus tôt possible', 'le plus vite possible', 'immédiatement',
+                   'tout de suite', 'cette semaine', 'ce mois-ci', 'dès que vous',
+                   'so schnell wie möglich', 'so bald wie möglich', 'schnellstmöglich',
+                   'baldmöglichst', 'sofort', 'dringend', 'diese woche', 'diesen monat',
+                   'sobald sie', 'il prima possibile', 'prima possibile', 'al più presto',
+                   'al piu presto', 'subito', 'questa settimana', 'questo mese',
+                   'non appena', 'o mais rápido possível', 'o mais rapido possivel',
+                   'o quanto antes', 'o mais cedo possível', 'imediatamente',
+                   'esta semana', 'este mês', 'assim que', 'zo snel mogelijk',
+                   'zo spoedig mogelijk', 'zsm', 'meteen', 'onmiddellijk', 'deze week',
+                   'deze maand', 'zodra', 'في أقرب وقت', 'بأسرع وقت', 'فورا', 'فوراً',
+                   'حالا', 'عاجل', 'هذا الأسبوع', 'هذا الشهر', 'بمجرد', 'أسبوعين',
+                   'اسبوعين']),
     ('1_3_months', ['next month', 'couple of months', 'a couple months',
                     'few months', 'a few months', 'next quarter',
-                    'within three months', 'within 3 months', 'by the summer']),
+                    'within three months', 'within 3 months', 'by the summer',
+                    'próximo mes', 'proximo mes', 'el mes que viene', 'en unos meses',
+                    'en un par de meses', 'le mois prochain', 'dans quelques mois',
+                    "d'ici quelques mois", 'nächsten monat', 'naechsten monat',
+                    'in ein paar monaten', 'in einigen monaten', 'il mese prossimo',
+                    'prossimo mese', 'tra qualche mese', 'fra qualche mese',
+                    'próximo mês', 'proximo mes', 'em alguns meses', 'daqui a uns meses',
+                    'volgende maand', 'over een paar maanden', 'binnen een paar maanden',
+                    'الشهر القادم', 'الشهر المقبل', 'خلال أشهر قليلة', 'شهرين']),
     ('3_6_months', ['half a year', 'within six months', 'within 6 months',
                     'end of the year', 'end of this year', 'by year end',
-                    'by the end of the year']),
+                    'by the end of the year',
+                     'medio año', 'fin de año', 'final de año', 'finales de año',
+                     "fin de l'année", "d'ici la fin de l'année", 'halbes jahr',
+                     'ende des jahres', 'jahresende', 'fine anno', "fine dell'anno",
+                     'meio ano', 'fim do ano', 'final do ano', 'half jaar',
+                     'eind van het jaar', 'einde van het jaar', 'نصف سنة',
+                     'نهاية السنة', 'نهاية العام']),
     ('6_12_months', ['within a year', 'within the year', 'in a year',
-                     'next year', 'sometime next year']),
+                     'next year', 'sometime next year',
+                     'el año que viene', 'próximo año', 'proximo año', 'dentro de un año',
+                     "l'année prochaine", "l'an prochain", "d'ici un an",
+                     'nächstes jahr', 'naechstes jahr', 'innerhalb eines jahres',
+                     "l'anno prossimo", 'anno prossimo', 'entro un anno',
+                     'próximo ano', 'ano que vem', 'dentro de um ano', 'volgend jaar',
+                     'binnen een jaar', 'العام القادم', 'السنة القادمة', 'خلال سنة']),
     ('over_1_year', ['couple of years', 'a couple years', 'few years',
                      'a few years', 'two years', 'long term', 'long-term',
-                     'not for a while', 'not any time soon', 'not anytime soon']),
+                     'not for a while', 'not any time soon', 'not anytime soon',
+                     'un par de años', 'unos años', 'largo plazo', 'quelques années',
+                     'long terme', 'paar jahren', 'langfristig', 'qualche anno',
+                     'lungo termine', 'alguns anos', 'longo prazo', 'paar jaar',
+                     'lange termijn', 'بضع سنوات', 'سنتين', 'على المدى الطويل']),
 ]
 
 _TIMELINE_NUMBER_WORDS = {
@@ -3829,6 +4577,20 @@ def _months_to_bucket(months):
     return 'over_1_year'
 
 
+_TIMELINE_UNITS = {
+    'day': ['day', 'days', 'días', 'dias', 'día', 'dia', 'jours', 'jour', 'tage', 'tagen',
+            'tag', 'giorni', 'giorno', 'dagen', 'dag', 'يوم', 'أيام', 'ايام'],
+    'week': ['week', 'weeks', 'semanas', 'semana', 'semaines', 'semaine', 'wochen', 'woche',
+             'settimane', 'settimana', 'weken', 'أسبوع', 'اسبوع', 'أسابيع', 'اسابيع'],
+    'month': ['month', 'months', 'meses', 'mes', 'mês', 'mois', 'monate', 'monaten', 'monat',
+              'mesi', 'mese', 'maanden', 'maand', 'شهر', 'أشهر', 'اشهر', 'شهور'],
+    'year': ['year', 'years', 'años', 'año', 'ans', 'an', 'années', 'année', 'jahre', 'jahren',
+             'jahr', 'anni', 'anno', 'anos', 'ano', 'jaar', 'jaren', 'سنة', 'سنوات', 'عام', 'أعوام'],
+}
+_UNIT_OF = {w: unit for unit, words in _TIMELINE_UNITS.items() for w in words}
+_RANGE_WORDS = r"-|to|or|and|a|à|bis|tot|o|ou|oder|of|e|y|en|und|et|إلى|او|أو"
+
+
 def _timeline_from_numbers(text):
     """'in 2 months', 'within 6-8 weeks', 'about a year and a half'.
 
@@ -3836,23 +4598,27 @@ def _timeline_from_numbers(text):
     lead who might still be looking in six months, and an agent planning
     their week should be told the honest later date, not the hopeful one."""
     best = None
-    pattern = (r'(\d{1,2}|' + '|'.join(sorted(_TIMELINE_NUMBER_WORDS, key=len, reverse=True)) + r')'
-               r'(?:\s*(?:-|to|or|and)\s*(\d{1,2}))?'
-               r'\s*(day|days|week|weeks|month|months|year|years)\b')
+    text = ascii_digits(text)
+    words = dict(NUMBER_WORDS)
+    words.update(_TIMELINE_NUMBER_WORDS)
+    pattern = (r'(?<!\w)(\d{1,2}|' + '|'.join(re.escape(w) for w in sorted(words, key=len, reverse=True))
+               + r')(?:\s*(?:' + _RANGE_WORDS + r')\s*(\d{1,2}))?'
+               r'\s*(' + '|'.join(re.escape(u) for u in sorted(_UNIT_OF, key=len, reverse=True))
+               + r')(?!\w)')
     for m in re.finditer(pattern, text):
-        low_raw, high_raw, unit = m.group(1), m.group(2), m.group(3)
+        low_raw, high_raw, unit = m.group(1), m.group(2), _UNIT_OF[m.group(3)]
         try:
             low = int(low_raw)
         except ValueError:
-            low = _TIMELINE_NUMBER_WORDS.get(low_raw)
+            low = words.get(low_raw)
         if low is None:
             continue
         value = int(high_raw) if high_raw else low
-        if unit.startswith('day'):
+        if unit == 'day':
             months = value / 30.0
-        elif unit.startswith('week'):
+        elif unit == 'week':
             months = value / 4.0
-        elif unit.startswith('month'):
+        elif unit == 'month':
             months = float(value)
         else:
             months = value * 12.0
@@ -4201,6 +4967,12 @@ class ConversationSession(db.Model):
     history = db.Column(db.Text, default='[]')
     booked_slots = db.Column(db.Text, default='[]')
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Which lead each request in this conversation became: {"owner1": 89,
+    # "owner2": 90, "seeker1": 88}. Without it a second property from the
+    # same person looked like a duplicate of the first, and an answer given
+    # after a lead was saved - a timeline, a corrected price - never
+    # reached it.
+    captured = db.Column(db.Text, default='{}')
 
 
 class Agent(db.Model):
@@ -6461,24 +7233,102 @@ def get_listings_api(agency_id):
 
 # ─────────────────────────────────────────────────────
 
-def capture_seller_lead(agency, lead_data, history, chat_intent, request_messages=None):
-    """Save an owner's enquiry as a seller lead with its pending listing.
+def _same_place(a, b):
+    a = re.sub(r'[^a-z0-9]', '', (a or '').lower())
+    b = re.sub(r'[^a-z0-9]', '', (b or '').lower())
+    return bool(a) and a == b
+
+
+def seller_lead_for_property(agency_id, email, seller_property, taken=()):
+    """A seller lead this person already has for THIS property - same place
+    and same kind - or None. One owner with three flats has three leads;
+    the same flat offered again on another day has one.
+
+    taken: leads that other requests in this conversation already became.
+    The second property in a chat is never a duplicate of the first, even
+    when too little is known about it to tell them apart."""
+    leads = [lead for lead in Lead.query.filter(
+                 Lead.agency_id == agency_id,
+                 db.func.lower(Lead.email) == (email or '').lower(),
+                 Lead.lead_type == 'seller').order_by(Lead.id).all()
+             if lead.id not in set(taken)]
+    prop = seller_property or {}
+    if not prop.get('location') and not prop.get('property_type'):
+        return leads[0] if leads else None
+    for lead in leads:
+        listing = Listing.query.filter_by(agency_id=agency_id, seller_lead_id=lead.id).first()
+        if not listing:
+            continue
+        if _same_place(listing.location, prop.get('location')) and \
+                (listing.property_type or '').lower() == (prop.get('property_type') or '').lower():
+            return lead
+    return None
+
+
+def refresh_seller_lead(lead, lead_data, history, chat_intent):
+    """Bring a saved seller lead up to date with what was said after it was
+    saved - the timeline, a corrected price, a number. Quietly: the agency
+    was told about the lead once already."""
+    changed = False
+    if lead_data.get('timeline') and lead.timeline != lead_data['timeline']:
+        lead.timeline, lead.timeline_raw = lead_data['timeline'], lead_data.get('timeline_raw')
+        changed = True
+    for field in ('whatsapp_number', 'phone'):
+        if lead_data.get(field) and not getattr(lead, field):
+            setattr(lead, field, lead_data[field])
+            lead.contact_preference = lead_data.get('contact_preference') or lead.contact_preference
+            changed = True
+    listing = Listing.query.filter_by(agency_id=lead.agency_id, seller_lead_id=lead.id).first()
+    stated = None if lead_data.get('budget_inferred') else lead_data.get('budget')
+    if stated and stated != lead.budget:
+        lead.budget = stated
+        if listing and listing.status == 'pending':
+            listing.price_raw = str(stated)[:100]
+            listing.price = listing.price_numeric = parse_price(stated)
+        changed = True
+    if changed:
+        prop = ({'location': listing.location, 'price_raw': listing.price_raw} if listing else {})
+        lead.intent_score, reasons = score_lead_quality(
+            lead_data, history, lead_type='seller', seller_property=prop)
+        lead.quality_reasons = json.dumps(reasons)
+        db.session.commit()
+        print(f"✅ Seller lead {lead.id} brought up to date")
+    return lead
+
+
+def capture_seller_lead(agency, lead_data, history, chat_intent, request_messages=None,
+                        request_key='owner1', session_key=None):
+    """Save an owner's enquiry as a seller lead with its pending listing, or
+    bring the one this request already became up to date.
 
     request_messages is this request's part of the conversation when the
-    visitor has two - so the listing is built from what they said about the
-    property they OWN, not the one they went on to ask about buying."""
+    visitor has more than one - so the listing is built from what they said
+    about THIS property, not another one they own or one they asked to
+    buy. Fimi's townhouse (16 Nov 2026) was listed as the Miami villa she
+    had booked a viewing of, because the whole conversation was read."""
     agency_id = agency.id
     described = history if request_messages is None else request_messages
     try:
+        captured = captured_leads(session_key)
+        mapped = captured.get(request_key)
+        known_lead = db.session.get(Lead, mapped) if mapped else None
+        if known_lead:
+            refresh_seller_lead(known_lead, lead_data, history, chat_intent)
+            return known_lead
         canonical_name, _ = resolve_lead_identity(
             agency_id, lead_data['email'], lead_data.get('name'))
-        existing_seller = lead_on_file(agency_id, lead_data['email'], 'seller')
+        seller_property = extract_seller_property(described, chat_intent)
+        existing_seller = seller_lead_for_property(
+            agency_id, lead_data['email'], seller_property,
+            taken=[v for k, v in captured.items() if k != request_key])
         if existing_seller:
-            print(f"⚠️ Seller lead already recorded: {lead_data['email']}")
+            print(f"⚠️ Seller lead already recorded for this property: {lead_data['email']}")
+            remember_capture(session_key, request_key, existing_seller.id)
+            refresh_seller_lead(existing_seller, lead_data, history, chat_intent)
+            return existing_seller
         else:
             ai_summary = generate_lead_summary(described, agency.name)
             # Sellers are routed by where their PROPERTY is.
-            seller_property = extract_seller_property(described, chat_intent)
             assigned = assign_next_agent(agency, seller_property.get('location'))
             seller_score, seller_reasons = score_lead_quality(
                 lead_data, history, lead_type='seller',
@@ -6503,6 +7353,7 @@ def capture_seller_lead(agency, lead_data, history, chat_intent, request_message
             )
             db.session.add(seller_lead)
             db.session.commit()
+            remember_capture(session_key, request_key, seller_lead.id)
 
             listing = None
             if seller_property:
@@ -6551,25 +7402,46 @@ def capture_seller_lead(agency, lead_data, history, chat_intent, request_message
                              f"Asking: {listing.price_raw if listing else seller_lead.budget or '—'}\n\n"
                              f"Login: {PUBLIC_BASE_URL}/agent-login")
             print(f"✅ SELLER LEAD #{seller_lead.id} captured: {seller_lead.name}")
+            return seller_lead
     except Exception as seller_err:
         print(f"⚠️ Seller lead error: {seller_err}")
         db.session.rollback()
 
 
-def capture_buyer_lead(agency, lead_data, history, booked_slots, request_messages=None):
+def link_viewings(agency_id, lead):
+    """A viewing booked in the same turn as the lead was saved was booked
+    before the lead existed. Attach it now, so the lead shows its viewing."""
+    if not (lead and lead.email):
+        return
+    rows = Appointment.query.filter(
+        Appointment.agency_id == agency_id, Appointment.lead_id.is_(None),
+        db.func.lower(Appointment.customer_email) == lead.email.lower()).all()
+    for appt in rows:
+        appt.lead_id = lead.id
+    if rows:
+        db.session.commit()
+
+
+def capture_buyer_lead(agency, lead_data, history, booked_slots, request_messages=None,
+                       request_key='seeker1', session_key=None):
     """Save somebody looking for a property as a buyer lead, or bring the
     one they already have up to date.
 
     request_messages is this request's part of the conversation when the
-    visitor has two - so the summary an agent reads is about what they
-    want to FIND, and they are routed by where they want to live."""
+    visitor has more than one - so the summary an agent reads is about
+    what they want to FIND, and they are routed by where they want to
+    live."""
     agency_id = agency.id
     described = history if request_messages is None else request_messages
     try:
         canonical_name, _ = resolve_lead_identity(
             agency_id, lead_data['email'], lead_data.get('name'))
-        existing_lead = lead_on_file(agency_id, lead_data['email'], 'buyer')
+        mapped = captured_leads(session_key).get(request_key)
+        existing_lead = (db.session.get(Lead, mapped) if mapped else None) or \
+            lead_on_file(agency_id, lead_data['email'], 'buyer')
         if existing_lead:
+            remember_capture(session_key, request_key, existing_lead.id)
+            link_viewings(agency_id, existing_lead)
             updated = False
             if not existing_lead.whatsapp_number and lead_data.get('whatsapp_number'):
                 existing_lead.whatsapp_number = lead_data['whatsapp_number']
@@ -6581,9 +7453,16 @@ def capture_buyer_lead(agency, lead_data, history, booked_slots, request_message
                 updated = True
             # A returning customer who finally names a date is a
             # different lead to the agent than the one who didn't.
-            if not existing_lead.timeline and lead_data.get('timeline'):
+            if lead_data.get('timeline') and existing_lead.timeline != lead_data['timeline']:
                 existing_lead.timeline = lead_data['timeline']
                 existing_lead.timeline_raw = lead_data.get('timeline_raw')
+                updated = True
+            # A budget said out loud replaces one inferred from listings.
+            stated = None if lead_data.get('budget_inferred') else lead_data.get('budget')
+            if stated and stated != existing_lead.budget:
+                existing_lead.budget = stated
+                updated = True
+            if bool(booked_slots) and 'Booked a viewing' not in (existing_lead.quality_reasons or ''):
                 updated = True
             if updated:
                 rescore, rereasons = score_lead_quality(
@@ -6625,6 +7504,8 @@ def capture_buyer_lead(agency, lead_data, history, booked_slots, request_message
             )
             db.session.add(lead)
             db.session.commit()
+            remember_capture(session_key, request_key, lead.id)
+            link_viewings(agency_id, lead)
             print(f"✅ Lead saved: ID {lead.id} | Score: {quality_score}/5")
             record_activity(
                 agency_id, 'lead_new',
@@ -6698,7 +7579,8 @@ def chat():
 
         # What we already know. The person comes from the whole
         # conversation; the money and the timeline from this request only.
-        known = lead_data_for(agency_id, history, scope if view['several'] else None)
+        known = lead_data_for(agency_id, history, scope if view['several'] else None,
+                              side=view['side'])
 
         # A seller is not shopping. Showing them the buyer inventory (and
         # the viewing calendar) is how the AI ended up asking an owner for
@@ -6716,7 +7598,7 @@ def chat():
                                 else get_availability_context(agency_id, max_slot, booked_slots))
 
         plan = contact_plan(history, known)
-        second_waiting = bool(view['several'] and not view['other']['finished'])
+        second_waiting = bool(requests_waiting(view))
 
         seller_context = ""
         if seller_mode:
@@ -6724,16 +7606,17 @@ def chat():
             if second_waiting:
                 owner_close = (
                     "ONCE YOU HAVE ALL OF THE ABOVE, do NOT close the conversation - this visitor "
-                    "has a second request waiting (see THIS VISITOR HAS TWO REQUESTS). Do not "
-                    "invent timelines, valuations, commission rates, or contract terms - an agent "
-                    "handles all of that.")
+                    "has another request waiting (see THIS VISITOR HAS MORE THAN ONE REQUEST). Do "
+                    "not invent timelines, valuations, commission rates, or contract terms - an "
+                    "agent handles all of that.")
             else:
                 owner_close = (
                     "ONCE YOU HAVE ALL OF THE ABOVE - including their contact details - close the\n"
                     "conversation like this and then STOP asking questions:\n"
                     f"tell them their property details have been passed to the {agency.name} team, "
-                    "that an agent will\nreview and get in touch about next steps, and thank them. "
-                    "Do not invent timelines, valuations,\ncommission rates, or contract terms - "
+                    "that an agent will\nreview and get in touch about next steps, and that if they "
+                    "have another property to sell or rent out you can take its details too. Thank "
+                    "them. Do not invent timelines, valuations,\ncommission rates, or contract terms - "
                     "an agent handles all of that.")
             seller_context = f"""
 
@@ -6781,6 +7664,8 @@ Every other answer needs no comment at all: go straight to the next question.
             known_bits.append("Contact preference: already asked once - do not ask again")
         # What they told us about the property itself, in their own words.
         described = property_facts_in(scope)
+        if not described.get('property_type') and view.get('announced_type'):
+            described['property_type'] = view['announced_type']
         if described.get('property_type'):
             known_bits.append(
                 f"Property type: {described['property_type']} (ALREADY ANSWERED - never ask "
@@ -6918,12 +7803,18 @@ Respond naturally in plain text only:"""
         # sometimes does anyway. It gets one chance to say it again.
         if plan['step'] == 'done' and asks_for_contact_details(ai_reply):
             ai_reply = reply_without_contact_question(messages, ai_reply)
+        # And the timeline question is asked before the contact step - not
+        # skipped because a viewing got booked first.
+        if skips_the_timeline(ai_reply, view, plan):
+            ai_reply = reply_with_timeline_question(
+                messages, ai_reply, timeline_question_for(chat_intent))
         ai_reply = tidy_reply(ai_reply, history)
         history.append({"role": "assistant", "content": ai_reply})
 
         view = conversation_view(history)
         lead_data = lead_data_for(agency_id, history,
-                                  view['messages'] if view['several'] else None)
+                                  view['messages'] if view['several'] else None,
+                                  side=view['side'])
 
         # ─── Auto-appointment: books ALL requested slots (multi-property support) ───
         appt_data = extract_appointment_data(agency_id, history)
@@ -7025,20 +7916,26 @@ Respond naturally in plain text only:"""
         # the same one check as always. One with two gets each looked at on
         # its own part of the conversation, the finished one first.
         if not view['several']:
-            if seller_mode and is_seller_lead_qualified(lead_data, history, chat_intent):
-                capture_seller_lead(agency, lead_data, history, chat_intent)
+            key = view['key'] or 'seeker1'
+            if view['side'] == 'owner':
+                # An owner is never saved as a buyer, whatever else qualifies.
+                if is_seller_lead_qualified(lead_data, history, view['intent']):
+                    capture_seller_lead(agency, lead_data, history, view['intent'],
+                                        request_key=key, session_key=session_key)
             elif is_lead_qualified(lead_data, history, has_booking=bool(booked_slots)):
-                capture_buyer_lead(agency, lead_data, history, booked_slots)
+                capture_buyer_lead(agency, lead_data, history, booked_slots,
+                                   request_key=key, session_key=session_key)
         else:
-            other = view['other']
-            for side, intent, part in ((other['side'], other['intent'], other['messages']),
-                                       (view['side'], view['intent'], view['messages'])):
-                data = lead_data_for(agency_id, history, part)
-                if side == 'owner':
-                    if is_seller_lead_qualified(data, history, intent):
-                        capture_seller_lead(agency, data, history, intent, part)
+            for request_ in view['requests']:
+                part = request_['messages']
+                data = lead_data_for(agency_id, history, part, side=request_['side'])
+                if request_['side'] == 'owner':
+                    if is_seller_lead_qualified(data, history, request_['intent']):
+                        capture_seller_lead(agency, data, history, request_['intent'], part,
+                                            request_key=request_['key'], session_key=session_key)
                 elif is_lead_qualified(data, history, has_booking=bool(booked_slots)):
-                    capture_buyer_lead(agency, data, history, booked_slots, part)
+                    capture_buyer_lead(agency, data, history, booked_slots, part,
+                                       request_key=request_['key'], session_key=session_key)
 
         save_session(session_key, history, booked_slots)
         return jsonify({"reply": ai_reply})
@@ -8044,6 +8941,19 @@ with app.app_context():
     except Exception as e:
         db.session.rollback()
         print(f"⚠️ seller-side migration error: {e}")
+
+    # ── ONE LEAD PER REQUEST (self-contained) ──
+    try:
+        from sqlalchemy import text as _text11, inspect as _inspect11
+        _session_cols11 = [c['name'] for c in _inspect11(db.engine).get_columns('conversation_session')]
+        if 'captured' not in _session_cols11:
+            db.session.execute(_text11(
+                "ALTER TABLE conversation_session ADD COLUMN captured TEXT DEFAULT '{}';"))
+            db.session.commit()
+            print("✅ Migration: conversation_session.captured added")
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ conversation-session migration error: {e}")
 
     # ── LEAD TIMELINE + SCORE BREAKDOWN MIGRATION (self-contained) ──
     try:

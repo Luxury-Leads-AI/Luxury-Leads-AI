@@ -767,6 +767,20 @@ FAQS = (
      'listing, and a buyer lead with their budget. They are two separate '
      'deals, so each keeps its own figures and can go to a different '
      'agent.'),
+    ('Can an owner list more than one property in a chat?',
+     'Yes. If they say so at the start ("my villa and my apartment"), or '
+     'mention another one along the way, the assistant takes the properties '
+     'one at a time and asks for their contact details only once. Each '
+     'property becomes its own seller lead and its own pending listing on '
+     'the Listings page, with its own price and timeline. After the last '
+     'one, the assistant tells them it can take the details of any other '
+     'property they have.'),
+    ('Does the owner side work in other languages?',
+     'Yes, in all nine the assistant speaks. An owner who writes "Quiero '
+     'vender mi piso" or "Ich möchte meine Wohnung vermieten" is recognised '
+     'as an owner, and their asking price, timeline and contact details are '
+     'read from their own words - "600.000 €", "lo antes posible", "par '
+     'téléphone". The lead and the listing reach you in English.'),
     ('How does the assistant collect somebody\'s contact details?',
      'It asks how they would like to be reached first - WhatsApp, phone or '
      'email - and then asks only for that one detail, followed by an email '

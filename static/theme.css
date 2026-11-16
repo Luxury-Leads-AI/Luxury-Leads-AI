@@ -279,3 +279,19 @@ button[type="submit"], .cta-button:not(.secondary), .btn-primary,
   .site-footer { padding: 28px 16px 36px; }
   .site-footer-links { gap: 8px 16px; }
 }
+
+/* ── Lead tables (owner dashboard, agent dashboard, agent detail) ──────
+   One line per lead. These tables already scroll sideways inside
+   .table-wrap, but every cell was allowed to wrap, so once a budget read
+   "8 million USD (based on properties discussed)" and a WhatsApp number
+   sat beside it, rows grew to three and four lines tall (Moaz, 16 Nov
+   2026). Nothing wraps now: a row grows longer instead, and the box it
+   sits in scrolls. Same rule on a phone, with tighter padding. */
+table.leads-table { width: max-content; min-width: 100%; }
+table.leads-table th,
+table.leads-table td { white-space: nowrap; vertical-align: middle; }
+table.leads-table td { padding-top: 10px; padding-bottom: 10px; }
+@media (max-width: 768px) {
+  table.leads-table th,
+  table.leads-table td { padding: 8px 10px; }
+}

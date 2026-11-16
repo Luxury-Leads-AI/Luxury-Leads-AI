@@ -182,7 +182,8 @@ def test_asking_after_the_second_request_goes_to_it():
         "Sam", "Nice to meet you, Sam! Which brings you in today?",
         "I want to sell my house", "Whereabouts is the property?",
         "Austin", "What price are you hoping for?",
-        "900k", "Best way to reach you - WhatsApp, phone, or email?",
+        "900k", "How soon are you hoping to sell?",
+        "this spring", "Best way to reach you - WhatsApp, phone, or email?",
         "email", "What's your email address?",
         "sam@example.test", "Thank you, Sam! Your property details have been passed on.",
         "Ok now what about the property I want to buy?",
@@ -354,7 +355,7 @@ def test_letting_a_property_is_not_wanting_one(said):
 def test_the_model_is_told_about_the_request_that_is_waiting():
     view = app_module.conversation_view(after_her_message(6))
     note = app_module.two_requests_context(view, "Top Class Properties")
-    assert "THIS VISITOR HAS TWO REQUESTS" in note
+    assert "THIS VISITOR HAS MORE THAN ONE REQUEST" in note
     assert "rent out a property they own" in note
     assert "ALSO want to buy a property" in note
     assert "do NOT say goodbye" in note
@@ -364,7 +365,7 @@ def test_the_model_is_told_about_the_request_that_is_waiting():
 def test_the_model_is_told_to_turn_to_the_second_request():
     view = app_module.conversation_view(after_her_message(14))
     note = app_module.two_requests_context(view, "Top Class Properties")
-    assert "YOU HAVE JUST FINISHED THIS VISITOR'S FIRST REQUEST" in note
+    assert "YOU HAVE JUST FINISHED ONE OF THIS VISITOR'S REQUESTS" in note
     assert "passed to the Top Class Properties team" in note
     assert "they also want to buy a property" in note
     assert "Do not ask for their name, their email, a number or a contact preference" in note
@@ -373,9 +374,9 @@ def test_the_model_is_told_to_turn_to_the_second_request():
 def test_the_model_is_told_the_first_request_is_closed():
     view = app_module.conversation_view(after_her_message(18))
     note = app_module.two_requests_context(view, "Top Class Properties")
-    assert "That request is FINISHED" in note
-    assert "Never carry it over" in note
-    assert "do not repeat the closing line" in note
+    assert "Finished, already with the Top Class Properties team" in note
+    assert "never carry it over" in note
+    assert "do not repeat a closing line" in note
 
 
 def test_a_visitor_with_one_request_gets_no_such_note():
@@ -543,7 +544,7 @@ def test_the_agency_is_told_about_both(noors_chat):
 def test_she_is_an_owner_while_she_describes_the_villa(noors_chat):
     prompt = prompt_at(noors_chat, 6)
     assert "PROPERTY OWNER WHO WANTS TO RENT OUT" in prompt
-    assert "THIS VISITOR HAS TWO REQUESTS" in prompt
+    assert "THIS VISITOR HAS MORE THAN ONE REQUEST" in prompt
     # The owner's closing instruction would have ended the conversation.
     assert "STOP asking questions" not in prompt
     assert "do NOT close the conversation" in prompt
@@ -551,7 +552,7 @@ def test_she_is_an_owner_while_she_describes_the_villa(noors_chat):
 
 def test_the_turn_she_finishes_the_villa_is_the_turn_it_moves_to_buying(noors_chat):
     prompt = prompt_at(noors_chat, 14)
-    assert "YOU HAVE JUST FINISHED THIS VISITOR'S FIRST REQUEST" in prompt
+    assert "YOU HAVE JUST FINISHED ONE OF THIS VISITOR'S REQUESTS" in prompt
     assert "PROPERTY OWNER WHO WANTS TO" not in prompt
     assert "INFORMATION TO COLLECT FROM A BUYER OR RENTER" in prompt
 
@@ -638,13 +639,13 @@ def test_the_path_her_real_conversation_took(client, monkeypatch):
             assert res.status_code == 200, res.get_data(as_text=True)
 
         # While he was only selling, nothing about this was any different.
-        assert "THIS VISITOR HAS TWO REQUESTS" not in model.prompts[4]
+        assert "THIS VISITOR HAS MORE THAN ONE REQUEST" not in model.prompts[4]
         assert "PROPERTY OWNER WHO WANTS TO SELL" in model.prompts[4]
         assert "STOP asking questions" in model.prompts[4]
 
         asked_about_buying = model.prompts[8]
         assert "PROPERTY OWNER WHO WANTS TO" not in asked_about_buying
-        assert "That request is FINISHED" in asked_about_buying
+        assert "Finished, already with the" in asked_about_buying
         assert "Austin Townhouse" in asked_about_buying         # something to offer
         assert "VIEWING AVAILABILITY" in asked_about_buying     # and a calendar
         assert "CONTACT DETAILS: complete" in asked_about_buying

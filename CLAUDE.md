@@ -837,17 +837,126 @@ lead.
 
 ### Limits
 
-- Buying is recognised in English, Spanish, French, German, Portuguese, Italian
-  and Dutch. **Renting is English only**: *alquilar*, *louer* and *affittare*
-  mean both "rent" and "rent out". In another language a two-request
-  conversation behaves as it did before.
-- One owner request and one seeker request. Two properties to sell, or buying
-  one and renting another, are still read as one.
+- One request to find a property per conversation. Buying one and renting
+  another are still read as one seeker request. Any number of properties to
+  sell or let is fine - see "Several properties" below.
 
 `tests/test_two_requests.py` runs her conversation, verbatim, through the real
 `/chat` route with a scripted model. 101 of its 104 tests fail against the code
 that shipped before it; the three that pass describe things that were already
 right.
+
+## Several properties, and Fimi's conversation
+
+16 November 2026. Fimi asked to buy a villa, booked a viewing of one, then
+said "I also want sell my property" and described a townhouse in New York.
+Two leads and the emails came out of it, and the figures on them were wrong:
+
+| What happened | Why |
+|---|---|
+| The seller lead's listing was the agency's own Miami villa, at its 8M price | "Actually I I want buy a villa" did not match `SEEK_PATTERNS` ("want buy", no "to"), so there was no second request; the whole conversation was an owner's, and `infer_budget_from_discussed_listings` priced the "asking price" from the villa she viewed |
+| Seller lead saved the moment she said "sell" | Email on file, 10 messages, and an inferred budget satisfied `is_seller_lead_qualified` |
+| Her townhouse at 6M never recorded | "Seller lead already recorded" every turn after |
+| "You're booked" - no appointment, no confirmation | "I would love to" was not in `AFFIRMATIVE_WORDS`, and picking a day from the offered list did not count |
+| Buyer never asked the timeline | The reply after the booking went straight to the contact step |
+| Seller timeline "not given" though it was parsed | The lead was saved before she answered and never updated |
+
+### What changed
+
+- **`SEEK_PATTERNS`**: "to" is optional, a stuttered "I I" is one pronoun,
+  "wanna"/"gonna" count.
+- **A loose "buy" counts as a request** when it was acted on before the owner
+  phrase (two of their messages on it), or the owner phrase says "also" /
+  "too" / "another". A correction ("sorry, I meant sell") still drops it.
+- **An owner's asking price is never inferred.** `lead_data_for(..., side='owner')`
+  drops it; `is_seller_lead_qualified` refuses it.
+- **`extract_appointment_data`**: choosing a day from two or more the assistant
+  offered, or a time from two or more slots, is a viewing request in any
+  language. More yeses, including "I'd love to" as it arrives with its
+  punctuation stripped ("id love").
+- **The timeline before the contact step, checked in code.**
+  `skips_the_timeline()` catches a reply that starts the contact step, or
+  closes, when the request's timeline was never asked; `reply_with_timeline_question()`
+  sends it back once. Same pattern as `reply_without_contact_question`.
+- **`_request_finished` requires the timeline** (asked and answered, or on
+  record), and for somebody looking, a booked viewing settles the money. Without
+  this her owner request was "finished" at the price, the conversation turned
+  back to buying, and "as soon as you find a suitable customer" was filed as the
+  BUYER's timeline.
+- **One lead per request, kept current.** `ConversationSession.captured` maps
+  request keys to lead ids (`{"seeker1": 88, "owner1": 89}`). The first time a
+  request qualifies it is saved; after that `refresh_seller_lead` / the buyer
+  update path bring the SAME lead up to date - timeline, a corrected price
+  (also on a still-pending listing), a number - without emailing again.
+- **`link_viewings`** attaches a viewing booked before the lead existed.
+
+### Several properties
+
+Asked for the same day: "upgrade the option to sell multiple properties". An
+owner can now list any number in one conversation. `conversation_view` keeps a
+list of requests - `seeker1`, `owner1`, `owner2`, ... - instead of two sides.
+
+- **Announced up front**: "my villa and my apartment", "two flats", "عقارين".
+  `properties_announced()` sets `announced`; the types named go to each property
+  in order (`announced_type`), so the villa is not described to the model as an
+  apartment.
+- **Raised along the way**: `another_property_in()` - "another / second / one
+  more" plus an owner phrase, "I have", or "also". Mid-description it waits its
+  turn; after the current property is finished it starts at once. "There's
+  another villa next door" is a description, not a request.
+- **Named after the others are done**: an owner phrase with "also", "I have" or
+  a property type, once every property so far is finished ("I also have a
+  townhouse I want to rent out") - from the owner side or the buying side.
+- When a property is finished and another is waiting, the reply that finishes it
+  turns to the next (`moved_on`, `previous`). The owner's close now offers to take
+  another property.
+- Each property is its own seller lead and pending listing. `seller_lead_for_property`
+  replaced the email-only check: the same place and type on another day is the
+  same lead; a property another request in this conversation already became is
+  never a match (`taken`).
+
+## The owner's side in every widget language
+
+Same day: "Please implement multi-language support on the seller side, just as it
+exists on the buyer side - this is essential." The widget speaks en, fr, es, pt,
+pt-br, de, it, nl and ar. Now read in all of them:
+
+- **Owner phrases** (`SELL_PATTERNS`, `RENT_OUT_PATTERNS`). Where the verb says
+  which side - *verkaufen, vermieten, verkopen, verhuren, بيع, تأجير* - the verb
+  is enough. Where it does not - *alquilar, louer, affittare, alugar* - it takes
+  MY (`_MY`): "alquilar mi piso" is an owner, "alquilar un piso" a renter, which
+  is also how renting is now recognised in `SEEK_PATTERNS`. "Zu verkaufen", "te
+  koop" and "للبيع" are for-sale signs a buyer quotes, and are excluded.
+- **The property**: type words in every language (`PROPERTY_TYPE_WORDS`, with
+  German compounds named in full), Arabic with its attached article and
+  possessive (`ARABIC_PROPERTY_WORDS`); bedroom and bathroom counts reuse the
+  buyer side's multilingual `BEDROOM_WORDS` / `BATHROOM_WORDS` / `NUMBER_WORDS`,
+  and a bare "8" in reply to "how many bathrooms?" counts (`_bare_count_answer`).
+- **Money**: `MONEY_QUESTION` and `ASKS_THE_MONEY` in every language, more scale
+  and currency words, `ascii_digits()` for Arabic-Indic digits, and
+  `_clean_number` reads "1,5" and "600.000" the European way. "6 mil" is
+  thousands only from 100 up - in English slang it is millions.
+- **Timeline**: question detection, answer phrases per bucket, and number + unit
+  ("dans six mois", "خلال شهرين") in every language.
+- **Contact step**: channel words, number questions and declines, including
+  Arabic and Dutch.
+
+The approval and notification emails stay in English, as they are on the buyer side.
+
+`tests/test_fimi_chat.py`, `tests/test_several_properties.py`,
+`tests/test_seller_languages.py` and `tests/test_leads_table.py` hold all of it:
+165 tests, 137 of which fail against the code that shipped before them. The 28
+that pass check things that were already right, or guards against going too far
+(a day mentioned without an offer is not a booking).
+
+## Lead tables: one line per lead
+
+Same day: lead rows had grown three and four lines tall. The tables already
+scrolled sideways inside `.table-wrap`, but every cell wrapped. `table.leads-table`
+in `static/theme.css` - on the owner dashboard, the agent dashboard and the agent
+detail page - sets `white-space: nowrap` and `width: max-content`, so a row grows
+longer and the box scrolls. Measured with six realistic leads: owner rows 69-129px
+before, 46px after; agent rows 63-114px before, 49px after; same on a phone.
 
 ## What the model said, before the visitor sees it
 
@@ -916,6 +1025,8 @@ doc `claude/pending-tasks.md`.
 - Country and city dropdowns when creating a market.
 - Research and training for every customer type.
 - An owner with no asking price is never saved as a seller lead.
+- One request to find a property per conversation: buying one and renting
+  another are read as one.
 
 ## Architecture
 
